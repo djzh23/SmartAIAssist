@@ -322,8 +322,22 @@
 
     private sealed class PersistedChatState
     {
-        public Dictionary<string, List<ChatMessage>> Sessions { get; init; } = new();
-        public string? ActiveSessionId { get; init; }
+        public Dictionary<string, List<StoredChatMessage>> Sessions { get; set; } = new();
+        public string? ActiveSessionId { get; set; }
+    }
+
+    private sealed class LegacyPersistedChatState
+    {
+        public Dictionary<string, List<ChatMessage>> Sessions { get; set; } = new();
+        public string? ActiveSessionId { get; set; }
+    }
+
+    private sealed class StoredChatMessage
+    {
+        public string Text { get; set; } = string.Empty;
+        public string? ToolUsed { get; set; }
+        public bool IsUser { get; set; }
+        public long TimestampUnixMs { get; set; }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -539,22 +553,30 @@
             if (string.IsNullOrWhiteSpace(raw))
                 return;
 
-            var state = System.Text.Json.JsonSerializer.Deserialize<PersistedChatState>(raw);
-            if (state?.Sessions is null || state.Sessions.Count == 0)
+            var state = System.Text.Json.JsonSerializer.Deserialize<PersistedChatState>(raw, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (state?.Sessions is not null && state.Sessions.Count > 0)
+            {
+                sessions = ConvertStoredToRuntime(state.Sessions);
+                SetActiveSession(state.ActiveSessionId);
+                return;
+            }
+
+            // Backward compatibility with previously saved shape.
+            var legacyState = System.Text.Json.JsonSerializer.Deserialize<LegacyPersistedChatState>(raw, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (legacyState?.Sessions is null || legacyState.Sessions.Count == 0)
                 return;
 
-            sessions = state.Sessions;
-            if (!string.IsNullOrWhiteSpace(state.ActiveSessionId) && sessions.ContainsKey(state.ActiveSessionId))
-            {
-                activeSessionId = state.ActiveSessionId;
-            }
-            else
-            {
-                activeSessionId = sessions
-                    .OrderByDescending(x => x.Value.LastOrDefault()?.Timestamp ?? DateTime.MinValue)
-                    .Select(x => x.Key)
-                    .FirstOrDefault();
-            }
+            sessions = legacyState.Sessions;
+            SetActiveSession(legacyState.ActiveSessionId);
+            await PersistStateAsync();
         }
         catch
         {
@@ -568,7 +590,7 @@
         {
             var state = new PersistedChatState
             {
-                Sessions = sessions,
+                Sessions = ConvertRuntimeToStored(sessions),
                 ActiveSessionId = activeSessionId
             };
             var raw = System.Text.Json.JsonSerializer.Serialize(state);
@@ -578,6 +600,56 @@
         {
             // Ignore persistence failures.
         }
+    }
+
+    private void SetActiveSession(string? candidateSessionId)
+    {
+        if (!string.IsNullOrWhiteSpace(candidateSessionId) && sessions.ContainsKey(candidateSessionId))
+        {
+            activeSessionId = candidateSessionId;
+            return;
+        }
+
+        activeSessionId = sessions
+            .OrderByDescending(x => x.Value.LastOrDefault()?.Timestamp ?? DateTime.MinValue)
+            .Select(x => x.Key)
+            .FirstOrDefault();
+    }
+
+    private static Dictionary<string, List<StoredChatMessage>> ConvertRuntimeToStored(
+        Dictionary<string, List<ChatMessage>> runtimeSessions)
+    {
+        return runtimeSessions.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(m => new StoredChatMessage
+            {
+                Text = m.Text,
+                ToolUsed = m.ToolUsed,
+                IsUser = m.IsUser,
+                TimestampUnixMs = new DateTimeOffset(m.Timestamp).ToUnixTimeMilliseconds()
+            }).ToList());
+    }
+
+    private static Dictionary<string, List<ChatMessage>> ConvertStoredToRuntime(
+        Dictionary<string, List<StoredChatMessage>> storedSessions)
+    {
+        return storedSessions.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(m => new ChatMessage
+            {
+                Text = m.Text ?? string.Empty,
+                ToolUsed = m.ToolUsed,
+                IsUser = m.IsUser,
+                Timestamp = FromUnixTimeOrNow(m.TimestampUnixMs)
+            }).ToList());
+    }
+
+    private static DateTime FromUnixTimeOrNow(long unixMs)
+    {
+        if (unixMs <= 0)
+            return DateTime.UtcNow;
+
+        return DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime;
     }
 
     private async Task NewSession()
