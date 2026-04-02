@@ -48,7 +48,7 @@
         </div>
 
         <!-- Session list -->
-        @if (sessions.Count == 0)
+        @if (sessionOrder.Count == 0)
         {
             <div class="sessions-empty">
                 <span>No conversations yet</span>
@@ -57,8 +57,9 @@
         else
         {
             <ul class="session-list">
-                @foreach (var id in sessions.Keys)
+                @foreach (var id in sessionOrder)
                 {
+                    if (!sessions.ContainsKey(id)) continue;
                     var preview = sessions[id].FirstOrDefault(m => m.IsUser)?.Text ?? "New conversation";
                     var lastTime = sessions[id].LastOrDefault()?.Timestamp.ToLocalTime().ToString("HH:mm") ?? "";
                     <li class="session-item @(id == activeSessionId ? "active" : "")"
@@ -68,6 +69,8 @@
                     </li>
                 }
             </ul>
+
+            <button class="clear-history-btn" @onclick="ClearHistory">Clear history</button>
         }
     </aside>
 
@@ -273,6 +276,7 @@
 
 @code {
     private Dictionary<string, List<ChatMessage>> sessions = new();
+    private List<string> sessionOrder = new();
     private string? activeSessionId;
     private string inputText = "";
     private bool isLoading;
@@ -512,19 +516,75 @@
         }
     }
 
-    private void NewSession()
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSessionsFromStorage();
+    }
+
+    private async Task SaveSessionsToStorage()
+    {
+        var data = System.Text.Json.JsonSerializer.Serialize(sessions);
+        await JS.InvokeVoidAsync("localStorage.setItem", "smartassist_sessions", data);
+
+        var ids = System.Text.Json.JsonSerializer.Serialize(sessionOrder);
+        await JS.InvokeVoidAsync("localStorage.setItem", "smartassist_session_order", ids);
+
+        await JS.InvokeVoidAsync("localStorage.setItem",
+            "smartassist_current_session", activeSessionId ?? "");
+    }
+
+    private async Task LoadSessionsFromStorage()
+    {
+        try
+        {
+            var data = await JS.InvokeAsync<string>("localStorage.getItem", "smartassist_sessions");
+            if (!string.IsNullOrEmpty(data))
+                sessions = System.Text.Json.JsonSerializer
+                    .Deserialize<Dictionary<string, List<ChatMessage>>>(data) ?? new();
+
+            var orderData = await JS.InvokeAsync<string>("localStorage.getItem", "smartassist_session_order");
+            if (!string.IsNullOrEmpty(orderData))
+                sessionOrder = System.Text.Json.JsonSerializer
+                    .Deserialize<List<string>>(orderData) ?? new();
+
+            var savedSession = await JS.InvokeAsync<string>("localStorage.getItem", "smartassist_current_session");
+            if (!string.IsNullOrEmpty(savedSession) && sessions.ContainsKey(savedSession))
+                activeSessionId = savedSession;
+            else if (sessionOrder.Count > 0)
+                activeSessionId = sessionOrder[0];
+        }
+        catch { }
+    }
+
+    private async Task ClearHistory()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete all conversations?"))
+            return;
+
+        sessions.Clear();
+        sessionOrder.Clear();
+        activeSessionId = null;
+        await JS.InvokeVoidAsync("localStorage.removeItem", "smartassist_sessions");
+        await JS.InvokeVoidAsync("localStorage.removeItem", "smartassist_session_order");
+        await JS.InvokeVoidAsync("localStorage.removeItem", "smartassist_current_session");
+    }
+
+    private async Task NewSession()
     {
         var id = Guid.NewGuid().ToString()[..8];
         sessions[id] = new List<ChatMessage>();
+        sessionOrder.Insert(0, id);
         activeSessionId = id;
         errorMessage = null;
+        await SaveSessionsToStorage();
     }
 
-    private void SwitchSession(string id)
+    private async Task SwitchSession(string id)
     {
         activeSessionId = id;
         errorMessage = null;
         sidebarOpen = false;
+        await SaveSessionsToStorage();
     }
 
     private void ToggleSidebar() => sidebarOpen = !sidebarOpen;
@@ -545,12 +605,13 @@
             return;
         }
 
-        if (activeSessionId is null) NewSession();
+        if (activeSessionId is null) await NewSession();
 
         sessions[activeSessionId!].Add(new ChatMessage { Text = text, IsUser = true });
         inputText = "";
         isLoading = true;
         errorMessage = null;
+        await SaveSessionsToStorage();
 
         try
         {
@@ -571,6 +632,7 @@
                 ToolUsed = response.ToolUsed,
                 IsUser = false
             });
+            await SaveSessionsToStorage();
         }
         catch (Exception ex)
         {

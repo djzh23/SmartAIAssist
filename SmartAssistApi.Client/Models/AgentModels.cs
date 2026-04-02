@@ -16,8 +16,8 @@ public record AgentResponse(string Reply, string? ToolUsed = null);
 
 public class ChatMessage
 {
-    public string Text { get; init; } = "";
-    public string? ToolUsed { get; init; }
-    public bool IsUser { get; init; }
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public string Text { get; set; } = "";
+    public string? ToolUsed { get; set; }
+    public bool IsUser { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }
