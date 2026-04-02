@@ -62,7 +62,7 @@
                     var preview = sessions[id].FirstOrDefault(m => m.IsUser)?.Text ?? "New conversation";
                     var lastTime = sessions[id].LastOrDefault()?.Timestamp.ToLocalTime().ToString("HH:mm") ?? "";
                     <li class="session-item @(id == activeSessionId ? "active" : "")"
-                        @onclick="async () => await SwitchSession(id)">
+                        @onclick="() => SwitchSession(id)">
                         <span class="session-preview">@(preview.Length > 38 ? preview[..38] + "…" : preview)</span>
                         <span class="session-time">@lastTime</span>
                     </li>
@@ -279,8 +279,6 @@
     private string? errorMessage;
     private bool sidebarOpen;
     private bool isInputFocused;
-    private bool stateHydrated;
-    private const string LocalStorageKey = "smartassist.chat.sessions.v1";
 
     // Language learning state
     private bool languageLearningMode;
@@ -318,37 +316,6 @@
         public string? FollowUpQuestion { get; init; }
         public string? Pronunciation { get; init; }
         public string? MainText { get; init; }
-    }
-
-    private sealed class PersistedChatState
-    {
-        public Dictionary<string, List<StoredChatMessage>> Sessions { get; set; } = new();
-        public string? ActiveSessionId { get; set; }
-    }
-
-    private sealed class LegacyPersistedChatState
-    {
-        public Dictionary<string, List<ChatMessage>> Sessions { get; set; } = new();
-        public string? ActiveSessionId { get; set; }
-    }
-
-    private sealed class StoredChatMessage
-    {
-        public string Text { get; set; } = string.Empty;
-        public string? ToolUsed { get; set; }
-        public bool IsUser { get; set; }
-        public long TimestampUnixMs { get; set; }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender || stateHydrated)
-            return;
-
-        stateHydrated = true;
-        await LoadStateAsync();
-        await ScrollToBottom();
-        StateHasChanged();
     }
 
     private static ParsedLearningMessage ParseAssistantMessage(string text)
@@ -545,128 +512,19 @@
         }
     }
 
-    private async Task LoadStateAsync()
-    {
-        try
-        {
-            var raw = await JS.InvokeAsync<string?>("smartAssistStorage.get", LocalStorageKey);
-            if (string.IsNullOrWhiteSpace(raw))
-                return;
-
-            var state = System.Text.Json.JsonSerializer.Deserialize<PersistedChatState>(raw, new System.Text.Json.JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (state?.Sessions is not null && state.Sessions.Count > 0)
-            {
-                sessions = ConvertStoredToRuntime(state.Sessions);
-                SetActiveSession(state.ActiveSessionId);
-                return;
-            }
-
-            // Backward compatibility with previously saved shape.
-            var legacyState = System.Text.Json.JsonSerializer.Deserialize<LegacyPersistedChatState>(raw, new System.Text.Json.JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (legacyState?.Sessions is null || legacyState.Sessions.Count == 0)
-                return;
-
-            sessions = legacyState.Sessions;
-            SetActiveSession(legacyState.ActiveSessionId);
-            await PersistStateAsync();
-        }
-        catch
-        {
-            // Ignore malformed local state and start fresh.
-        }
-    }
-
-    private async Task PersistStateAsync()
-    {
-        try
-        {
-            var state = new PersistedChatState
-            {
-                Sessions = ConvertRuntimeToStored(sessions),
-                ActiveSessionId = activeSessionId
-            };
-            var raw = System.Text.Json.JsonSerializer.Serialize(state);
-            await JS.InvokeVoidAsync("smartAssistStorage.set", LocalStorageKey, raw);
-        }
-        catch
-        {
-            // Ignore persistence failures.
-        }
-    }
-
-    private void SetActiveSession(string? candidateSessionId)
-    {
-        if (!string.IsNullOrWhiteSpace(candidateSessionId) && sessions.ContainsKey(candidateSessionId))
-        {
-            activeSessionId = candidateSessionId;
-            return;
-        }
-
-        activeSessionId = sessions
-            .OrderByDescending(x => x.Value.LastOrDefault()?.Timestamp ?? DateTime.MinValue)
-            .Select(x => x.Key)
-            .FirstOrDefault();
-    }
-
-    private static Dictionary<string, List<StoredChatMessage>> ConvertRuntimeToStored(
-        Dictionary<string, List<ChatMessage>> runtimeSessions)
-    {
-        return runtimeSessions.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.Select(m => new StoredChatMessage
-            {
-                Text = m.Text,
-                ToolUsed = m.ToolUsed,
-                IsUser = m.IsUser,
-                TimestampUnixMs = new DateTimeOffset(m.Timestamp).ToUnixTimeMilliseconds()
-            }).ToList());
-    }
-
-    private static Dictionary<string, List<ChatMessage>> ConvertStoredToRuntime(
-        Dictionary<string, List<StoredChatMessage>> storedSessions)
-    {
-        return storedSessions.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.Select(m => new ChatMessage
-            {
-                Text = m.Text ?? string.Empty,
-                ToolUsed = m.ToolUsed,
-                IsUser = m.IsUser,
-                Timestamp = FromUnixTimeOrNow(m.TimestampUnixMs)
-            }).ToList());
-    }
-
-    private static DateTime FromUnixTimeOrNow(long unixMs)
-    {
-        if (unixMs <= 0)
-            return DateTime.UtcNow;
-
-        return DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime;
-    }
-
-    private async Task NewSession()
+    private void NewSession()
     {
         var id = Guid.NewGuid().ToString()[..8];
         sessions[id] = new List<ChatMessage>();
         activeSessionId = id;
         errorMessage = null;
-        await PersistStateAsync();
     }
 
-    private async Task SwitchSession(string id)
+    private void SwitchSession(string id)
     {
         activeSessionId = id;
         errorMessage = null;
         sidebarOpen = false;
-        await PersistStateAsync();
     }
 
     private void ToggleSidebar() => sidebarOpen = !sidebarOpen;
@@ -687,10 +545,9 @@
             return;
         }
 
-        if (activeSessionId is null) await NewSession();
+        if (activeSessionId is null) NewSession();
 
         sessions[activeSessionId!].Add(new ChatMessage { Text = text, IsUser = true });
-        await PersistStateAsync();
         inputText = "";
         isLoading = true;
         errorMessage = null;
@@ -722,7 +579,6 @@
         finally
         {
             isLoading = false;
-            await PersistStateAsync();
             await ScrollToBottom();
         }
     }
