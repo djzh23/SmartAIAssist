@@ -535,7 +535,7 @@
     {
         try
         {
-            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", LocalStorageKey);
+            var raw = await JS.InvokeAsync<string?>("smartAssistStorage.get", LocalStorageKey);
             if (string.IsNullOrWhiteSpace(raw))
                 return;
 
@@ -572,7 +572,7 @@
                 ActiveSessionId = activeSessionId
             };
             var raw = System.Text.Json.JsonSerializer.Serialize(state);
-            await JS.InvokeVoidAsync("localStorage.setItem", LocalStorageKey, raw);
+            await JS.InvokeVoidAsync("smartAssistStorage.set", LocalStorageKey, raw);
         }
         catch
         {
