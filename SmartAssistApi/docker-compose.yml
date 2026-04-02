@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ES=${ELEVENLABS_VOICE_ES:-JBFqnCBsd6RMkjVDRZzb}
+      - ELEVENLABS_VOICE_DEFAULT=${ELEVENLABS_VOICE_DEFAULT:-JBFqnCBsd6RMkjVDRZzb}
+      - ASPNETCORE_URLS=http://+:8080
+    restart: unless-stopped

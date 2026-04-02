@@ -1,0 +1,27 @@
+# Build artifacts
+**/bin/
+**/obj/
+
+# IDE/user files
+.vs/
+**/.vs/
+**/*.user
+**/*.suo
+**/*.userosscache
+**/*.sln.docstates
+
+# Local environment and secrets
+**/.env
+**/.env.*
+!**/.env.example
+
+# Tool caches
+.dotnet/
+
+# Logs
+*.log
+**/*.log
+
+# OS files
+.DS_Store
+Thumbs.db

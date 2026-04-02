@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SmartAssistApi.Client/SmartAssistApi.Client.csproj" />
+  <Project Path="SmartAssistApi.Tests/SmartAssistApi.Tests.csproj" />
+  <Project Path="SmartAssistApi/SmartAssistApi.csproj" />
+</Solution>

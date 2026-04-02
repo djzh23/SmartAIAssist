@@ -1,0 +1,59 @@
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+main {
+    flex: 1;
+    background: var(--color-bg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.sidebar {
+    background: var(--color-sidebar);
+}
+
+/* No padding here — individual pages manage their own spacing.
+   overflow-y: auto lets non-chat pages scroll naturally. */
+.content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    box-sizing: border-box;
+}
+
+@media (min-width: 641px) {
+    .page {
+        flex-direction: row;
+        height: 100vh;
+    }
+
+    .sidebar {
+        width: 240px;
+        min-width: 240px;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+        overflow-y: auto;
+        flex-shrink: 0;
+    }
+
+    main {
+        flex: 1;
+        height: 100vh;
+        overflow: hidden;
+    }
+}
+
+@media (max-width: 640px) {
+    .sidebar {
+        width: 100%;
+        height: auto;
+    }
+}

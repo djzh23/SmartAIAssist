@@ -1,0 +1,6 @@
+@SmartAssistApi_HostAddress = http://localhost:5108
+
+GET {{SmartAssistApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,202 @@
+@page "/tools"
+@inject IJSRuntime JS
+
+<PageTitle>Tools — SmartAssist</PageTitle>
+
+<div class="tools-page">
+    <h1 class="tools-heading">Available Tools</h1>
+    <p class="tools-subheading">Click any card to copy the example prompt to your clipboard.</p>
+
+    <div class="tools-grid">
+        @foreach (var tool in tools)
+        {
+            <div class="tool-card @(copiedTool == tool.Id ? "copied" : "")"
+                 @onclick="() => CopyPrompt(tool)">
+                <div class="tool-icon-circle" style="background: @tool.IconBg">
+                    <span class="tool-emoji">@tool.Icon</span>
+                </div>
+                <div class="tool-name-row">
+                    <div class="tool-name">@tool.Name</div>
+                    @if (tool.IsNew) { <span class="tool-badge-new">NEW</span> }
+                </div>
+                <div class="tool-id-badge">@tool.Id</div>
+                <p class="tool-description">@tool.Description</p>
+                <code class="tool-example">@tool.ExamplePrompt</code>
+                <div class="tool-copy-hint">
+                    @if (copiedTool == tool.Id)
+                    {
+                        <span class="copy-feedback">✓ Copied!</span>
+                    }
+                    else
+                    {
+                        <span class="copy-hint-text">Click to copy prompt</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string? copiedTool;
+
+    private record ToolInfo(string Id, string Name, string Description, string ExamplePrompt, string Icon, string IconBg, bool IsNew = false);
+
+    private readonly List<ToolInfo> tools =
+    [
+        new("get_weather",        "Wetter abfragen",          "Ruft das aktuelle Wetter für eine Stadt ab.",                                                                   "Wie ist das Wetter in Berlin?",              "🌤️", "#E8F4FD"),
+        new("summarize_text",     "Text zusammenfassen",      "Fasst einen langen Text prägnant zusammen.",                                                                    "Fasse diesen Text zusammen: ...",            "📝", "#FFF3E0"),
+        new("get_joke",           "Zufälliger Witz",          "Erzählt einen zufälligen Witz auf Deutsch.",                                                                    "Erzähl mir einen Witz",                      "😄", "#F3E8FF"),
+        new("language_learning",  "Language Learning Mode",   "Chat and learn a new language simultaneously. The AI translates your messages and responds in your target language.", "Activate Spanish mode and write in German", "🌍", "#E8FEF0", IsNew: true),
+    ];
+
+    private async Task CopyPrompt(ToolInfo tool)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", tool.ExamplePrompt);
+        copiedTool = tool.Id;
+        StateHasChanged();
+        await Task.Delay(1800);
+        copiedTool = null;
+        StateHasChanged();
+    }
+}
+
+<style>
+    .tools-page {
+        max-width: 800px;
+        padding: var(--space-xl);
+    }
+
+    .tools-heading {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--color-text);
+        margin-bottom: var(--space-xs);
+    }
+
+    .tools-subheading {
+        color: var(--color-text-muted);
+        margin-bottom: var(--space-xl);
+        font-size: 0.9rem;
+    }
+
+    .tools-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-md);
+    }
+
+    .tool-card {
+        background: var(--color-bg);
+        border: 1.5px solid #e5e7eb;
+        border-radius: var(--radius-md);
+        padding: var(--space-lg);
+        cursor: pointer;
+        transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
+
+    .tool-card:hover {
+        box-shadow: var(--shadow-md);
+        border-color: var(--color-primary);
+        transform: translateY(-2px);
+    }
+
+    .tool-card.copied {
+        border-color: var(--color-success);
+    }
+
+    .tool-icon-circle {
+        width: 48px;
+        height: 48px;
+        border-radius: var(--radius-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .tool-emoji {
+        font-size: 1.5rem;
+        line-height: 1;
+    }
+
+    .tool-name-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .tool-badge-new {
+        display: inline-block;
+        background: var(--color-success);
+        color: white;
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: var(--radius-sm);
+        letter-spacing: 0.06em;
+        flex-shrink: 0;
+    }
+
+    .tool-name {
+        font-weight: 600;
+        font-size: 1rem;
+        color: var(--color-text);
+    }
+
+    .tool-id-badge {
+        font-family: monospace;
+        font-size: 0.75rem;
+        color: var(--color-primary);
+        background: var(--color-primary-light);
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: var(--radius-pill);
+        width: fit-content;
+    }
+
+    .tool-description {
+        font-size: 0.875rem;
+        color: var(--color-text-muted);
+        margin: 0;
+        line-height: 1.5;
+    }
+
+    .tool-example {
+        display: block;
+        font-size: 0.8rem;
+        background: var(--color-bg-secondary);
+        border: 1px solid #e5e7eb;
+        border-radius: var(--radius-sm);
+        padding: var(--space-sm) var(--space-md);
+        color: var(--color-text);
+        font-family: 'Courier New', monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .tool-copy-hint {
+        text-align: right;
+        font-size: 0.75rem;
+        margin-top: auto;
+        padding-top: var(--space-xs);
+    }
+
+    .copy-hint-text {
+        color: var(--color-text-muted);
+    }
+
+    .copy-feedback {
+        color: var(--color-success);
+        font-weight: 600;
+    }
+
+    @@media (max-width: 768px) {
+        .tools-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
