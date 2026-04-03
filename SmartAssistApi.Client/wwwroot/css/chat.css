@@ -801,6 +801,60 @@
     }
 }
 
+/* ── Job Analysis Cards ───────────────────────────────── */
+.job-analysis-msg {
+    max-width: 100%;
+    width: 100%;
+}
+
+.job-analysis {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+
+.job-section {
+    border-radius: 8px;
+    padding: 14px 16px;
+}
+
+.job-section-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-bottom: 10px;
+}
+
+.job-section-body {
+    font-size: 0.875rem;
+    line-height: 1.65;
+    color: #374151;
+}
+
+.job-section-body p {
+    margin: 0 0 6px;
+}
+
+.job-section-body p:last-child {
+    margin-bottom: 0;
+}
+
+.job-list {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.job-list li {
+    margin-bottom: 5px;
+    line-height: 1.55;
+}
+
+.job-section-body strong {
+    font-weight: 600;
+    color: #1F2937;
+}
+
 .ll-tip {
     display: inline-flex;
     align-items: flex-start;

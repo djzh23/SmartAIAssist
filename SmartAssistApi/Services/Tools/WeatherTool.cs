@@ -1,47 +1,49 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SmartAssistApi.Services.Tools;
 
 public static class WeatherTool
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http;
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+
+    static WeatherTool()
+    {
+        Http = new HttpClient();
+        Http.DefaultRequestHeaders.UserAgent.ParseAdd("SmartAssistApi/1.0 (weather assistant)");
+    }
 
     public static async Task<string> GetWeatherAsync(string city)
     {
+        if (string.IsNullOrWhiteSpace(city))
+            return "Bitte gib einen Stadtnamen ein.";
+
         try
         {
-            // Step 1: Geocoding — city name → coordinates
-            var geoUrl = $"https://geocoding-api.open-meteo.com/v1/search" +
-                         $"?name={Uri.EscapeDataString(city)}&count=1&language=de&format=json";
-            var geoJson = await Http.GetStringAsync(geoUrl);
-            var geo = JsonSerializer.Deserialize<GeoResponse>(geoJson, JsonOpts);
+            var url = $"https://wttr.in/{Uri.EscapeDataString(city)}?format=j1";
+            var json = await Http.GetStringAsync(url);
+            var weather = JsonSerializer.Deserialize<WttrResponse>(json, JsonOpts);
 
-            if (geo?.Results is null || geo.Results.Length == 0)
+            if (weather?.CurrentCondition is null || weather.CurrentCondition.Length == 0)
                 return $"Stadt '{city}' nicht gefunden. Bitte prüfe den Stadtnamen.";
 
-            var loc = geo.Results[0];
+            var c = weather.CurrentCondition[0];
+            var area = weather.NearestArea?[0];
+            var cityName = area?.AreaName?[0]?.Value ?? city;
+            var country = area?.Country?[0]?.Value ?? "";
+            var desc = c.WeatherDesc?[0]?.Value ?? "";
+            var emoji = GetWeatherCondition(int.TryParse(c.WeatherCode, out var code) ? code : 0);
 
-            // Step 2: Weather from coordinates
-            var weatherUrl = $"https://api.open-meteo.com/v1/forecast" +
-                             $"?latitude={loc.Latitude}&longitude={loc.Longitude}" +
-                             $"&current=temperature_2m,relative_humidity_2m," +
-                             $"weather_code,wind_speed_10m,apparent_temperature" +
-                             $"&timezone=auto";
-            var weatherJson = await Http.GetStringAsync(weatherUrl);
-            var weather = JsonSerializer.Deserialize<WeatherResponse>(weatherJson, JsonOpts);
-
-            if (weather?.Current is null)
-                return "Wetterdaten konnten nicht abgerufen werden.";
-
-            var w = weather.Current;
-            var condition = GetWeatherCondition(w.WeatherCode);
-
-            return $"Wetter in {loc.Name} ({loc.Country}):\n" +
-                   $"{condition}\n" +
-                   $"🌡️ Temperatur: {w.Temperature2m}°C (gefühlt {w.ApparentTemperature}°C)\n" +
-                   $"💨 Wind: {w.WindSpeed10m} km/h\n" +
-                   $"💧 Luftfeuchtigkeit: {w.RelativeHumidity2m}%";
+            return $"Wetter in {cityName} ({country}):\n" +
+                   $"{emoji} {desc}\n" +
+                   $"🌡️ Temperatur: {c.TempC}°C (gefühlt {c.FeelsLikeC}°C)\n" +
+                   $"💨 Wind: {c.WindspeedKmph} km/h\n" +
+                   $"💧 Luftfeuchtigkeit: {c.Humidity}%";
+        }
+        catch (HttpRequestException)
+        {
+            return $"Stadt '{city}' nicht gefunden oder keine Verbindung möglich.";
         }
         catch (Exception ex)
         {
@@ -49,26 +51,42 @@ public static class WeatherTool
         }
     }
 
+    // wttr.in weather codes (different from WMO codes used by Open-Meteo)
     public static string GetWeatherCondition(int code) => code switch
     {
-        0          => "☀️ Klar und sonnig",
-        1 or 2 or 3 => "⛅ Teilweise bewölkt",
-        45 or 48   => "🌫️ Neblig",
-        51 or 53 or 55 => "🌦️ Nieselregen",
-        61 or 63 or 65 => "🌧️ Regen",
-        71 or 73 or 75 => "❄️ Schneefall",
-        80 or 81 or 82 => "🌧️ Regenschauer",
-        95         => "⛈️ Gewitter",
-        _          => "🌡️ Wechselhaft"
+        113                                                => "☀️ Klar und sonnig",
+        116                                                => "⛅ Teilweise bewölkt",
+        119 or 122                                         => "☁️ Bewölkt",
+        143 or 248 or 260                                  => "🌫️ Neblig",
+        176 or 263 or 266 or 293 or 296                    => "🌦️ Leichter Regen",
+        299 or 302 or 305 or 308 or 353 or 356 or 359      => "🌧️ Regen",
+        185 or 281 or 284 or 311 or 314 or 317 or 320      => "🌨️ Schneeregen",
+        179 or 227 or 230 or 323 or 326 or 329 or 332
+            or 335 or 338 or 368 or 371 or 374 or 377      => "❄️ Schneefall",
+        200 or 386 or 389 or 392 or 395                    => "⛈️ Gewitter",
+        _                                                  => "🌡️ Wechselhaft"
     };
 
-    private record GeoResponse(GeoResult[]? Results);
-    private record GeoResult(string Name, string Country, double Latitude, double Longitude);
-    private record WeatherResponse(CurrentWeather? Current);
-    private record CurrentWeather(
-        double Temperature2m,
-        double ApparentTemperature,
-        double WindSpeed10m,
-        int RelativeHumidity2m,
-        int WeatherCode);
+    private record WttrResponse(
+        [property: JsonPropertyName("current_condition")] WttrCondition[]? CurrentCondition,
+        [property: JsonPropertyName("nearest_area")] WttrArea[]? NearestArea
+    );
+
+    private record WttrCondition(
+        [property: JsonPropertyName("temp_C")] string TempC,
+        [property: JsonPropertyName("FeelsLikeC")] string FeelsLikeC,
+        [property: JsonPropertyName("windspeedKmph")] string WindspeedKmph,
+        [property: JsonPropertyName("humidity")] string Humidity,
+        [property: JsonPropertyName("weatherCode")] string WeatherCode,
+        [property: JsonPropertyName("weatherDesc")] WttrValue[]? WeatherDesc
+    );
+
+    private record WttrArea(
+        [property: JsonPropertyName("areaName")] WttrValue[]? AreaName,
+        [property: JsonPropertyName("country")] WttrValue[]? Country
+    );
+
+    private record WttrValue(
+        [property: JsonPropertyName("value")] string Value
+    );
 }

@@ -120,7 +120,15 @@
                 {
                     @foreach (var msg in ActiveMessages)
                     {
-                        @if (!msg.IsUser && msg.LearningData is not null)
+                        @if (!msg.IsUser && msg.ToolUsed == "analyze_job")
+                        {
+                            <!-- Structured job analysis: colored section cards -->
+                            <div class="message-bubble assistant job-analysis-msg">
+                                @RenderJobAnalysis(msg.Text)
+                                <div class="bubble-time">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</div>
+                            </div>
+                        }
+                        else if (!msg.IsUser && msg.LearningData is not null)
                         {
                             <!-- Structured language learning response: 3 boxes -->
                             <div class="learning-response">
@@ -194,14 +202,14 @@
                               @onkeydown="HandleKeyDown"
                               @onfocus="() => isInputFocused = true"
                               @onblur="() => isInputFocused = false"
-                              placeholder="Type a message…"
-                              maxlength="500"
+                              placeholder="Type a message… (paste a full job posting to analyze it)"
+                              maxlength="4000"
                               rows="2"
                               disabled="@isLoading" />
                     <div class="input-footer">
                         <span class="input-hint">Enter to send · Shift+Enter for newline</span>
-                        <span class="char-counter @(inputText.Length > 450 ? "near-limit" : "")">
-                            @inputText.Length / 500
+                        <span class="char-counter @(inputText.Length > 3500 ? "near-limit" : "")">
+                            @inputText.Length / 4000
                         </span>
                     </div>
                 </div>
@@ -507,9 +515,9 @@
     {
         var text = inputText.Trim();
         if (string.IsNullOrWhiteSpace(text) || isLoading) return;
-        if (text.Length > 500)
+        if (text.Length > 4000)
         {
-            errorMessage = "Message must not exceed 500 characters.";
+            errorMessage = "Message must not exceed 4000 characters.";
             return;
         }
 
@@ -552,6 +560,91 @@
             isLoading = false;
             await ScrollToBottom();
         }
+    }
+
+    // ── Job analysis markdown → colored HTML cards ─────────
+    private static MarkupString RenderJobAnalysis(string text)
+    {
+        var sectionStyles = new Dictionary<string, (string bg, string border, string color)>
+        {
+            ["📋"] = ("#EFF6FF", "#3B82F6", "#1D4ED8"),
+            ["🎯"] = ("#F5F3FF", "#7C3AED", "#5B21B6"),
+            ["📄"] = ("#F0FDF4", "#10B981", "#065F46"),
+            ["🔑"] = ("#FFFBEB", "#F59E0B", "#92400E"),
+            ["⚡"] = ("#FFF7ED", "#F97316", "#9A3412"),
+        };
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<div class=\"job-analysis\">");
+
+        var sections = System.Text.RegularExpressions.Regex
+            .Split(text.Trim(), @"(?=## )");
+
+        foreach (var section in sections)
+        {
+            if (string.IsNullOrWhiteSpace(section)) continue;
+
+            var nl = section.IndexOf('\n');
+            string header, body;
+            if (nl < 0) { header = section.TrimStart('#').Trim(); body = ""; }
+            else { header = section[..nl].TrimStart('#').Trim(); body = section[(nl + 1)..].Trim(); }
+
+            var matched = sectionStyles.FirstOrDefault(kv => header.Contains(kv.Key));
+            var (bg, border, color) = matched.Value != default
+                ? matched.Value
+                : ("#F9FAFB", "#9CA3AF", "#374151");
+
+            sb.Append($"<div class=\"job-section\" style=\"background:{bg};border-left:4px solid {border}\">");
+            sb.Append($"<div class=\"job-section-title\" style=\"color:{color}\">{System.Net.WebUtility.HtmlEncode(header)}</div>");
+            sb.Append("<div class=\"job-section-body\">");
+            sb.Append(JobMarkdownToHtml(body));
+            sb.Append("</div></div>");
+        }
+
+        sb.Append("</div>");
+        return new MarkupString(sb.ToString());
+    }
+
+    private static string JobMarkdownToHtml(string text)
+    {
+        var lines = text.Split('\n');
+        var sb = new System.Text.StringBuilder();
+        var inList = false;
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrEmpty(line))
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                continue;
+            }
+            if (line.StartsWith("- "))
+            {
+                if (!inList) { sb.Append("<ul class=\"job-list\">"); inList = true; }
+                sb.Append($"<li>{JobFormatInline(line[2..])}</li>");
+            }
+            else
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                sb.Append($"<p>{JobFormatInline(line)}</p>");
+            }
+        }
+        if (inList) sb.Append("</ul>");
+        return sb.ToString();
+    }
+
+    private static string JobFormatInline(string text)
+    {
+        var encoded = System.Net.WebUtility.HtmlEncode(text);
+        // bold: **text** → <strong>
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        // inline code: `text` → <code>
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"`(.+?)`",
+            "<code style=\"background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:0.82em\">$1</code>");
+        return encoded;
     }
 
     private async Task ScrollToBottom()
