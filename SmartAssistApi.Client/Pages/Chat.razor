@@ -18,7 +18,9 @@
             New Chat
         </button>
 
-        <!-- Language Learning Panel -->
+        <!-- Language Learning Panel (only in language chat) -->
+        @if (currentToolType == "language")
+        {
         <div class="ll-panel">
             <label class="ll-toggle-row" title="@(languageLearningLocked ? "Language mode is active for this session" : "")">
                 <span class="ll-toggle-label">🌍 Language Learning</span>
@@ -48,6 +50,7 @@
                 </div>
             }
         </div>
+        }
 
         <!-- Session list (filtered by current tool type) -->
         @{
