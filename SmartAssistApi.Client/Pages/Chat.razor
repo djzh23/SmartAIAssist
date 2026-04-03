@@ -3,6 +3,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @using SmartAssistApi.Client.Models
+@implements IDisposable
 
 <div class="chat-layout">
 
@@ -262,11 +263,11 @@
 
     private static string? GetToolBadge(string toolType) => toolType switch
     {
-        "weather"  => "🌤️",
-        "language" => "🌍",
-        "jokes"    => "😄",
-        "summary"  => "📝",
-        _          => null
+        "weather"     => "🌤️",
+        "language"    => "🌍",
+        "jokes"       => "😄",
+        "jobanalyzer" => "💼",
+        _             => null
     };
 
     private void UpdateLanguageMode()
@@ -305,6 +306,11 @@
         await SaveSessionsToStorage();
     }
 
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await LoadSessionsFromStorage();
@@ -312,13 +318,56 @@
         var toolParam = GetQueryParam(Nav.Uri, "tool");
         if (toolParam is not null)
         {
-            await ActivateToolMode(toolParam);
+            await SwitchToToolContext(toolParam);
         }
         else if (activeSessionId is not null)
         {
             currentToolType = sessionToolTypes.GetValueOrDefault(activeSessionId, "general");
             UpdateLanguageMode();
         }
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _ = HandleToolChange();
+    }
+
+    private async Task HandleToolChange()
+    {
+        var uri = new Uri(Nav.Uri);
+        if (!uri.AbsolutePath.EndsWith("/chat", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var toolParam = GetQueryParam(Nav.Uri, "tool") ?? "general";
+        await SwitchToToolContext(toolParam);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SwitchToToolContext(string tool)
+    {
+        currentToolType = tool;
+        UpdateLanguageMode();
+
+        // Re-use existing session for this tool type if one exists
+        var existingId = sessionOrder.FirstOrDefault(id =>
+            sessions.ContainsKey(id) &&
+            sessionToolTypes.GetValueOrDefault(id, "general") == tool);
+
+        if (existingId is not null)
+        {
+            activeSessionId = existingId;
+            errorMessage = null;
+            await SaveSessionsToStorage();
+        }
+        else
+        {
+            await ActivateToolMode(tool);
+        }
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
     }
 
     private static string? GetQueryParam(string url, string key)
@@ -354,11 +403,11 @@
 
         string? welcomeText = tool switch
         {
-            "weather"  => "🌤️ Weather Assistant activated! Ask me about weather in any city.\nTry: 'Wie ist das Wetter in Berlin?'",
-            "summary"  => "📝 Text Summarizer ready! Paste any text and I'll summarize it.",
-            "jokes"    => "😄 Joke mode on! Ask me for a joke anytime.",
-            "language" => "🌍 Language Learning Mode activated!\nI will translate your messages and respond in Spanish.\nChange your target language in the panel on the left.\nTry writing: 'Hallo, wie geht es dir?'",
-            _          => null
+            "weather"     => "🌤️ Weather Assistant activated! Ask me about weather in any city.\nTry: 'Wie ist das Wetter in Berlin?'",
+            "jokes"       => "😄 Joke mode on! Ask me for a joke anytime.",
+            "language"    => "🌍 Language Learning Mode activated!\nI will translate your messages and respond in Spanish.\nChange your target language in the panel on the left.\nTry writing: 'Hallo, wie geht es dir?'",
+            "jobanalyzer" => "💼 Job Analyzer ready!\nPaste a job posting text or share a URL.\nI'll analyze the role and give you personalized CV tips.\n\nTry: 'Analyze this job: [paste your job posting here]'",
+            _             => null
         };
 
         if (welcomeText is not null)

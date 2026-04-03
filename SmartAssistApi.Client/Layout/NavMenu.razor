@@ -1,3 +1,6 @@
+@inject NavigationManager Nav
+@implements IDisposable
+
 <div class="nav-brand">
     <span class="brand-logo">⚡</span>
     <span class="brand-name">SmartAssist</span>
@@ -17,24 +20,75 @@
     </NavLink>
 
     <div class="nav-section-label">My Chats</div>
-    <NavLink class="nav-link-item" href="chat" Match="NavLinkMatch.All">
+    <a class="nav-link-item @IsActiveGeneral()" @onclick='() => NavigateToChat("")' @onclick:preventDefault href="chat">
         <span class="nav-icon">💬</span>
         <span>General Chat</span>
-    </NavLink>
-    <a class="nav-link-item" href="chat?tool=weather">
+    </a>
+    <a class="nav-link-item @IsActiveTool("weather")" @onclick='() => NavigateToChat("weather")' @onclick:preventDefault href="chat?tool=weather">
         <span class="nav-icon">🌤️</span>
         <span>Weather</span>
     </a>
-    <a class="nav-link-item" href="chat?tool=summary">
-        <span class="nav-icon">📝</span>
-        <span>Summary</span>
+    <a class="nav-link-item @IsActiveTool("jobanalyzer")" @onclick='() => NavigateToChat("jobanalyzer")' @onclick:preventDefault href="chat?tool=jobanalyzer">
+        <span class="nav-icon">💼</span>
+        <span>Job Analyzer</span>
     </a>
-    <a class="nav-link-item" href="chat?tool=jokes">
+    <a class="nav-link-item @IsActiveTool("jokes")" @onclick='() => NavigateToChat("jokes")' @onclick:preventDefault href="chat?tool=jokes">
         <span class="nav-icon">😄</span>
         <span>Jokes</span>
     </a>
-    <a class="nav-link-item" href="chat?tool=language">
+    <a class="nav-link-item @IsActiveTool("language")" @onclick='() => NavigateToChat("language")' @onclick:preventDefault href="chat?tool=language">
         <span class="nav-icon">🌍</span>
         <span>Language</span>
     </a>
 </nav>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void NavigateToChat(string tool)
+    {
+        var url = string.IsNullOrEmpty(tool) ? "chat" : $"chat?tool={tool}";
+        Nav.NavigateTo(url, forceLoad: false);
+    }
+
+    private string IsActiveTool(string tool)
+    {
+        var current = GetQueryParam(Nav.Uri, "tool");
+        return current == tool ? "active" : "";
+    }
+
+    private string IsActiveGeneral()
+    {
+        var uri = new Uri(Nav.Uri);
+        var isChat = uri.AbsolutePath.EndsWith("/chat", StringComparison.OrdinalIgnoreCase)
+                  || uri.AbsolutePath.EndsWith("/chat/", StringComparison.OrdinalIgnoreCase);
+        var hasTool = uri.Query.Contains("tool=");
+        return isChat && !hasTool ? "active" : "";
+    }
+
+    private static string? GetQueryParam(string url, string key)
+    {
+        var query = new Uri(url).Query.TrimStart('?');
+        if (string.IsNullOrEmpty(query)) return null;
+        foreach (var part in query.Split('&'))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length == 2 && kv[0] == key)
+                return Uri.UnescapeDataString(kv[1]);
+        }
+        return null;
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

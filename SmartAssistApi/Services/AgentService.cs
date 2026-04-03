@@ -1,10 +1,8 @@
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
-using Anthropic.SDK.Constants;
 using Anthropic.SDK.Messaging;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services.Tools;
-using System.Reflection;
 using Tool = Anthropic.SDK.Common.Tool;
 
 namespace SmartAssistApi.Services;
@@ -23,11 +21,13 @@ public class AgentService(IConfiguration config) : IAgentService
         {
             Tool.FromFunc(
                 "get_weather",
-                ([FunctionParameter("Name der Stadt", true)] string city) => GetWeather(city)
+                ([FunctionParameter("Name der Stadt", true)] string city) =>
+                    WeatherTool.GetWeatherAsync(city).GetAwaiter().GetResult()
             ),
             Tool.FromFunc(
-                "summarize_text",
-                ([FunctionParameter("Der zu kürzende Text", true)] string text) => Summarize(text)
+                "analyze_job",
+                ([FunctionParameter("Job posting text or URL of the job listing", true)] string input) =>
+                    JobAnalyzerTool.AnalyzeJobAsync(input).GetAwaiter().GetResult()
             ),
             Tool.FromFunc(
                 "translate_text",
@@ -73,10 +73,35 @@ public class AgentService(IConfiguration config) : IAgentService
         {
             messages.Add(response.Message);
 
+            string? jobText = null;
             foreach (var toolCall in response.ToolCalls)
             {
                 var result = toolCall.Invoke<string>();
+                if (result.StartsWith("JOB_ANALYSIS_REQUEST:", StringComparison.Ordinal))
+                    jobText = result["JOB_ANALYSIS_REQUEST:".Length..];
                 messages.Add(new Message(toolCall, result));
+            }
+
+            // Job analysis: make a dedicated Claude call with job analysis system prompt
+            if (jobText is not null)
+            {
+                var jobParams = new MessageParameters
+                {
+                    Model = config["Anthropic:Model"]!,
+                    MaxTokens = config.GetValue<int>("Anthropic:MaxTokens"),
+                    Stream = false,
+                    Temperature = config.GetValue<decimal>("Anthropic:Temperature"),
+                    Messages = new List<Message>
+                    {
+                        new(RoleType.User, $"Job posting:\n\n{jobText}")
+                    },
+                    System = new List<SystemMessage>
+                    {
+                        new(JobAnalyzerTool.BuildJobAnalysisPrompt())
+                    }
+                };
+                var jobResponse = await _client.Messages.GetClaudeMessageAsync(jobParams);
+                return new AgentResponse(jobResponse.Message.ToString(), "analyze_job");
             }
 
             var final = await _client.Messages.GetClaudeMessageAsync(parameters);
@@ -102,24 +127,5 @@ public class AgentService(IConfiguration config) : IAgentService
         }
 
         return new AgentResponse(rawText);
-    }
-
-    private static string GetWeather(string city)
-    {
-        var data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["berlin"] = "18°C, bewölkt",
-            ["hamburg"] = "14°C, regnerisch",
-            ["münchen"] = "22°C, sonnig"
-        };
-        return data.TryGetValue(city, out var w)
-            ? $"Wetter in {city}: {w}"
-            : $"Keine Daten für {city}.";
-    }
-
-    private static string Summarize(string text)
-    {
-        var words = text.Split(' ');
-        return $"Zusammenfassung ({words.Length} Wörter): {string.Join(" ", words.Take(15))}...";
     }
 }

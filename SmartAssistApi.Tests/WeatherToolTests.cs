@@ -5,49 +5,46 @@ namespace SmartAssistApi.Tests;
 public class WeatherToolTests
 {
     [Theory]
-    [InlineData("berlin")]
-    [InlineData("Berlin")]
-    [InlineData("BERLIN")]
-    public void GetWeather_KnownCity_ReturnsCityAndWeatherData(string city)
+    [InlineData(0, "☀️")]
+    [InlineData(1, "⛅")]
+    [InlineData(2, "⛅")]
+    [InlineData(3, "⛅")]
+    [InlineData(45, "🌫️")]
+    [InlineData(51, "🌦️")]
+    [InlineData(61, "🌧️")]
+    [InlineData(71, "❄️")]
+    [InlineData(80, "🌧️")]
+    [InlineData(95, "⛈️")]
+    [InlineData(99, "🌡️")]
+    public void GetWeatherCondition_KnownCode_ReturnsCorrectEmoji(int code, string expectedEmoji)
     {
-        var result = WeatherTool.GetWeather(city);
+        var result = WeatherTool.GetWeatherCondition(code);
 
-        Assert.Contains("berlin", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("18°C", result);
+        Assert.Contains(expectedEmoji, result);
     }
 
     [Fact]
-    public void GetWeather_Hamburg_ReturnsCorrectWeather()
+    public void GetWeatherCondition_UnknownCode_ReturnsDefault()
     {
-        var result = WeatherTool.GetWeather("hamburg");
+        var result = WeatherTool.GetWeatherCondition(999);
 
-        Assert.Contains("14°C", result);
-        Assert.Contains("regnerisch", result);
+        Assert.Contains("🌡️", result);
     }
 
     [Fact]
-    public void GetWeather_München_ReturnsCorrectWeather()
+    public async Task GetWeatherAsync_InvalidCity_ReturnsNotFoundMessage()
     {
-        var result = WeatherTool.GetWeather("münchen");
+        var result = await WeatherTool.GetWeatherAsync("xyz_nonexistent_city_test_abc123");
 
-        Assert.Contains("22°C", result);
-        Assert.Contains("sonnig", result);
+        Assert.False(string.IsNullOrWhiteSpace(result));
+        Assert.Contains("nicht gefunden", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void GetWeather_UnknownCity_ReturnsNotFoundMessage()
+    public async Task GetWeatherAsync_EmptyCity_ReturnsErrorOrNotFound()
     {
-        var result = WeatherTool.GetWeather("tokio");
+        var result = await WeatherTool.GetWeatherAsync("");
 
-        Assert.Contains("tokio", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("°C", result);
-    }
-
-    [Fact]
-    public void GetWeather_EmptyString_ReturnsNotFoundMessage()
-    {
-        var result = WeatherTool.GetWeather("");
-
-        Assert.Contains("verfügbar", result);
+        Assert.False(string.IsNullOrWhiteSpace(result));
     }
 }
