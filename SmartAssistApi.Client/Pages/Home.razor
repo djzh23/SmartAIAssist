@@ -1,5 +1,4 @@
 @page "/"
-@inject NavigationManager Nav
 
 <PageTitle>SmartAssist</PageTitle>
 
@@ -43,22 +42,30 @@
     </div>
 </section>
 
-<!-- SECTION 3: Available Tools -->
-<section class="featured-section">
+<!-- SECTION 3: Why SmartAssist? -->
+<section class="why-section">
     <div class="section-inner">
-        <h2 class="section-title">Available Tools</h2>
-        <div class="featured-grid">
-            @foreach (var tool in featuredTools)
-            {
-                <a href="/tools" class="featured-card">
-                    <span class="featured-card-icon">@tool.Icon</span>
-                    <div class="featured-card-body">
-                        <div class="featured-card-name">@tool.Name</div>
-                        <div class="featured-card-desc">@tool.Description</div>
-                    </div>
-                    <span class="featured-card-arrow">Try it →</span>
-                </a>
-            }
+        <h2 class="section-title">Why SmartAssist?</h2>
+        <div class="why-grid">
+            <div class="why-card">
+                <div class="why-icon">🧠</div>
+                <h3 class="why-card-title">AI-Powered</h3>
+                <p class="why-card-text">Powered by Anthropic Claude — one of the most advanced AI models available.</p>
+            </div>
+            <div class="why-card">
+                <div class="why-icon">🛠️</div>
+                <h3 class="why-card-title">Specialized Tools</h3>
+                <p class="why-card-text">Each tool is purpose-built for its task — not a generic chatbot.</p>
+            </div>
+            <div class="why-card">
+                <div class="why-icon">🌍</div>
+                <h3 class="why-card-title">Learn While You Chat</h3>
+                <p class="why-card-text">Our language learning mode helps you practice new languages naturally.</p>
+            </div>
+        </div>
+        <div class="why-cta">
+            <p class="why-cta-label">Ready to start?</p>
+            <a href="/tools" class="btn-hero-primary">Explore Tools →</a>
         </div>
     </div>
 </section>
@@ -68,17 +75,6 @@
     Built with .NET 9 · Blazor · Anthropic Claude API · Docker
 </footer>
 
-@code {
-    private record FeaturedTool(string Icon, string Name, string Description);
-
-    private readonly FeaturedTool[] featuredTools =
-    [
-        new("🌤️", "Weather Assistant",      "Get real-time weather for any city"),
-        new("📝", "Text Summarizer",         "Summarize any long text instantly"),
-        new("😄", "Joke Generator",          "Get a random joke to brighten your day"),
-        new("🌍", "Language Learning Mode",  "Chat and learn a new language simultaneously"),
-    ];
-}
 
 <style>
     /* ── Hero ────────────────────────────────────────────── */
@@ -239,64 +235,54 @@
         margin: 0;
     }
 
-    /* ── Featured tools grid ─────────────────────────────── */
-    .featured-section {
+    /* ── Why SmartAssist ────────────────────────────────── */
+    .why-section {
         padding: var(--space-xl) 0;
     }
 
-    .featured-grid {
+    .why-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: var(--space-sm);
-    }
-
-    .featured-card {
-        display: flex;
-        align-items: center;
+        grid-template-columns: repeat(3, 1fr);
         gap: var(--space-md);
+        margin-bottom: var(--space-xl);
+    }
+
+    .why-card {
         background: var(--color-bg);
-        border: 1.5px solid #e5e7eb;
+        border: 1px solid #e5e7eb;
         border-radius: var(--radius-md);
-        padding: var(--space-md) var(--space-lg);
-        text-decoration: none;
-        color: inherit;
-        transition: box-shadow 0.15s, border-color 0.15s;
+        padding: var(--space-lg);
+        text-align: center;
     }
 
-    .featured-card:hover {
-        box-shadow: var(--shadow-md);
-        border-color: var(--color-primary);
-        text-decoration: none;
-        color: inherit;
+    .why-icon {
+        font-size: 2rem;
+        margin-bottom: var(--space-sm);
     }
 
-    .featured-card-icon {
-        font-size: 1.8rem;
-        flex-shrink: 0;
-    }
-
-    .featured-card-body {
-        flex: 1;
-    }
-
-    .featured-card-name {
+    .why-card-title {
+        font-size: 1rem;
         font-weight: 600;
-        font-size: 0.95rem;
         color: var(--color-text);
-        margin-bottom: 2px;
+        margin-bottom: var(--space-xs);
     }
 
-    .featured-card-desc {
-        font-size: 0.8rem;
+    .why-card-text {
+        font-size: 0.85rem;
         color: var(--color-text-muted);
-        line-height: 1.4;
+        line-height: 1.5;
+        margin: 0;
     }
 
-    .featured-card-arrow {
-        font-size: 0.8rem;
-        color: var(--color-primary);
-        font-weight: 500;
-        flex-shrink: 0;
+    .why-cta {
+        text-align: center;
+        padding-top: var(--space-md);
+    }
+
+    .why-cta-label {
+        font-size: 1rem;
+        color: var(--color-text-muted);
+        margin-bottom: var(--space-md);
     }
 
     /* ── Footer ──────────────────────────────────────────── */
@@ -318,7 +304,7 @@
             grid-template-columns: 1fr;
         }
 
-        .featured-grid {
+        .why-grid {
             grid-template-columns: 1fr;
         }
 

@@ -6,16 +6,35 @@
 <div class="nav-section-separator"></div>
 
 <nav class="nav-links">
+    <div class="nav-section-label">Main</div>
     <NavLink class="nav-link-item" href="" Match="NavLinkMatch.All">
-        <span class="nav-icon">○</span>
+        <span class="nav-icon">🏠</span>
         <span>Home</span>
     </NavLink>
-    <NavLink class="nav-link-item" href="chat">
-        <span class="nav-icon">◉</span>
-        <span>Chat</span>
-    </NavLink>
     <NavLink class="nav-link-item" href="tools">
-        <span class="nav-icon">◈</span>
+        <span class="nav-icon">🔧</span>
         <span>Tools</span>
     </NavLink>
+
+    <div class="nav-section-label">My Chats</div>
+    <NavLink class="nav-link-item" href="chat" Match="NavLinkMatch.All">
+        <span class="nav-icon">💬</span>
+        <span>General Chat</span>
+    </NavLink>
+    <a class="nav-link-item" href="chat?tool=weather">
+        <span class="nav-icon">🌤️</span>
+        <span>Weather</span>
+    </a>
+    <a class="nav-link-item" href="chat?tool=summary">
+        <span class="nav-icon">📝</span>
+        <span>Summary</span>
+    </a>
+    <a class="nav-link-item" href="chat?tool=jokes">
+        <span class="nav-icon">😄</span>
+        <span>Jokes</span>
+    </a>
+    <a class="nav-link-item" href="chat?tool=language">
+        <span class="nav-icon">🌍</span>
+        <span>Language</span>
+    </a>
 </nav>

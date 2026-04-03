@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&display=swap');
+
 /* ── Design system variables ─────────────────────────── */
 :root {
   --color-primary: #534AB7;
@@ -189,20 +191,43 @@ code {
 }
 
 .learning-box-header {
-    font-size: 11px;
-    font-weight: 600;
-    color: #6B7280;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     margin-bottom: 6px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
 }
 
-.learning-box-text {
+.learning-box-target .learning-box-header { color: #7C3AED; }
+.learning-box-native .learning-box-header { color: #6B7280; }
+.learning-box-tip    .learning-box-header { color: #D97706; }
+
+.learning-box-target .learning-box-text {
+    font-family: 'Lora', Georgia, serif;
+    font-size: 17px;
+    font-weight: 500;
+    color: #2D1B69;
+    line-height: 1.6;
+    letter-spacing: 0.3px;
+}
+
+.learning-box-native .learning-box-text {
+    font-family: system-ui, sans-serif;
     font-size: 15px;
-    color: #1a1a1a;
+    font-style: italic;
+    font-weight: 400;
+    color: #374151;
+    line-height: 1.5;
+}
+
+.learning-box-tip .learning-box-text {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    font-weight: 400;
+    color: #92400E;
     line-height: 1.5;
 }
 
@@ -229,9 +254,36 @@ code {
     padding-left: 2px;
 }
 
+/* ── Session tool badge + delete button ──────────────── */
 .session-tool-badge {
     font-size: 12px;
     line-height: 1;
     margin-right: 4px;
     flex-shrink: 0;
 }
+
+.session-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+}
+
+.session-close-btn {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: #9CA3AF;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+    transition: opacity 0.15s, color 0.15s;
+    flex-shrink: 0;
+    margin-left: 4px;
+}
+
+.session-item:hover .session-close-btn { opacity: 1; }
+.session-close-btn:hover { color: #EF4444; background: rgba(239, 68, 68, 0.1); }

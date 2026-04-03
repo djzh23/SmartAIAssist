@@ -71,14 +71,22 @@
                     var lastTime = sessions[id].LastOrDefault()?.Timestamp.ToLocalTime().ToString("HH:mm") ?? "";
                     <li class="session-item @(id == activeSessionId ? "active" : "")"
                         @onclick="() => SwitchSession(id)">
-                        <span class="session-preview">
-                            @if (badge is not null)
-                            {
-                                <span class="session-tool-badge">@badge</span>
-                            }
-                            @(preview.Length > 34 ? preview[..34] + "…" : preview)
-                        </span>
-                        <span class="session-time">@lastTime</span>
+                        <div class="session-item-content">
+                            <span class="session-preview">
+                                @if (badge is not null)
+                                {
+                                    <span class="session-tool-badge">@badge</span>
+                                }
+                                @(preview.Length > 28 ? preview[..28] + "…" : preview)
+                            </span>
+                            <span class="session-time">@lastTime</span>
+                        </div>
+                        <button class="session-close-btn"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => DeleteSession(id)"
+                                title="Close chat">
+                            ×
+                        </button>
                     </li>
                 }
             </ul>
@@ -121,7 +129,7 @@
                                         <button class="speak-btn"
                                                 type="button"
                                                 title="Speak"
-                                                @onclick="() => SpeakTextBrowser(msg.LearningData.TargetLanguageText, targetLanguageCode)">
+                                                @onclick="() => SpeakWithElevenLabs(msg.LearningData.TargetLanguageText, targetLanguageCode)">
                                             🔊
                                         </button>
                                     </div>
@@ -261,27 +269,40 @@
         _          => null
     };
 
-    private static string ToSpeechLang(string code) => code switch
-    {
-        "es" => "es-ES", "fr" => "fr-FR", "de" => "de-DE",
-        "en" => "en-US", "it" => "it-IT", "ar" => "ar-SA",
-        "pt" => "pt-PT", _ => code
-    };
-
     private void UpdateLanguageMode()
     {
         languageLearningMode = currentToolType == "language";
         languageLearningLocked = currentToolType == "language";
     }
 
-    private async Task SpeakTextBrowser(string text, string langCode)
+    private async Task SpeakWithElevenLabs(string text, string langCode)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         try
         {
-            await JS.InvokeVoidAsync("speakText", text, ToSpeechLang(langCode));
+            var audioBytes = await AgentApi.GenerateSpeechAsync(text, langCode);
+            if (audioBytes is { Length: > 0 })
+            {
+                var base64 = Convert.ToBase64String(audioBytes);
+                await JS.InvokeVoidAsync("playAudioFromBase64", base64);
+            }
         }
         catch { }
+    }
+
+    private async Task DeleteSession(string sessionId)
+    {
+        sessions.Remove(sessionId);
+        sessionOrder.Remove(sessionId);
+        sessionToolTypes.Remove(sessionId);
+
+        if (activeSessionId == sessionId)
+        {
+            activeSessionId = sessionOrder
+                .FirstOrDefault(id => sessionToolTypes.GetValueOrDefault(id, "general") == currentToolType);
+        }
+
+        await SaveSessionsToStorage();
     }
 
     protected override async Task OnInitializedAsync()
