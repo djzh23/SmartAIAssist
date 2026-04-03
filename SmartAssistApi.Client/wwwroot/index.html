@@ -34,6 +34,15 @@
             window.__smartAssistPlayer = new Audio("data:audio/mpeg;base64," + base64);
             window.__smartAssistPlayer.play();
         };
+
+        // Fallback: browser built-in TTS when ElevenLabs is unavailable
+        window.speakText = function (text, lang) {
+            if (!window.speechSynthesis) return;
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = lang || 'en';
+            window.speechSynthesis.speak(utterance);
+        };
     </script>
 </body>
 

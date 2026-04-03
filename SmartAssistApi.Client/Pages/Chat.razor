@@ -7,11 +7,21 @@
 
 <div class="chat-layout">
 
-    <!-- Hamburger (mobile) -->
-    <button class="hamburger-btn" @onclick="ToggleSidebar" aria-label="Toggle sidebar">&#9776;</button>
+    @if (sidebarOpen)
+    {
+        <div class="sidebar-overlay" @onclick="ToggleSidebar"></div>
+    }
+    else
+    {
+        <button class="sidebar-open-btn" @onclick="ToggleSidebar" title="Open sessions">→</button>
+    }
 
     <!-- Zone 1 — Session sidebar -->
     <aside class="chat-sidebar @(sidebarOpen ? "sidebar-open" : "")">
+
+        <div class="sidebar-topbar">
+            <button class="sidebar-close-btn" @onclick="ToggleSidebar" title="Close">←</button>
+        </div>
 
         <button class="new-chat-btn" @onclick="NewSession">
             <span class="new-chat-plus">+</span>
@@ -205,7 +215,7 @@
                               @onkeydown="HandleKeyDown"
                               @onfocus="() => isInputFocused = true"
                               @onblur="() => isInputFocused = false"
-                              placeholder="Type a message… (paste a full job posting to analyze it)"
+                              placeholder="@InputPlaceholder"
                               maxlength="4000"
                               rows="2"
                               disabled="@isLoading" />
@@ -297,9 +307,12 @@
             {
                 var base64 = Convert.ToBase64String(audioBytes);
                 await JS.InvokeVoidAsync("playAudioFromBase64", base64);
+                return;
             }
         }
         catch { }
+        // Fallback: browser built-in TTS
+        await JS.InvokeVoidAsync("speakText", text, langCode);
     }
 
     private async Task DeleteSession(string sessionId)
@@ -508,6 +521,15 @@
 
     private void ToggleSidebar() => sidebarOpen = !sidebarOpen;
 
+    private string InputPlaceholder => currentToolType switch
+    {
+        "weather"     => "Ask about weather in any city… e.g. 'Wie ist das Wetter in Berlin?'",
+        "jobanalyzer" => "Paste a job posting or URL to analyze…",
+        "jokes"       => "Ask for a joke… e.g. 'Tell me a programming joke'",
+        "language"    => "Write something and I'll translate it for you…",
+        _             => "Type a message…"
+    };
+
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !e.ShiftKey)
@@ -530,6 +552,7 @@
         inputText = "";
         isLoading = true;
         errorMessage = null;
+        StateHasChanged(); // immediately clear textarea and show spinner
         await SaveSessionsToStorage();
 
         try
