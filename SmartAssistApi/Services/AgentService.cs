@@ -15,6 +15,10 @@ public class AgentService(IConfiguration config) : IAgentService
 
     public async Task<AgentResponse> RunAsync(AgentRequest request)
     {
+        var isLanguageLearning = request.LanguageLearningMode
+            && request.NativeLanguage is not null
+            && request.TargetLanguage is not null;
+
         var tools = new List<Tool>
         {
             Tool.FromFunc(
@@ -49,15 +53,13 @@ public class AgentService(IConfiguration config) : IAgentService
             Tools = tools
         };
 
-        if (request.LanguageLearningMode
-            && request.NativeLanguage is not null
-            && request.TargetLanguage is not null)
+        if (isLanguageLearning)
         {
             parameters.System = new List<SystemMessage>
             {
                 new(LanguageLearningTool.BuildSystemPrompt(
-                    request.NativeLanguage,
-                    request.TargetLanguage,
+                    request.NativeLanguage!,
+                    request.TargetLanguage!,
                     request.NativeLanguageCode,
                     request.TargetLanguageCode,
                     request.Level,
@@ -78,10 +80,28 @@ public class AgentService(IConfiguration config) : IAgentService
             }
 
             var final = await _client.Messages.GetClaudeMessageAsync(parameters);
-            return new AgentResponse(final.Message.ToString(), response.ToolCalls.First().Name);
+            var finalText = final.Message.ToString();
+
+            if (isLanguageLearning)
+            {
+                var learningData = LanguageLearningTool.ParseResponse(finalText);
+                if (learningData is not null)
+                    return new AgentResponse(learningData.TargetLanguageText, response.ToolCalls.First().Name, learningData);
+            }
+
+            return new AgentResponse(finalText, response.ToolCalls.First().Name);
         }
 
-        return new AgentResponse(response.Message.ToString());
+        var rawText = response.Message.ToString();
+
+        if (isLanguageLearning)
+        {
+            var learningData = LanguageLearningTool.ParseResponse(rawText);
+            if (learningData is not null)
+                return new AgentResponse(learningData.TargetLanguageText, null, learningData);
+        }
+
+        return new AgentResponse(rawText);
     }
 
     private static string GetWeather(string city)

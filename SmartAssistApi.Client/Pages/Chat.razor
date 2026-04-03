@@ -48,8 +48,14 @@
             }
         </div>
 
-        <!-- Session list -->
-        @if (sessionOrder.Count == 0)
+        <!-- Session list (filtered by current tool type) -->
+        @{
+            var visibleSessions = sessionOrder
+                .Where(id => sessions.ContainsKey(id) &&
+                             sessionToolTypes.GetValueOrDefault(id, "general") == currentToolType)
+                .ToList();
+        }
+        @if (visibleSessions.Count == 0)
         {
             <div class="sessions-empty">
                 <span>No conversations yet</span>
@@ -58,14 +64,20 @@
         else
         {
             <ul class="session-list">
-                @foreach (var id in sessionOrder)
+                @foreach (var id in visibleSessions)
                 {
-                    if (!sessions.ContainsKey(id)) continue;
+                    var badge = GetToolBadge(currentToolType);
                     var preview = sessions[id].FirstOrDefault(m => m.IsUser)?.Text ?? "New conversation";
                     var lastTime = sessions[id].LastOrDefault()?.Timestamp.ToLocalTime().ToString("HH:mm") ?? "";
                     <li class="session-item @(id == activeSessionId ? "active" : "")"
                         @onclick="() => SwitchSession(id)">
-                        <span class="session-preview">@(preview.Length > 38 ? preview[..38] + "…" : preview)</span>
+                        <span class="session-preview">
+                            @if (badge is not null)
+                            {
+                                <span class="session-tool-badge">@badge</span>
+                            }
+                            @(preview.Length > 34 ? preview[..34] + "…" : preview)
+                        </span>
                         <span class="session-time">@lastTime</span>
                     </li>
                 }
@@ -99,121 +111,51 @@
                 {
                     @foreach (var msg in ActiveMessages)
                     {
-                        <div class="message-bubble @(msg.IsUser ? "user" : "assistant")">
-                            @if (!msg.IsUser && languageLearningMode)
-                            {
-                                var parsed = ParseAssistantMessage(msg.Text);
-                                <div class="bubble-text ll-bubble">
-                                    @if (parsed.Translation is not null)
-                                    {
-                                        <div class="ll-translation">@parsed.Translation</div>
-                                    }
-
-                                    <div class="ll-pair-grid">
-                                        @if (parsed.TargetLanguageText is not null)
-                                        {
-                                            <div class="ll-card ll-card-tl">
-                                                <div class="ll-card-title ll-card-title-with-action">
-                                                    <span>TL</span>
-                                                    <button class="ll-audio-icon-btn"
-                                                            @onclick="() => SpeakText(parsed.TargetLanguageAudio ?? parsed.TargetLanguageText, targetLanguageCode)"
-                                                            type="button"
-                                                            aria-label="Play target language audio"
-                                                            title="Play audio">
-                                                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                                                            <path d="M14 5v14l-5-4H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h4l5-4z"></path>
-                                                            <path d="M17.5 8.5a4.5 4.5 0 0 1 0 7"></path>
-                                                            <path d="M19.8 6a8 8 0 0 1 0 12"></path>
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                                <div class="ll-card-body">@parsed.TargetLanguageText</div>
-                                            </div>
-                                        }
-                                        @if (parsed.NativeLanguageText is not null)
-                                        {
-                                            <div class="ll-card ll-card-nl">
-                                                <div class="ll-card-title">NL</div>
-                                                <div class="ll-card-body">@parsed.NativeLanguageText</div>
-                                            </div>
-                                        }
+                        @if (!msg.IsUser && msg.LearningData is not null)
+                        {
+                            <!-- Structured language learning response: 3 boxes -->
+                            <div class="learning-response">
+                                <div class="learning-box learning-box-target">
+                                    <div class="learning-box-header">
+                                        <span>🌍 @targetLanguageName</span>
+                                        <button class="speak-btn"
+                                                type="button"
+                                                title="Speak"
+                                                @onclick="() => SpeakTextBrowser(msg.LearningData.TargetLanguageText, targetLanguageCode)">
+                                            🔊
+                                        </button>
                                     </div>
-
-                                    @if (parsed.Grammar is not null)
-                                    {
-                                        <div class="ll-card ll-card-grammar">
-                                            <div class="ll-card-title">Grammar</div>
-                                            <div class="ll-card-body">@parsed.Grammar</div>
-                                        </div>
-                                    }
-
-                                    @if (parsed.Vocabulary is not null)
-                                    {
-                                        <div class="ll-card ll-card-vocab">
-                                            <div class="ll-card-title">Vocabulary</div>
-                                            <div class="ll-card-body">@parsed.Vocabulary</div>
-                                        </div>
-                                    }
-
-                                    @if (parsed.MiniExercise is not null)
-                                    {
-                                        <div class="ll-card ll-card-exercise">
-                                            <div class="ll-card-title">Mini Exercise</div>
-                                            <div class="ll-card-body">@parsed.MiniExercise</div>
-                                        </div>
-                                    }
-
-                                    @if (parsed.Hint is not null)
-                                    {
-                                        <div class="ll-card ll-card-hint">
-                                            <div class="ll-card-title">Hint</div>
-                                            <div class="ll-card-body">@parsed.Hint</div>
-                                        </div>
-                                    }
-
-                                    @if (parsed.Tip is not null)
-                                    {
-                                        <div class="ll-card ll-card-tip">
-                                            <div class="ll-card-title">Tip</div>
-                                            <div class="ll-card-body">@parsed.Tip</div>
-                                        </div>
-                                    }
-
-                                    @if (parsed.FollowUpQuestion is not null)
-                                    {
-                                        <div class="ll-card ll-card-followup">
-                                            <div class="ll-card-title">Follow-up</div>
-                                            <div class="ll-card-body">@parsed.FollowUpQuestion</div>
-                                        </div>
-                                    }
-
-                                    @if (parsed.Pronunciation is not null)
-                                    {
-                                        <div class="ll-card ll-card-pronunciation">
-                                            <div class="ll-card-title">Pronunciation</div>
-                                            <div class="ll-card-body">@parsed.Pronunciation</div>
-                                        </div>
-                                    }
-
-                                    @if (parsed.MainText is not null)
-                                    {
-                                        <div class="ll-card ll-card-main">
-                                            <div class="ll-card-title">Notes</div>
-                                            <div class="ll-card-body">@parsed.MainText</div>
-                                        </div>
-                                    }
+                                    <div class="learning-box-text">@msg.LearningData.TargetLanguageText</div>
                                 </div>
-                            }
-                            else
-                            {
+                                <div class="learning-box learning-box-native">
+                                    <div class="learning-box-header">
+                                        <span>🗣️ @nativeLanguageName</span>
+                                    </div>
+                                    <div class="learning-box-text">@msg.LearningData.NativeLanguageText</div>
+                                </div>
+                                @if (msg.LearningData.LearnTip is not null)
+                                {
+                                    <div class="learning-box learning-box-tip">
+                                        <div class="learning-box-header">
+                                            <span>💡 Learn</span>
+                                        </div>
+                                        <div class="learning-box-text">@msg.LearningData.LearnTip</div>
+                                    </div>
+                                }
+                                <div class="learning-timestamp">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="message-bubble @(msg.IsUser ? "user" : "assistant")">
                                 <div class="bubble-text">@msg.Text</div>
-                            }
-                            @if (msg.ToolUsed is not null)
-                            {
-                                <span class="tool-pill">⚙ @msg.ToolUsed</span>
-                            }
-                            <div class="bubble-time">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</div>
-                        </div>
+                                @if (msg.ToolUsed is not null)
+                                {
+                                    <span class="tool-pill">⚙ @msg.ToolUsed</span>
+                                }
+                                <div class="bubble-time">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</div>
+                            </div>
+                        }
                     }
                     @if (isLoading)
                     {
@@ -277,8 +219,10 @@
 
 @code {
     private Dictionary<string, List<ChatMessage>> sessions = new();
+    private Dictionary<string, string> sessionToolTypes = new();
     private List<string> sessionOrder = new();
     private string? activeSessionId;
+    private string currentToolType = "general";
     private string inputText = "";
     private bool isLoading;
     private string? errorMessage;
@@ -308,214 +252,36 @@
             ? msgs
             : new List<ChatMessage>();
 
-    private sealed class ParsedLearningMessage
+    private static string? GetToolBadge(string toolType) => toolType switch
     {
-        public string? Translation { get; init; }
-        public string? TargetLanguageText { get; init; }
-        public string? TargetLanguageAudio { get; init; }
-        public string? NativeLanguageText { get; init; }
-        public string? Grammar { get; init; }
-        public string? Vocabulary { get; init; }
-        public string? MiniExercise { get; init; }
-        public string? Hint { get; init; }
-        public string? Tip { get; init; }
-        public string? FollowUpQuestion { get; init; }
-        public string? Pronunciation { get; init; }
-        public string? MainText { get; init; }
+        "weather"  => "🌤️",
+        "language" => "🌍",
+        "jokes"    => "😄",
+        "summary"  => "📝",
+        _          => null
+    };
+
+    private static string ToSpeechLang(string code) => code switch
+    {
+        "es" => "es-ES", "fr" => "fr-FR", "de" => "de-DE",
+        "en" => "en-US", "it" => "it-IT", "ar" => "ar-SA",
+        "pt" => "pt-PT", _ => code
+    };
+
+    private void UpdateLanguageMode()
+    {
+        languageLearningMode = currentToolType == "language";
+        languageLearningLocked = currentToolType == "language";
     }
 
-    private static ParsedLearningMessage ParseAssistantMessage(string text)
+    private async Task SpeakTextBrowser(string text, string langCode)
     {
-        var lines = text.Split('\n');
-        string? translation = null;
-        var sections = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        var mainLines = new List<string>();
-        string? currentSection = null;
-
-        foreach (var rawLine in lines)
-        {
-            var trimmed = CleanMarkdown(rawLine.Trim());
-            if (string.IsNullOrWhiteSpace(trimmed) || IsDivider(trimmed))
-                continue;
-
-            if (translation is null && trimmed.StartsWith("(") && trimmed.EndsWith(")"))
-            {
-                translation = trimmed;
-                continue;
-            }
-
-            if (TryGetSection(trimmed, out var sectionKey, out var inlineContent))
-            {
-                currentSection = sectionKey;
-                if (!string.IsNullOrWhiteSpace(inlineContent))
-                    AddSectionLine(sections, sectionKey, inlineContent);
-            }
-            else if (currentSection is not null)
-            {
-                AddSectionLine(sections, currentSection, trimmed);
-            }
-            else
-            {
-                mainLines.Add(trimmed);
-            }
-        }
-
-        return new ParsedLearningMessage
-        {
-            Translation = translation,
-            TargetLanguageText = JoinSection(sections, "TL"),
-            TargetLanguageAudio = JoinSection(sections, "TL_AUDIO"),
-            NativeLanguageText = JoinSection(sections, "NL"),
-            Grammar = JoinSection(sections, "Grammar"),
-            Vocabulary = JoinSection(sections, "Vocabulary"),
-            MiniExercise = JoinSection(sections, "Mini Exercise"),
-            Hint = JoinSection(sections, "Hint"),
-            Tip = JoinSection(sections, "Tip"),
-            FollowUpQuestion = JoinSection(sections, "Follow-up question"),
-            Pronunciation = JoinSection(sections, "Pronunciation"),
-            MainText = mainLines.Count > 0 ? string.Join("\n", mainLines).Trim() : null
-        };
-    }
-
-    private static void AddSectionLine(Dictionary<string, List<string>> sections, string key, string value)
-    {
-        if (!sections.TryGetValue(key, out var lines))
-        {
-            lines = new List<string>();
-            sections[key] = lines;
-        }
-
-        lines.Add(value);
-    }
-
-    private static string? JoinSection(Dictionary<string, List<string>> sections, string key)
-    {
-        return sections.TryGetValue(key, out var lines) && lines.Count > 0
-            ? string.Join("\n", lines).Trim()
-            : null;
-    }
-
-    private static bool IsDivider(string line)
-    {
-        return line == "---" || line == "___";
-    }
-
-    private static string CleanMarkdown(string line)
-    {
-        return line.Replace("**", string.Empty).Trim();
-    }
-
-    private static bool TryGetSection(string line, out string sectionKey, out string inlineContent)
-    {
-        inlineContent = string.Empty;
-
-        if (TryMatchSection(line, "TL_AUDIO", out inlineContent) || TryMatchSection(line, "TL AUDIO", out inlineContent))
-        {
-            sectionKey = "TL_AUDIO";
-            return true;
-        }
-
-        if (TryMatchSection(line, "TL", out inlineContent))
-        {
-            sectionKey = "TL";
-            return true;
-        }
-
-        if (TryMatchSection(line, "NL", out inlineContent))
-        {
-            sectionKey = "NL";
-            return true;
-        }
-
-        if (TryMatchSection(line, "Grammar (NL)", out inlineContent) || TryMatchSection(line, "Grammar", out inlineContent))
-        {
-            sectionKey = "Grammar";
-            return true;
-        }
-
-        if (TryMatchSection(line, "Vocabulary", out inlineContent))
-        {
-            sectionKey = "Vocabulary";
-            return true;
-        }
-
-        if (TryMatchSection(line, "Mini Exercise", out inlineContent))
-        {
-            sectionKey = "Mini Exercise";
-            return true;
-        }
-
-        if (TryMatchSection(line, "Hint (NL)", out inlineContent) || TryMatchSection(line, "Hint", out inlineContent))
-        {
-            sectionKey = "Hint";
-            return true;
-        }
-
-        if (TryMatchSection(line, "Tip", out inlineContent) || line.StartsWith("💡", StringComparison.Ordinal))
-        {
-            sectionKey = "Tip";
-            inlineContent = line.StartsWith("💡", StringComparison.Ordinal) ? line[1..].Trim() : inlineContent;
-            return true;
-        }
-
-        if (TryMatchSection(line, "Follow-up question", out inlineContent) || TryMatchSection(line, "Follow up question", out inlineContent))
-        {
-            sectionKey = "Follow-up question";
-            return true;
-        }
-
-        if (TryMatchSection(line, "Pronunciation", out inlineContent))
-        {
-            sectionKey = "Pronunciation";
-            return true;
-        }
-
-        sectionKey = string.Empty;
-        return false;
-    }
-
-    private static bool TryMatchSection(string line, string label, out string inlineContent)
-    {
-        inlineContent = string.Empty;
-        if (!line.StartsWith(label, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var remainder = line[label.Length..].TrimStart();
-        if (remainder.StartsWith(":", StringComparison.Ordinal))
-            remainder = remainder[1..].Trim();
-
-        inlineContent = remainder;
-        return true;
-    }
-
-    private async Task SpeakText(string? text, string languageCode)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return;
-
+        if (string.IsNullOrWhiteSpace(text)) return;
         try
         {
-            var audio = await AgentApi.GenerateSpeechAsync(text, languageCode);
-            if (audio is { Length: > 0 })
-            {
-                var base64 = Convert.ToBase64String(audio);
-                var audioUrl = $"data:audio/mpeg;base64,{base64}";
-                var escapedAudioUrl = System.Text.Json.JsonSerializer.Serialize(audioUrl);
-                await JS.InvokeVoidAsync("eval",
-                    "window.__smartAssistPlayer?.pause?.(); " +
-                    "window.__smartAssistPlayer = new Audio(" + escapedAudioUrl + "); " +
-                    "window.__smartAssistPlayer.play();");
-                errorMessage = null;
-            }
-            else
-            {
-                errorMessage = "Audio generation returned an empty result.";
-            }
+            await JS.InvokeVoidAsync("speakText", text, ToSpeechLang(langCode));
         }
-        catch (Exception ex)
-        {
-            errorMessage = $"Audio unavailable: {ex.Message}";
-        }
+        catch { }
     }
 
     protected override async Task OnInitializedAsync()
@@ -524,7 +290,14 @@
 
         var toolParam = GetQueryParam(Nav.Uri, "tool");
         if (toolParam is not null)
+        {
             await ActivateToolMode(toolParam);
+        }
+        else if (activeSessionId is not null)
+        {
+            currentToolType = sessionToolTypes.GetValueOrDefault(activeSessionId, "general");
+            UpdateLanguageMode();
+        }
     }
 
     private static string? GetQueryParam(string url, string key)
@@ -542,32 +315,34 @@
 
     private async Task ActivateToolMode(string tool)
     {
+        currentToolType = tool;
+        UpdateLanguageMode();
+
         var id = Guid.NewGuid().ToString()[..8];
         sessions[id] = new List<ChatMessage>();
+        sessionToolTypes[id] = tool;
         sessionOrder.Insert(0, id);
         activeSessionId = id;
         errorMessage = null;
 
-        string welcomeText = tool switch
+        if (tool == "language")
+        {
+            nativeLanguageCode = "de";
+            targetLanguageCode = "es";
+        }
+
+        string? welcomeText = tool switch
         {
             "weather"  => "🌤️ Weather Assistant activated! Ask me about weather in any city.\nTry: 'Wie ist das Wetter in Berlin?'",
             "summary"  => "📝 Text Summarizer ready! Paste any text and I'll summarize it.",
             "jokes"    => "😄 Joke mode on! Ask me for a joke anytime.",
             "language" => "🌍 Language Learning Mode activated!\nI will translate your messages and respond in Spanish.\nChange your target language in the panel on the left.\nTry writing: 'Hallo, wie geht es dir?'",
-            _          => null!
+            _          => null
         };
 
-        if (welcomeText is null) return;
+        if (welcomeText is not null)
+            sessions[id].Add(new ChatMessage { Text = welcomeText, IsUser = false });
 
-        if (tool == "language")
-        {
-            languageLearningMode = true;
-            languageLearningLocked = true;
-            nativeLanguageCode = "de";
-            targetLanguageCode = "es";
-        }
-
-        sessions[id].Add(new ChatMessage { Text = welcomeText, IsUser = false });
         await SaveSessionsToStorage();
     }
 
@@ -578,6 +353,9 @@
 
         var ids = System.Text.Json.JsonSerializer.Serialize(sessionOrder);
         await JS.InvokeVoidAsync("localStorage.setItem", "smartassist_session_order", ids);
+
+        var types = System.Text.Json.JsonSerializer.Serialize(sessionToolTypes);
+        await JS.InvokeVoidAsync("localStorage.setItem", "smartassist_session_types", types);
 
         await JS.InvokeVoidAsync("localStorage.setItem",
             "smartassist_current_session", activeSessionId ?? "");
@@ -597,6 +375,11 @@
                 sessionOrder = System.Text.Json.JsonSerializer
                     .Deserialize<List<string>>(orderData) ?? new();
 
+            var typesData = await JS.InvokeAsync<string>("localStorage.getItem", "smartassist_session_types");
+            if (!string.IsNullOrEmpty(typesData))
+                sessionToolTypes = System.Text.Json.JsonSerializer
+                    .Deserialize<Dictionary<string, string>>(typesData) ?? new();
+
             var savedSession = await JS.InvokeAsync<string>("localStorage.getItem", "smartassist_current_session");
             if (!string.IsNullOrEmpty(savedSession) && sessions.ContainsKey(savedSession))
                 activeSessionId = savedSession;
@@ -613,9 +396,11 @@
 
         sessions.Clear();
         sessionOrder.Clear();
+        sessionToolTypes.Clear();
         activeSessionId = null;
         await JS.InvokeVoidAsync("localStorage.removeItem", "smartassist_sessions");
         await JS.InvokeVoidAsync("localStorage.removeItem", "smartassist_session_order");
+        await JS.InvokeVoidAsync("localStorage.removeItem", "smartassist_session_types");
         await JS.InvokeVoidAsync("localStorage.removeItem", "smartassist_current_session");
     }
 
@@ -623,6 +408,7 @@
     {
         var id = Guid.NewGuid().ToString()[..8];
         sessions[id] = new List<ChatMessage>();
+        sessionToolTypes[id] = currentToolType;
         sessionOrder.Insert(0, id);
         activeSessionId = id;
         errorMessage = null;
@@ -634,6 +420,8 @@
         activeSessionId = id;
         errorMessage = null;
         sidebarOpen = false;
+        currentToolType = sessionToolTypes.GetValueOrDefault(id, "general");
+        UpdateLanguageMode();
         await SaveSessionsToStorage();
     }
 
@@ -680,7 +468,8 @@
             {
                 Text = response.Reply,
                 ToolUsed = response.ToolUsed,
-                IsUser = false
+                IsUser = false,
+                LearningData = response.LearningData
             });
             await SaveSessionsToStorage();
         }
@@ -702,6 +491,3 @@
             "var el = document.querySelector('.message-list'); if (el) el.scrollTop = el.scrollHeight;");
     }
 }
-
-
-

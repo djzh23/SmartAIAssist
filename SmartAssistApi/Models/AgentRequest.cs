@@ -12,4 +12,11 @@ public record AgentRequest(
     string? LearningGoal = null
 );
 
-public record AgentResponse(string Reply, string? ToolUsed = null);
+public class LanguageLearningResponse
+{
+    public string TargetLanguageText { get; set; } = "";
+    public string NativeLanguageText { get; set; } = "";
+    public string? LearnTip { get; set; }
+}
+
+public record AgentResponse(string Reply, string? ToolUsed = null, LanguageLearningResponse? LearningData = null);

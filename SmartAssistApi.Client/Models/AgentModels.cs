@@ -12,7 +12,14 @@ public record AgentRequest(
     string? LearningGoal = null
 );
 
-public record AgentResponse(string Reply, string? ToolUsed = null);
+public class LanguageLearningResponse
+{
+    public string TargetLanguageText { get; set; } = "";
+    public string NativeLanguageText { get; set; } = "";
+    public string? LearnTip { get; set; }
+}
+
+public record AgentResponse(string Reply, string? ToolUsed = null, LanguageLearningResponse? LearningData = null);
 
 public class ChatMessage
 {
@@ -20,4 +27,5 @@ public class ChatMessage
     public string? ToolUsed { get; set; }
     public bool IsUser { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public LanguageLearningResponse? LearningData { get; set; }
 }

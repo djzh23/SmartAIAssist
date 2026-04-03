@@ -51,23 +51,18 @@ public class TranslationToolTests
     }
 
     [Fact]
-    public void BuildSystemPrompt_IncludesRequestedTemplateSections()
+    public void BuildSystemPrompt_IncludesJsonStructure()
     {
         var result = LanguageLearningTool.BuildSystemPrompt("English", "French");
 
-        Assert.Contains("TL:", result);
-        Assert.Contains("TL_AUDIO:", result);
-        Assert.Contains("NL:", result);
-        Assert.Contains("Grammar (NL):", result);
-        Assert.Contains("Vocabulary:", result);
-        Assert.Contains("Mini Exercise:", result);
-        Assert.Contains("Hint (NL):", result);
-        Assert.Contains("Tip:", result);
-        Assert.Contains("Audio rules (important):", result);
+        Assert.Contains("\"target\"", result);
+        Assert.Contains("\"native\"", result);
+        Assert.Contains("\"tip\"", result);
+        Assert.Contains("JSON", result);
     }
 
     [Fact]
-    public void BuildSystemPrompt_IncludesCodesLevelAndLearningGoal()
+    public void BuildSystemPrompt_IncludesLanguageNamesInPrompt()
     {
         var result = LanguageLearningTool.BuildSystemPrompt(
             nativeLanguage: "German",
@@ -77,10 +72,8 @@ public class TranslationToolTests
             level: "a2",
             learningGoal: "daily speaking");
 
-        Assert.Contains("NativeLanguageCode: de", result);
-        Assert.Contains("TargetLanguageCode: es", result);
-        Assert.Contains("Level: A2", result);
-        Assert.Contains("LearningGoal: daily speaking", result);
+        Assert.Contains("German", result);
+        Assert.Contains("Spanish", result);
     }
 
     [Fact]
