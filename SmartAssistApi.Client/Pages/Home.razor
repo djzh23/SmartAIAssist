@@ -1,70 +1,329 @@
 @page "/"
+@inject NavigationManager Nav
 
 <PageTitle>SmartAssist</PageTitle>
 
-<div class="home-container">
-    <div class="home-card">
-        <div class="home-logo">⚡</div>
-        <h1 class="home-title">SmartAssist</h1>
-        <p class="home-description">
-            Your AI-powered assistant with real tools.<br />
-            Ask questions, get summaries, fetch live data — all in one chat.
-        </p>
-        <a href="/chat" class="btn-go-chat">Start Chatting</a>
+<!-- SECTION 1: Hero -->
+<section class="hero-section">
+    <div class="hero-inner">
+        <div class="hero-icon">⚡</div>
+        <h1 class="hero-title">SmartAssist</h1>
+        <p class="hero-subtitle">Your AI-powered assistant with specialized tools</p>
+        <div class="hero-actions">
+            <a href="/chat" class="btn-hero-primary">Start Chatting</a>
+            <a href="/tools" class="btn-hero-ghost">Explore Tools</a>
+        </div>
     </div>
-</div>
+</section>
+
+<!-- SECTION 2: How it works -->
+<section class="hiw-section">
+    <div class="section-inner">
+        <h2 class="section-title">How it works</h2>
+        <div class="hiw-grid">
+            <div class="hiw-card">
+                <div class="hiw-step-icon">🔧</div>
+                <div class="hiw-step-num">1</div>
+                <h3 class="hiw-card-title">Choose a Tool</h3>
+                <p class="hiw-card-text">Browse our specialized AI tools — weather, translation, summarization and more.</p>
+            </div>
+            <div class="hiw-card">
+                <div class="hiw-step-icon">💬</div>
+                <div class="hiw-step-num">2</div>
+                <h3 class="hiw-card-title">Start a Conversation</h3>
+                <p class="hiw-card-text">Each tool opens a dedicated chat session, pre-configured for your task.</p>
+            </div>
+            <div class="hiw-card">
+                <div class="hiw-step-icon">✨</div>
+                <div class="hiw-step-num">3</div>
+                <h3 class="hiw-card-title">Get Smart Answers</h3>
+                <p class="hiw-card-text">The AI uses the right tool automatically based on your message.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- SECTION 3: Available Tools -->
+<section class="featured-section">
+    <div class="section-inner">
+        <h2 class="section-title">Available Tools</h2>
+        <div class="featured-grid">
+            @foreach (var tool in featuredTools)
+            {
+                <a href="/tools" class="featured-card">
+                    <span class="featured-card-icon">@tool.Icon</span>
+                    <div class="featured-card-body">
+                        <div class="featured-card-name">@tool.Name</div>
+                        <div class="featured-card-desc">@tool.Description</div>
+                    </div>
+                    <span class="featured-card-arrow">Try it →</span>
+                </a>
+            }
+        </div>
+    </div>
+</section>
+
+<!-- SECTION 4: Footer -->
+<footer class="home-footer">
+    Built with .NET 9 · Blazor · Anthropic Claude API · Docker
+</footer>
+
+@code {
+    private record FeaturedTool(string Icon, string Name, string Description);
+
+    private readonly FeaturedTool[] featuredTools =
+    [
+        new("🌤️", "Weather Assistant",      "Get real-time weather for any city"),
+        new("📝", "Text Summarizer",         "Summarize any long text instantly"),
+        new("😄", "Joke Generator",          "Get a random joke to brighten your day"),
+        new("🌍", "Language Learning Mode",  "Chat and learn a new language simultaneously"),
+    ];
+}
 
 <style>
-    .home-container {
+    /* ── Hero ────────────────────────────────────────────── */
+    .hero-section {
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: 100%;
-        padding: var(--space-xl);
-        box-sizing: border-box;
-    }
-
-    .home-card {
+        min-height: 55vh;
+        padding: var(--space-xl) var(--space-md);
         text-align: center;
-        max-width: 440px;
-        padding: var(--space-xl);
     }
 
-    .home-logo {
+    .hero-inner {
+        max-width: 600px;
+        width: 100%;
+    }
+
+    .hero-icon {
         font-size: 3.5rem;
-        margin-bottom: var(--space-md);
         line-height: 1;
+        margin-bottom: var(--space-md);
     }
 
-    .home-title {
-        font-size: 2rem;
-        font-weight: 700;
+    .hero-title {
+        font-size: 2.8rem;
+        font-weight: 800;
         color: var(--color-text);
         margin-bottom: var(--space-sm);
+        letter-spacing: -0.02em;
     }
 
-    .home-description {
+    .hero-subtitle {
+        font-size: 1.1rem;
         color: var(--color-text-muted);
-        font-size: 1rem;
         line-height: 1.6;
         margin-bottom: var(--space-xl);
     }
 
-    .btn-go-chat {
+    .hero-actions {
+        display: flex;
+        gap: var(--space-sm);
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .btn-hero-primary {
         display: inline-block;
         background: var(--color-primary);
         color: white;
         text-decoration: none;
-        padding: 12px 32px;
+        padding: 13px 32px;
         border-radius: var(--radius-sm);
         font-size: 1rem;
-        font-weight: 500;
+        font-weight: 600;
         transition: background 0.15s;
     }
 
-    .btn-go-chat:hover {
+    .btn-hero-primary:hover {
         background: var(--color-primary-hover);
         color: white;
         text-decoration: none;
+    }
+
+    .btn-hero-ghost {
+        display: inline-block;
+        background: none;
+        color: var(--color-primary);
+        text-decoration: none;
+        padding: 12px 32px;
+        border-radius: var(--radius-sm);
+        font-size: 1rem;
+        font-weight: 600;
+        border: 1.5px solid var(--color-primary);
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .btn-hero-ghost:hover {
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+        text-decoration: none;
+    }
+
+    /* ── Shared section layout ───────────────────────────── */
+    .section-inner {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0 var(--space-xl) var(--space-xl);
+    }
+
+    .section-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: var(--color-text);
+        margin-bottom: var(--space-lg);
+        text-align: center;
+    }
+
+    /* ── How it works ────────────────────────────────────── */
+    .hiw-section {
+        padding: var(--space-xl) 0;
+        background: var(--color-bg-secondary);
+    }
+
+    .hiw-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--space-md);
+    }
+
+    .hiw-card {
+        background: var(--color-bg);
+        border-radius: var(--radius-md);
+        padding: var(--space-lg);
+        text-align: center;
+        position: relative;
+        border: 1px solid #e5e7eb;
+    }
+
+    .hiw-step-icon {
+        font-size: 2rem;
+        margin-bottom: var(--space-sm);
+        display: block;
+        background: var(--color-primary-light);
+        width: 56px;
+        height: 56px;
+        line-height: 56px;
+        border-radius: 50%;
+        margin: 0 auto var(--space-sm);
+    }
+
+    .hiw-step-num {
+        position: absolute;
+        top: var(--space-md);
+        right: var(--space-md);
+        width: 22px;
+        height: 22px;
+        background: var(--color-primary);
+        color: white;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .hiw-card-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--color-text);
+        margin: var(--space-sm) 0 var(--space-xs);
+    }
+
+    .hiw-card-text {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        line-height: 1.5;
+        margin: 0;
+    }
+
+    /* ── Featured tools grid ─────────────────────────────── */
+    .featured-section {
+        padding: var(--space-xl) 0;
+    }
+
+    .featured-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-sm);
+    }
+
+    .featured-card {
+        display: flex;
+        align-items: center;
+        gap: var(--space-md);
+        background: var(--color-bg);
+        border: 1.5px solid #e5e7eb;
+        border-radius: var(--radius-md);
+        padding: var(--space-md) var(--space-lg);
+        text-decoration: none;
+        color: inherit;
+        transition: box-shadow 0.15s, border-color 0.15s;
+    }
+
+    .featured-card:hover {
+        box-shadow: var(--shadow-md);
+        border-color: var(--color-primary);
+        text-decoration: none;
+        color: inherit;
+    }
+
+    .featured-card-icon {
+        font-size: 1.8rem;
+        flex-shrink: 0;
+    }
+
+    .featured-card-body {
+        flex: 1;
+    }
+
+    .featured-card-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--color-text);
+        margin-bottom: 2px;
+    }
+
+    .featured-card-desc {
+        font-size: 0.8rem;
+        color: var(--color-text-muted);
+        line-height: 1.4;
+    }
+
+    .featured-card-arrow {
+        font-size: 0.8rem;
+        color: var(--color-primary);
+        font-weight: 500;
+        flex-shrink: 0;
+    }
+
+    /* ── Footer ──────────────────────────────────────────── */
+    .home-footer {
+        text-align: center;
+        padding: var(--space-lg) var(--space-md);
+        color: var(--color-text-muted);
+        font-size: 0.78rem;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    /* ── Responsive ──────────────────────────────────────── */
+    @@media (max-width: 768px) {
+        .hero-title {
+            font-size: 2rem;
+        }
+
+        .hiw-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .featured-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .section-inner {
+            padding: 0 var(--space-md) var(--space-lg);
+        }
     }
 </style>

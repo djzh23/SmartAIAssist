@@ -1,6 +1,7 @@
 @page "/chat"
 @inject AgentApiService AgentApi
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @using SmartAssistApi.Client.Models
 
 <div class="chat-layout">
@@ -18,9 +19,9 @@
 
         <!-- Language Learning Panel -->
         <div class="ll-panel">
-            <label class="ll-toggle-row">
+            <label class="ll-toggle-row" title="@(languageLearningLocked ? "Language mode is active for this session" : "")">
                 <span class="ll-toggle-label">🌍 Language Learning</span>
-                <input type="checkbox" class="ll-toggle" @bind="languageLearningMode" />
+                <input type="checkbox" class="ll-toggle" @bind="languageLearningMode" disabled="@languageLearningLocked" />
             </label>
             @if (languageLearningMode)
             {
@@ -286,6 +287,7 @@
 
     // Language learning state
     private bool languageLearningMode;
+    private bool languageLearningLocked;
     private string nativeLanguageCode = "de";
     private string targetLanguageCode = "es";
     private const string DefaultLearningLevel = "A1";
@@ -519,6 +521,54 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadSessionsFromStorage();
+
+        var toolParam = GetQueryParam(Nav.Uri, "tool");
+        if (toolParam is not null)
+            await ActivateToolMode(toolParam);
+    }
+
+    private static string? GetQueryParam(string url, string key)
+    {
+        var query = new Uri(url).Query.TrimStart('?');
+        if (string.IsNullOrEmpty(query)) return null;
+        foreach (var part in query.Split('&'))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length == 2 && kv[0] == key)
+                return Uri.UnescapeDataString(kv[1]);
+        }
+        return null;
+    }
+
+    private async Task ActivateToolMode(string tool)
+    {
+        var id = Guid.NewGuid().ToString()[..8];
+        sessions[id] = new List<ChatMessage>();
+        sessionOrder.Insert(0, id);
+        activeSessionId = id;
+        errorMessage = null;
+
+        string welcomeText = tool switch
+        {
+            "weather"  => "🌤️ Weather Assistant activated! Ask me about weather in any city.\nTry: 'Wie ist das Wetter in Berlin?'",
+            "summary"  => "📝 Text Summarizer ready! Paste any text and I'll summarize it.",
+            "jokes"    => "😄 Joke mode on! Ask me for a joke anytime.",
+            "language" => "🌍 Language Learning Mode activated!\nI will translate your messages and respond in Spanish.\nChange your target language in the panel on the left.\nTry writing: 'Hallo, wie geht es dir?'",
+            _          => null!
+        };
+
+        if (welcomeText is null) return;
+
+        if (tool == "language")
+        {
+            languageLearningMode = true;
+            languageLearningLocked = true;
+            nativeLanguageCode = "de";
+            targetLanguageCode = "es";
+        }
+
+        sessions[id].Add(new ChatMessage { Text = welcomeText, IsUser = false });
+        await SaveSessionsToStorage();
     }
 
     private async Task SaveSessionsToStorage()

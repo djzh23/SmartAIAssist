@@ -1,63 +1,119 @@
 @page "/tools"
+@inject NavigationManager Nav
 @inject IJSRuntime JS
 
 <PageTitle>Tools — SmartAssist</PageTitle>
 
 <div class="tools-page">
     <h1 class="tools-heading">Available Tools</h1>
-    <p class="tools-subheading">Click any card to copy the example prompt to your clipboard.</p>
+    <p class="tools-subheading">Click any card to learn more and try it in chat.</p>
 
     <div class="tools-grid">
         @foreach (var tool in tools)
         {
-            <div class="tool-card @(copiedTool == tool.Id ? "copied" : "")"
-                 @onclick="() => CopyPrompt(tool)">
+            <div class="tool-card @(tool.IsFeatured ? "featured" : "")"
+                 @onclick="() => OpenModal(tool)">
                 <div class="tool-icon-circle" style="background: @tool.IconBg">
                     <span class="tool-emoji">@tool.Icon</span>
                 </div>
                 <div class="tool-name-row">
                     <div class="tool-name">@tool.Name</div>
-                    @if (tool.IsNew) { <span class="tool-badge-new">NEW</span> }
+                    @if (tool.IsFeatured) { <span class="tool-badge-featured">FEATURED</span> }
                 </div>
-                <div class="tool-id-badge">@tool.Id</div>
-                <p class="tool-description">@tool.Description</p>
-                <code class="tool-example">@tool.ExamplePrompt</code>
-                <div class="tool-copy-hint">
-                    @if (copiedTool == tool.Id)
-                    {
-                        <span class="copy-feedback">✓ Copied!</span>
-                    }
-                    else
-                    {
-                        <span class="copy-hint-text">Click to copy prompt</span>
-                    }
-                </div>
+                <p class="tool-description">@tool.ShortDescription</p>
+                <div class="tool-try-hint">Click to learn more →</div>
             </div>
         }
     </div>
 </div>
 
-@code {
-    private string? copiedTool;
+@if (selectedTool is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseModal" @onkeydown="HandleModalKey" tabindex="-1">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <div class="modal-icon">
+                <div class="modal-icon-circle" style="background: @selectedTool.IconBg">
+                    <span class="modal-emoji">@selectedTool.Icon</span>
+                </div>
+            </div>
+            <h2 class="modal-title">@selectedTool.Name</h2>
+            <p class="modal-description">@selectedTool.FullDescription</p>
 
-    private record ToolInfo(string Id, string Name, string Description, string ExamplePrompt, string Icon, string IconBg, bool IsNew = false);
+            <div class="modal-examples">
+                <div class="modal-examples-label">Example prompts</div>
+                @foreach (var example in selectedTool.Examples)
+                {
+                    <div class="modal-example-item">💬 @example</div>
+                }
+            </div>
+
+            <div class="modal-buttons">
+                <button class="modal-btn-primary" @onclick="() => TryInChat(selectedTool.ChatParam)">
+                    Try in Chat
+                </button>
+                <button class="modal-btn-ghost" @onclick="CloseModal">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ToolInfo? selectedTool;
+
+    private record ToolInfo(
+        string Id,
+        string Name,
+        string ShortDescription,
+        string FullDescription,
+        string[] Examples,
+        string Icon,
+        string IconBg,
+        string ChatParam,
+        bool IsFeatured = false
+    );
 
     private readonly List<ToolInfo> tools =
     [
-        new("get_weather",        "Wetter abfragen",          "Ruft das aktuelle Wetter für eine Stadt ab.",                                                                   "Wie ist das Wetter in Berlin?",              "🌤️", "#E8F4FD"),
-        new("summarize_text",     "Text zusammenfassen",      "Fasst einen langen Text prägnant zusammen.",                                                                    "Fasse diesen Text zusammen: ...",            "📝", "#FFF3E0"),
-        new("get_joke",           "Zufälliger Witz",          "Erzählt einen zufälligen Witz auf Deutsch.",                                                                    "Erzähl mir einen Witz",                      "😄", "#F3E8FF"),
-        new("language_learning",  "Language Learning Mode",   "Chat and learn a new language simultaneously. The AI translates your messages and responds in your target language.", "Activate Spanish mode and write in German", "🌍", "#E8FEF0", IsNew: true),
+        new("weather", "Weather Assistant",
+            "Get real-time weather for any city",
+            "Ask about weather in any city worldwide. The AI uses live weather data to give you current conditions, temperature, and helpful tips.",
+            ["Wie ist das Wetter in Berlin?", "What is the weather in Tokyo?", "Is it raining in London today?"],
+            "🌤️", "#E8F4FD", "weather"),
+
+        new("summary", "Text Summarizer",
+            "Summarize any long text instantly",
+            "Paste any long text and get a concise summary. Perfect for articles, emails, or documents you need to understand quickly.",
+            ["Fasse diesen Text zusammen: [your text here]", "Summarize this article in 3 bullet points: [text]"],
+            "📝", "#FFF3E0", "summary"),
+
+        new("jokes", "Joke Generator",
+            "Get a random joke to brighten your day",
+            "Need a laugh? Ask for a random joke anytime. The AI fetches fresh jokes and delivers them with perfect timing.",
+            ["Erzähl mir einen Witz", "Tell me a programming joke", "Give me a funny joke about dogs"],
+            "😄", "#F3E8FF", "jokes"),
+
+        new("language", "Language Learning Mode",
+            "Chat and learn a new language simultaneously",
+            "Activate a target language and start chatting in your native language. The AI translates your messages and responds in your target language — perfect for learners.",
+            ["Activate Spanish mode, then write: Hallo wie geht es dir?", "Guten Morgen — practice Spanish every day"],
+            "🌍", "#E8FEF0", "language", IsFeatured: true),
     ];
 
-    private async Task CopyPrompt(ToolInfo tool)
+    private void OpenModal(ToolInfo tool)
     {
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", tool.ExamplePrompt);
-        copiedTool = tool.Id;
-        StateHasChanged();
-        await Task.Delay(1800);
-        copiedTool = null;
-        StateHasChanged();
+        selectedTool = tool;
+        JS.InvokeVoidAsync("eval", "setTimeout(()=>document.querySelector('.modal-backdrop')?.focus(),50)");
+    }
+
+    private void CloseModal() => selectedTool = null;
+
+    private void TryInChat(string param) => Nav.NavigateTo($"/chat?tool={param}");
+
+    private void HandleModalKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseModal();
     }
 }
 
@@ -104,8 +160,9 @@
         transform: translateY(-2px);
     }
 
-    .tool-card.copied {
-        border-color: var(--color-success);
+    .tool-card.featured {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
     }
 
     .tool-icon-circle {
@@ -129,33 +186,22 @@
         gap: 8px;
     }
 
-    .tool-badge-new {
-        display: inline-block;
-        background: var(--color-success);
-        color: white;
-        font-size: 9px;
-        font-weight: 700;
-        padding: 2px 7px;
-        border-radius: var(--radius-sm);
-        letter-spacing: 0.06em;
-        flex-shrink: 0;
-    }
-
     .tool-name {
         font-weight: 600;
         font-size: 1rem;
         color: var(--color-text);
     }
 
-    .tool-id-badge {
-        font-family: monospace;
-        font-size: 0.75rem;
-        color: var(--color-primary);
-        background: var(--color-primary-light);
+    .tool-badge-featured {
         display: inline-block;
-        padding: 1px 8px;
+        background: var(--color-primary);
+        color: white;
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 7px;
         border-radius: var(--radius-pill);
-        width: fit-content;
+        letter-spacing: 0.06em;
+        flex-shrink: 0;
     }
 
     .tool-description {
@@ -165,38 +211,162 @@
         line-height: 1.5;
     }
 
-    .tool-example {
-        display: block;
+    .tool-try-hint {
         font-size: 0.8rem;
-        background: var(--color-bg-secondary);
-        border: 1px solid #e5e7eb;
-        border-radius: var(--radius-sm);
-        padding: var(--space-sm) var(--space-md);
-        color: var(--color-text);
-        font-family: 'Courier New', monospace;
-        white-space: pre-wrap;
-        word-break: break-word;
-    }
-
-    .tool-copy-hint {
-        text-align: right;
-        font-size: 0.75rem;
+        color: var(--color-primary);
         margin-top: auto;
         padding-top: var(--space-xs);
+        font-weight: 500;
     }
 
-    .copy-hint-text {
+    /* ── Modal ─────────────────────────────────────────── */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: var(--space-md);
+        animation: fadeIn 0.18s ease;
+        outline: none;
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+
+    .modal-box {
+        background: var(--color-bg);
+        border-radius: 16px;
+        max-width: 480px;
+        width: 100%;
+        padding: var(--space-xl);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-md);
+        animation: slideUp 0.18s ease;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+
+    @@keyframes slideUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .modal-icon {
+        display: flex;
+        justify-content: center;
+    }
+
+    .modal-icon-circle {
+        width: 64px;
+        height: 64px;
+        border-radius: var(--radius-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-emoji {
+        font-size: 2rem;
+        line-height: 1;
+    }
+
+    .modal-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--color-text);
+        text-align: center;
+        margin: 0;
+    }
+
+    .modal-description {
         color: var(--color-text-muted);
+        font-size: 0.9rem;
+        line-height: 1.6;
+        margin: 0;
+        text-align: center;
     }
 
-    .copy-feedback {
-        color: var(--color-success);
+    .modal-examples {
+        background: var(--color-bg-secondary);
+        border-radius: var(--radius-md);
+        padding: var(--space-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
+
+    .modal-examples-label {
+        font-size: 0.75rem;
         font-weight: 600;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+    }
+
+    .modal-example-item {
+        font-size: 0.85rem;
+        color: var(--color-text);
+        padding: 6px 10px;
+        background: var(--color-bg);
+        border-radius: var(--radius-sm);
+        border: 1px solid #e5e7eb;
+        line-height: 1.4;
+    }
+
+    .modal-buttons {
+        display: flex;
+        gap: var(--space-sm);
+        margin-top: var(--space-xs);
+    }
+
+    .modal-btn-primary {
+        flex: 1;
+        background: var(--color-primary);
+        color: white;
+        border: none;
+        border-radius: var(--radius-sm);
+        padding: 11px 20px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .modal-btn-primary:hover {
+        background: var(--color-primary-hover);
+    }
+
+    .modal-btn-ghost {
+        flex: 1;
+        background: none;
+        color: var(--color-text-muted);
+        border: 1.5px solid #e5e7eb;
+        border-radius: var(--radius-sm);
+        padding: 11px 20px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color 0.15s, color 0.15s;
+    }
+
+    .modal-btn-ghost:hover {
+        border-color: var(--color-text-muted);
+        color: var(--color-text);
     }
 
     @@media (max-width: 768px) {
         .tools-grid {
             grid-template-columns: 1fr;
+        }
+
+        .modal-box {
+            padding: var(--space-lg);
         }
     }
 </style>
