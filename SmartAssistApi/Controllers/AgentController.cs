@@ -14,8 +14,8 @@ public class AgentController(IAgentService agentService, ILogger<AgentController
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest(new { error = "Message must not be empty." });
 
-        if (request.Message.Length > 500)
-            return BadRequest(new { error = $"Message must not exceed 500 characters (received {request.Message.Length})." });
+        if (request.Message.Length > 4000)
+            return BadRequest(new { error = $"Message must not exceed 4000 characters (received {request.Message.Length})." });
 
         try
         {
