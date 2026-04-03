@@ -1,7 +1,7 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<div class="nav-brand">
+<div class="nav-brand" @onclick="CloseNav">
     <span class="brand-logo">⚡</span>
     <span class="brand-name">SmartAssist</span>
 </div>
@@ -10,11 +10,11 @@
 
 <nav class="nav-links">
     <div class="nav-section-label">Main</div>
-    <NavLink class="nav-link-item" href="" Match="NavLinkMatch.All">
+    <NavLink class="nav-link-item" href="" Match="NavLinkMatch.All" @onclick="CloseNav">
         <span class="nav-icon">🏠</span>
         <span>Home</span>
     </NavLink>
-    <NavLink class="nav-link-item" href="tools">
+    <NavLink class="nav-link-item" href="tools" @onclick="CloseNav">
         <span class="nav-icon">🔧</span>
         <span>Tools</span>
     </NavLink>
@@ -43,6 +43,8 @@
 </nav>
 
 @code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
     protected override void OnInitialized()
     {
         Nav.LocationChanged += OnLocationChanged;
@@ -53,10 +55,13 @@
         InvokeAsync(StateHasChanged);
     }
 
+    private void CloseNav() => OnClose.InvokeAsync();
+
     private void NavigateToChat(string tool)
     {
         var url = string.IsNullOrEmpty(tool) ? "chat" : $"chat?tool={tool}";
         Nav.NavigateTo(url, forceLoad: false);
+        OnClose.InvokeAsync();
     }
 
     private string IsActiveTool(string tool)

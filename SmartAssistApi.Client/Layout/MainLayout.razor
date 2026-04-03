@@ -1,12 +1,33 @@
 @inherits LayoutComponentBase
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
+    <div class="mobile-topbar">
+        <button class="hamburger @(navOpen ? "open" : "")" @onclick="ToggleNav" aria-label="Toggle navigation">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+        <span class="mobile-brand">⚡ SmartAssist</span>
     </div>
+
+    @if (navOpen)
+    {
+        <div class="nav-overlay" @onclick="CloseNav"></div>
+    }
+
+    <div class="sidebar @(navOpen ? "nav-open" : "")">
+        <NavMenu OnClose="CloseNav" />
+    </div>
+
     <main>
         <article class="content">
             @Body
         </article>
     </main>
 </div>
+
+@code {
+    private bool navOpen;
+    private void ToggleNav() => navOpen = !navOpen;
+    private void CloseNav() => navOpen = false;
+}
