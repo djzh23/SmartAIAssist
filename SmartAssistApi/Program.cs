@@ -30,6 +30,7 @@ builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddHttpClient<ISpeechService, ElevenLabsSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddScoped<ClerkAuthService>();
+builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
 builder.Services.AddScoped<StripeService>();
 builder.Services.AddCors(options =>
 {

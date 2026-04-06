@@ -7,16 +7,29 @@ public class StripeService
 {
     private readonly IConfiguration _config;
     private readonly UsageService _usageService;
+    private readonly IStripeApiClient _stripeApiClient;
+    private readonly ILogger<StripeService> _logger;
 
-    public StripeService(IConfiguration config, UsageService usageService)
+    public StripeService(
+        IConfiguration config,
+        UsageService usageService,
+        IStripeApiClient stripeApiClient,
+        ILogger<StripeService> logger)
     {
         _config = config;
         _usageService = usageService;
+        _stripeApiClient = stripeApiClient;
+        _logger = logger;
+
         StripeConfiguration.ApiKey = config["Stripe:SecretKey"]
             ?? throw new InvalidOperationException("Stripe:SecretKey missing");
     }
 
-    public async Task<string> CreateCheckoutSessionAsync(string userId, string userEmail, string plan)
+    public async Task<string> CreateCheckoutSessionAsync(
+        string userId,
+        string userEmail,
+        string plan,
+        string? correlationId = null)
     {
         var priceId = plan == "premium"
             ? _config["Stripe:PremiumPriceId"]
@@ -29,8 +42,17 @@ public class StripeService
             throw new InvalidOperationException(
                 $"Invalid Stripe price ID for {plan}. Expected a value starting with price_.");
 
-        var frontendBaseUrl = _config["Frontend:BaseUrl"]
-            ?? throw new InvalidOperationException("Frontend:BaseUrl missing");
+        var successUrl = ResolveSuccessUrl();
+        var cancelUrl = ResolveCancelUrl();
+
+        var metadata = new Dictionary<string, string>
+        {
+            ["userId"] = userId,
+            ["plan"] = plan,
+        };
+
+        if (!string.IsNullOrWhiteSpace(userEmail))
+            metadata["email"] = userEmail;
 
         var options = new SessionCreateOptions
         {
@@ -44,34 +66,38 @@ public class StripeService
                     Quantity = 1
                 }
             ],
-            Metadata = new Dictionary<string, string>
-            {
-                ["userId"] = userId,
-                ["plan"] = plan
-            },
+            Metadata = metadata,
             CustomerEmail = userEmail,
-            SuccessUrl = $"{frontendBaseUrl}/profile?upgraded=true",
-            CancelUrl = $"{frontendBaseUrl}/pricing?cancelled=true",
+            SuccessUrl = successUrl,
+            CancelUrl = cancelUrl,
         };
 
-        var service = new SessionService();
-        var session = await service.CreateAsync(options);
+        var session = await _stripeApiClient.CreateCheckoutSessionAsync(options);
+        if (string.IsNullOrWhiteSpace(session.Url))
+            throw new InvalidOperationException("Stripe checkout session was created without a URL.");
+
+        _logger.LogInformation(
+            "Stripe checkout session created. CorrelationId {CorrelationId} UserId {UserId} Plan {Plan} SessionId {SessionId}",
+            correlationId,
+            userId,
+            plan,
+            session.Id);
+
         return session.Url;
     }
 
     public async Task<string> CreatePortalSessionAsync(string customerId)
     {
-        var frontendBaseUrl = _config["Frontend:BaseUrl"]
-            ?? throw new InvalidOperationException("Frontend:BaseUrl missing");
-
         var options = new Stripe.BillingPortal.SessionCreateOptions
         {
             Customer = customerId,
-            ReturnUrl = $"{frontendBaseUrl}/profile"
+            ReturnUrl = ResolvePortalReturnUrl(),
         };
 
-        var service = new Stripe.BillingPortal.SessionService();
-        var session = await service.CreateAsync(options);
+        var session = await _stripeApiClient.CreateBillingPortalSessionAsync(options);
+        if (string.IsNullOrWhiteSpace(session.Url))
+            throw new InvalidOperationException("Stripe billing portal session was created without a URL.");
+
         return session.Url;
     }
 
@@ -87,60 +113,234 @@ public class StripeService
         }
         catch (StripeException ex)
         {
-            throw new InvalidOperationException(
-                $"Webhook signature verification failed: {ex.Message}");
+            throw new StripeWebhookSignatureException(
+                $"Webhook signature verification failed: {ex.Message}", ex);
+        }
+
+        await HandleStripeEventAsync(stripeEvent);
+    }
+
+    public async Task HandleStripeEventAsync(Event stripeEvent)
+    {
+        if (string.IsNullOrWhiteSpace(stripeEvent.Id))
+            throw new InvalidOperationException("Stripe event id is missing.");
+
+        var isFirstDelivery = await _usageService.TryAcquireStripeEventAsync(stripeEvent.Id);
+        if (!isFirstDelivery)
+        {
+            _logger.LogInformation(
+                "Duplicate Stripe webhook event ignored. EventId {StripeEventId} Type {StripeEventType}",
+                stripeEvent.Id,
+                stripeEvent.Type);
+            return;
         }
 
         switch (stripeEvent.Type)
         {
             case EventTypes.CheckoutSessionCompleted:
-                if (stripeEvent.Data.Object is Stripe.Checkout.Session session)
-                    await HandleCheckoutCompletedAsync(session);
+                if (stripeEvent.Data.Object is Stripe.Checkout.Session checkoutSession)
+                {
+                    await HandleCheckoutCompletedAsync(stripeEvent, checkoutSession);
+                    return;
+                }
                 break;
 
             case EventTypes.CustomerSubscriptionDeleted:
             case EventTypes.CustomerSubscriptionUpdated:
                 if (stripeEvent.Data.Object is Subscription subscription)
-                    await HandleSubscriptionChangedAsync(subscription);
+                {
+                    await HandleSubscriptionChangedAsync(stripeEvent, subscription);
+                    return;
+                }
                 break;
 
             case EventTypes.InvoicePaid:
                 if (stripeEvent.Data.Object is Invoice invoice)
-                    await HandleInvoicePaidAsync(invoice);
+                {
+                    await HandleInvoicePaidAsync(stripeEvent, invoice);
+                    return;
+                }
                 break;
         }
+
+        _logger.LogWarning(
+            "Stripe webhook event received with unsupported payload. EventId {StripeEventId} Type {StripeEventType}",
+            stripeEvent.Id,
+            stripeEvent.Type);
     }
 
-    private async Task HandleCheckoutCompletedAsync(Stripe.Checkout.Session session)
+    private async Task HandleCheckoutCompletedAsync(Event stripeEvent, Stripe.Checkout.Session session)
     {
+        var sessionId = session.Id ?? string.Empty;
         var userId = session.Metadata?.GetValueOrDefault("userId");
         var plan = session.Metadata?.GetValueOrDefault("plan");
 
-        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(plan))
-            return;
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(plan))
+        {
+            _logger.LogError(
+                "Stripe checkout metadata missing. EventId {StripeEventId} SessionId {StripeSessionId} UserIdMeta {UserIdMeta} PlanMeta {PlanMeta}",
+                stripeEvent.Id,
+                sessionId,
+                userId,
+                plan);
+
+            throw new InvalidOperationException(
+                $"Stripe checkout metadata missing for event {stripeEvent.Id} and session {sessionId}.");
+        }
+
+        if (plan is not ("premium" or "pro"))
+        {
+            _logger.LogError(
+                "Stripe checkout metadata contains unsupported plan. EventId {StripeEventId} SessionId {StripeSessionId} Plan {Plan}",
+                stripeEvent.Id,
+                sessionId,
+                plan);
+
+            throw new InvalidOperationException(
+                $"Unsupported Stripe plan metadata '{plan}' for event {stripeEvent.Id}.");
+        }
 
         await _usageService.SetPlanAsync(userId, plan);
 
-        if (!string.IsNullOrEmpty(session.CustomerId))
+        if (!string.IsNullOrWhiteSpace(session.CustomerId))
             await _usageService.SetStripeCustomerIdAsync(userId, session.CustomerId);
+
+        var audit = new StripeWebhookAuditRecord(
+            stripeEvent.Id,
+            stripeEvent.Type,
+            sessionId,
+            userId,
+            plan,
+            DateTimeOffset.UtcNow.ToString("O"),
+            session.CustomerId,
+            session.SubscriptionId,
+            "upgraded");
+
+        await _usageService.RecordStripeWebhookAuditAsync(audit);
+
+        _logger.LogInformation(
+            "Stripe checkout completed and plan updated. EventId {StripeEventId} SessionId {StripeSessionId} UserId {UserId} Plan {Plan} CustomerId {CustomerId}",
+            stripeEvent.Id,
+            sessionId,
+            userId,
+            plan,
+            session.CustomerId);
     }
 
-    private async Task HandleSubscriptionChangedAsync(Subscription subscription)
+    private async Task HandleSubscriptionChangedAsync(Event stripeEvent, Subscription subscription)
     {
         if (!string.Equals(subscription.Status, "canceled", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug(
+                "Stripe subscription update ignored because status is not canceled. EventId {StripeEventId} SubscriptionId {SubscriptionId} Status {Status}",
+                stripeEvent.Id,
+                subscription.Id,
+                subscription.Status);
             return;
+        }
 
-        if (string.IsNullOrEmpty(subscription.CustomerId))
-            return;
+        if (string.IsNullOrWhiteSpace(subscription.CustomerId))
+        {
+            _logger.LogError(
+                "Stripe subscription cancellation missing customer id. EventId {StripeEventId} SubscriptionId {SubscriptionId}",
+                stripeEvent.Id,
+                subscription.Id);
+            throw new InvalidOperationException($"Stripe subscription event {stripeEvent.Id} has no customer id.");
+        }
 
         var userId = await _usageService.GetUserIdByStripeCustomerIdAsync(subscription.CustomerId);
-        if (!string.IsNullOrEmpty(userId))
-            await _usageService.SetPlanAsync(userId, "free");
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _logger.LogError(
+                "No user mapping found for Stripe customer during cancellation. EventId {StripeEventId} CustomerId {CustomerId}",
+                stripeEvent.Id,
+                subscription.CustomerId);
+            throw new InvalidOperationException(
+                $"No user mapping found for Stripe customer {subscription.CustomerId} (event {stripeEvent.Id}).");
+        }
+
+        await _usageService.SetPlanAsync(userId, "free");
+
+        var audit = new StripeWebhookAuditRecord(
+            stripeEvent.Id,
+            stripeEvent.Type,
+            null,
+            userId,
+            "free",
+            DateTimeOffset.UtcNow.ToString("O"),
+            subscription.CustomerId,
+            subscription.Id,
+            "downgraded");
+
+        await _usageService.RecordStripeWebhookAuditAsync(audit);
+
+        _logger.LogInformation(
+            "Stripe subscription canceled and user downgraded. EventId {StripeEventId} UserId {UserId} CustomerId {CustomerId}",
+            stripeEvent.Id,
+            userId,
+            subscription.CustomerId);
     }
 
-    private static Task HandleInvoicePaidAsync(Invoice invoice)
+    private async Task HandleInvoicePaidAsync(Event stripeEvent, Invoice invoice)
     {
-        _ = invoice;
-        return Task.CompletedTask;
+        string? userId = null;
+
+        if (!string.IsNullOrWhiteSpace(invoice.CustomerId))
+            userId = await _usageService.GetUserIdByStripeCustomerIdAsync(invoice.CustomerId);
+
+        var audit = new StripeWebhookAuditRecord(
+            stripeEvent.Id,
+            stripeEvent.Type,
+            null,
+            userId,
+            null,
+            DateTimeOffset.UtcNow.ToString("O"),
+            invoice.CustomerId,
+            null,
+            "invoice_paid");
+
+        await _usageService.RecordStripeWebhookAuditAsync(audit);
+
+        _logger.LogInformation(
+            "Stripe invoice paid event recorded. EventId {StripeEventId} CustomerId {CustomerId} UserId {UserId}",
+            stripeEvent.Id,
+            invoice.CustomerId,
+            userId);
+    }
+
+    private string ResolveSuccessUrl()
+    {
+        var configured = _config["Frontend:SuccessUrl"];
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured;
+
+        var baseUrl = _config["Frontend:BaseUrl"]
+            ?? throw new InvalidOperationException("Frontend:BaseUrl missing");
+        return $"{baseUrl}/profile?upgraded=true";
+    }
+
+    private string ResolveCancelUrl()
+    {
+        var configured = _config["Frontend:CancelUrl"];
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured;
+
+        var baseUrl = _config["Frontend:BaseUrl"]
+            ?? throw new InvalidOperationException("Frontend:BaseUrl missing");
+        return $"{baseUrl}/pricing?cancelled=true";
+    }
+
+    private string ResolvePortalReturnUrl()
+    {
+        var configured = _config["Frontend:PortalReturnUrl"];
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured;
+
+        var baseUrl = _config["Frontend:BaseUrl"]
+            ?? throw new InvalidOperationException("Frontend:BaseUrl missing");
+        return $"{baseUrl}/profile";
     }
 }
+
+public sealed class StripeWebhookSignatureException(string message, Exception? innerException = null)
+    : Exception(message, innerException);

@@ -13,24 +13,31 @@ public class StripeControllerTests
 {
     private readonly Mock<ClerkAuthService> _clerkAuthMock = new();
     private readonly Mock<UsageService> _usageServiceMock;
-    private readonly Mock<ILogger<StripeController>> _loggerMock = new();
+    private readonly Mock<ILogger<StripeController>> _controllerLoggerMock = new();
     private readonly StripeService _stripeService;
+    private readonly IConfiguration _config;
 
     public StripeControllerTests()
     {
-        var config = new ConfigurationBuilder()
+        _config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Upstash:RestUrl"] = "https://fake.upstash.io",
                 ["Upstash:RestToken"] = "fake-token",
                 ["Stripe:SecretKey"] = "sk_test_dummy",
+                ["Stripe:PremiumPriceId"] = "price_test_premium",
+                ["Stripe:ProPriceId"] = "price_test_pro",
                 ["Frontend:BaseUrl"] = "http://localhost:5173",
                 ["Stripe:WebhookSecret"] = "whsec_dummy",
+                ["Stripe:EnableDebugEndpoint"] = "false",
             })
             .Build();
 
-        _usageServiceMock = new Mock<UsageService>(config, new HttpClient());
-        _stripeService = new StripeService(config, _usageServiceMock.Object);
+        _usageServiceMock = new Mock<UsageService>(_config, new HttpClient());
+
+        var stripeApiMock = new Mock<IStripeApiClient>();
+        var stripeLoggerMock = new Mock<ILogger<StripeService>>();
+        _stripeService = new StripeService(_config, _usageServiceMock.Object, stripeApiMock.Object, stripeLoggerMock.Object);
     }
 
     private StripeController CreateController()
@@ -39,7 +46,8 @@ public class StripeControllerTests
             _stripeService,
             _usageServiceMock.Object,
             _clerkAuthMock.Object,
-            _loggerMock.Object);
+            _config,
+            _controllerLoggerMock.Object);
 
         controller.ControllerContext = new ControllerContext
         {
@@ -57,7 +65,7 @@ public class StripeControllerTests
             .Returns(("ip:127.0.0.1", true));
         var controller = CreateController();
 
-        var result = await controller.CreateCheckout(new CheckoutRequest("premium", "test@example.com"));
+        var result = await controller.CreateCheckout(new CheckoutRequest("premium", "test@example.com", null));
 
         var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal(401, unauthorized.StatusCode);
@@ -71,10 +79,24 @@ public class StripeControllerTests
             .Returns(("user_123", false));
         var controller = CreateController();
 
-        var result = await controller.CreateCheckout(new CheckoutRequest("enterprise", "test@example.com"));
+        var result = await controller.CreateCheckout(new CheckoutRequest("enterprise", "test@example.com", null));
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal(400, badRequest.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateCheckout_UserIdMismatch_Returns403()
+    {
+        _clerkAuthMock
+            .Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("user_123", false));
+        var controller = CreateController();
+
+        var result = await controller.CreateCheckout(new CheckoutRequest("premium", "test@example.com", "user_other"));
+
+        var forbidden = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(403, forbidden.StatusCode);
     }
 
     [Fact]

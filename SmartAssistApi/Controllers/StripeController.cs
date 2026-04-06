@@ -9,15 +9,27 @@ public class StripeController(
     StripeService stripeService,
     UsageService usageService,
     ClerkAuthService clerkAuthService,
+    IConfiguration config,
     ILogger<StripeController> logger) : ControllerBase
 {
     [HttpPost("checkout")]
     public async Task<IActionResult> CreateCheckout([FromBody] CheckoutRequest request)
     {
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        var (canonicalUserId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
 
-        if (isAnonymous || userId is null)
+        if (isAnonymous || canonicalUserId is null)
             return Unauthorized("You must be logged in to upgrade.");
+
+        if (!string.IsNullOrWhiteSpace(request.UserId)
+            && !string.Equals(request.UserId, canonicalUserId, StringComparison.Ordinal))
+        {
+            logger.LogWarning(
+                "Checkout rejected due to userId mismatch. JwtUserId {JwtUserId} BodyUserId {BodyUserId}",
+                canonicalUserId,
+                request.UserId);
+
+            return StatusCode(403, new { error = "user_mismatch", message = "Body userId does not match authenticated user." });
+        }
 
         var normalizedPlan = request.Plan.ToLowerInvariant();
         if (normalizedPlan != "premium" && normalizedPlan != "pro")
@@ -25,16 +37,23 @@ public class StripeController(
 
         try
         {
+            var correlationId = HttpContext.TraceIdentifier;
             var checkoutUrl = await stripeService.CreateCheckoutSessionAsync(
-                userId,
+                canonicalUserId,
                 request.Email ?? string.Empty,
-                normalizedPlan);
+                normalizedPlan,
+                correlationId);
 
-            return Ok(new { url = checkoutUrl });
+            return Ok(new { url = checkoutUrl, correlationId });
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error creating checkout session");
+            logger.LogError(ex,
+                "Error creating checkout session. UserId {UserId} Plan {Plan} CorrelationId {CorrelationId}",
+                canonicalUserId,
+                normalizedPlan,
+                HttpContext.TraceIdentifier);
+
             return StatusCode(500, new { error = ex.Message });
         }
     }
@@ -64,7 +83,7 @@ public class StripeController(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error creating portal session");
+            logger.LogError(ex, "Error creating portal session. UserId {UserId}", userId);
             return StatusCode(500, new { error = ex.Message });
         }
     }
@@ -83,39 +102,76 @@ public class StripeController(
             await stripeService.HandleWebhookAsync(payload, stripeSignature);
             return Ok(new { received = true });
         }
-        catch (InvalidOperationException ex)
+        catch (StripeWebhookSignatureException ex)
         {
-            logger.LogWarning("Webhook verification failed: {Message}", ex.Message);
+            logger.LogWarning(ex, "Stripe webhook signature verification failed");
             return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Webhook processing error");
-            return StatusCode(500);
+            logger.LogError(ex, "Stripe webhook processing failed");
+            return StatusCode(500, new
+            {
+                error = "webhook_processing_failed",
+                message = ex.Message,
+            });
         }
     }
 
     [HttpGet("plans")]
-    public IActionResult GetPlans([FromServices] IConfiguration config)
+    public IActionResult GetPlans([FromServices] IConfiguration appConfig)
     {
         return Ok(new
         {
             premium = new
             {
-                priceId = config["Stripe:PremiumPriceId"],
+                priceId = appConfig["Stripe:PremiumPriceId"],
                 price = "4.99",
                 currency = "eur",
                 interval = "month"
             },
             pro = new
             {
-                priceId = config["Stripe:ProPriceId"],
+                priceId = appConfig["Stripe:ProPriceId"],
                 price = "9.99",
                 currency = "eur",
                 interval = "month"
             }
         });
     }
+
+    [HttpGet("debug/me")]
+    public async Task<IActionResult> DebugMe()
+    {
+        if (!config.GetValue("Stripe:EnableDebugEndpoint", false))
+            return NotFound(new { error = "debug_endpoint_disabled" });
+
+        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous || string.IsNullOrWhiteSpace(userId))
+            return Unauthorized("You must be logged in.");
+
+        try
+        {
+            var debugInfo = await usageService.GetStripeDebugInfoAsync(userId);
+            return Ok(new
+            {
+                userId = debugInfo.UserId,
+                currentStoredPlan = debugInfo.CurrentPlan,
+                lastProcessedStripeEventId = debugInfo.LastStripeEventId,
+                lastProcessedStripeEventAt = debugInfo.LastStripeEventAt,
+                lastCheckoutSessionId = debugInfo.LastCheckoutSessionId,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Stripe debug endpoint failed for user {UserId}", userId);
+            return StatusCode(500, new
+            {
+                error = "stripe_debug_failed",
+                message = ex.Message,
+            });
+        }
+    }
 }
 
-public record CheckoutRequest(string Plan, string? Email);
+public record CheckoutRequest(string Plan, string? Email, string? UserId);

@@ -63,20 +63,42 @@ public class AgentController(
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
         if (userId is null) return Unauthorized();
 
-        var lookupKey = isAnonymous ? $"anon:{userId}" : userId;
-        var plan      = isAnonymous ? "anonymous" : await usageService.GetPlanAsync(userId);
-        var usage     = await usageService.GetUsageTodayAsync(lookupKey);
-        var limit     = UsageService.GetDailyLimit(plan);
-
-        return Ok(new
+        try
         {
-            plan,
-            usageToday    = usage,
-            dailyLimit    = limit == int.MaxValue ? (int?)null : limit,
-            responsesLeft = limit == int.MaxValue ? (int?)null : Math.Max(0, limit - usage),
-            isAnonymous,
-            resetsAt      = DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-ddTHH:mm:ssZ"),
-        });
+            var lookupKey = isAnonymous ? $"anon:{userId}" : userId;
+            var plan = isAnonymous ? "anonymous" : await usageService.GetPlanStrictAsync(userId);
+            var usage = await usageService.GetUsageTodayStrictAsync(lookupKey);
+            var limit = UsageService.GetDailyLimit(plan);
+
+            logger.LogDebug(
+                "Usage read. UserId {UserId} Plan {Plan} UsageToday {UsageToday} DailyLimit {DailyLimit} IsAnonymous {IsAnonymous}",
+                userId,
+                plan,
+                usage,
+                limit,
+                isAnonymous);
+
+            return Ok(new
+            {
+                plan,
+                usageToday = usage,
+                dailyLimit = limit,
+                responsesLeft = limit == int.MaxValue ? int.MaxValue : Math.Max(0, limit - usage),
+                isAnonymous,
+                isUnlimited = limit == int.MaxValue,
+                resetsAt = DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to read usage and plan for user {UserId}", userId);
+            return StatusCode(500, new
+            {
+                error = "usage_read_failed",
+                message = "Failed to read usage and plan from storage.",
+                details = ex.Message,
+            });
+        }
     }
 
     [HttpGet("health")]
