@@ -3,6 +3,16 @@ using SmartAssistApi.Services;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
+// Map alternative env var names used on Render to the config keys the app expects.
+// Render uses UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN while docker-compose
+// maps to UPSTASH__RESTURL / UPSTASH__RESTTOKEN via its env block.
+var upstashUrl = Environment.GetEnvironmentVariable("UPSTASH_REDIS_REST_URL")
+    ?? Environment.GetEnvironmentVariable("UPSTASH__RESTURL");
+var upstashToken = Environment.GetEnvironmentVariable("UPSTASH_REDIS_REST_TOKEN")
+    ?? Environment.GetEnvironmentVariable("UPSTASH__RESTTOKEN");
+if (upstashUrl   is not null) builder.Configuration["Upstash:RestUrl"]   = upstashUrl;
+if (upstashToken is not null) builder.Configuration["Upstash:RestToken"] = upstashToken;
+
 var renderPort = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(renderPort))
 {
