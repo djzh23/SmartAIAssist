@@ -18,12 +18,11 @@ public class StripeService
 
     public async Task<string> CreateCheckoutSessionAsync(string userId, string userEmail, string plan)
     {
-        var priceId = plan == "premium"
+        var configuredId = plan == "premium"
             ? _config["Stripe:PremiumPriceId"] ?? _config["Stripe:PremiumPriceEid"]
             : _config["Stripe:ProPriceId"] ?? _config["Stripe:ProPriceEid"];
 
-        if (string.IsNullOrEmpty(priceId))
-            throw new InvalidOperationException($"Price ID for {plan} not configured");
+        var priceId = await ResolvePriceIdAsync(configuredId, plan);
 
         var frontendBaseUrl = _config["Frontend:BaseUrl"]
             ?? throw new InvalidOperationException("Frontend:BaseUrl missing");
@@ -53,6 +52,37 @@ public class StripeService
         var service = new SessionService();
         var session = await service.CreateAsync(options);
         return session.Url;
+    }
+
+    private static async Task<string> ResolvePriceIdAsync(string? configuredId, string plan)
+    {
+        if (string.IsNullOrWhiteSpace(configuredId))
+            throw new InvalidOperationException($"Price ID for {plan} not configured");
+
+        if (configuredId.StartsWith("price_", StringComparison.OrdinalIgnoreCase))
+            return configuredId;
+
+        if (!configuredId.StartsWith("prod_", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Invalid Stripe identifier for {plan}. Use price_... or prod_...");
+
+        var priceService = new PriceService();
+        var prices = await priceService.ListAsync(new PriceListOptions
+        {
+            Product = configuredId,
+            Active = true,
+            Type = "recurring",
+            Limit = 1
+        });
+
+        var priceId = prices.Data.FirstOrDefault()?.Id;
+        if (string.IsNullOrWhiteSpace(priceId))
+        {
+            throw new InvalidOperationException(
+                $"No active recurring price found for product {configuredId} ({plan}).");
+        }
+
+        return priceId;
     }
 
     public async Task<string> CreatePortalSessionAsync(string customerId)
