@@ -28,13 +28,16 @@ var allowedOrigins = localOrigins
 builder.Services.AddControllers();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddHttpClient<ISpeechService, ElevenLabsSpeechService>();
+builder.Services.AddHttpClient<UsageService>();
+builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>
     {
         policy.WithOrigins(allowedOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .WithExposedHeaders("X-Usage-Today", "X-Usage-Limit", "X-Usage-Plan");
     });
 });
 

@@ -11,7 +11,7 @@ public class WeatherToolTests
     [InlineData(143, "🌫️")]   // Mist / Fog
     [InlineData(248, "🌫️")]   // Fog
     [InlineData(266, "🌦️")]   // Light drizzle
-    [InlineData(296, "🌧️")]   // Light rain
+    [InlineData(296, "🌦️")]   // Light rain
     [InlineData(311, "🌨️")]   // Light freezing rain
     [InlineData(326, "❄️")]   // Light snow
     [InlineData(389, "⛈️")]   // Heavy rain with thunder
