@@ -308,6 +308,41 @@ public class StripeService
             userId);
     }
 
+    /// <summary>
+    /// Confirms a premium plan by reading the completed checkout session directly from Stripe.
+    /// This is used as a self-service fallback when the webhook hasn't fired yet.
+    /// </summary>
+    public async Task<string> ConfirmPlanFromSessionAsync(string authedUserId, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            throw new ArgumentException("Session ID must not be empty.", nameof(sessionId));
+
+        var session = await _stripeApiClient.GetCheckoutSessionAsync(sessionId);
+
+        // Verify the session belongs to the authenticated user
+        var sessionUserId = session.Metadata?.GetValueOrDefault("userId");
+        if (!string.Equals(sessionUserId, authedUserId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Session does not belong to the authenticated user.");
+
+        if (!string.Equals(session.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase))
+            return "free"; // Payment not completed
+
+        var plan = session.Metadata?.GetValueOrDefault("plan");
+        if (plan is not ("premium" or "pro"))
+            throw new InvalidOperationException($"Unsupported plan in session metadata: '{plan}'.");
+
+        await _usageService.SetPlanAsync(authedUserId, plan);
+
+        if (!string.IsNullOrWhiteSpace(session.CustomerId))
+            await _usageService.SetStripeCustomerIdAsync(authedUserId, session.CustomerId);
+
+        _logger.LogInformation(
+            "Plan confirmed via checkout session. UserId {UserId} Plan {Plan} SessionId {SessionId}",
+            authedUserId, plan, sessionId);
+
+        return plan;
+    }
+
     private string ResolveSuccessUrl()
     {
         var configured = _config["Frontend:SuccessUrl"];
@@ -316,7 +351,8 @@ public class StripeService
 
         var baseUrl = _config["Frontend:BaseUrl"]
             ?? throw new InvalidOperationException("Frontend:BaseUrl missing");
-        return $"{baseUrl}/profile?upgraded=true";
+        // {CHECKOUT_SESSION_ID} is replaced by Stripe with the actual session ID
+        return $"{baseUrl}/profile?upgraded=true&session_id={{CHECKOUT_SESSION_ID}}";
     }
 
     private string ResolveCancelUrl()

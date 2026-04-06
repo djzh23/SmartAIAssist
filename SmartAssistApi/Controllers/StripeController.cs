@@ -88,6 +88,33 @@ public class StripeController(
         }
     }
 
+    [HttpGet("confirm-plan")]
+    public async Task<IActionResult> ConfirmPlan([FromQuery] string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return BadRequest(new { error = "session_id query parameter is required." });
+
+        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous || string.IsNullOrWhiteSpace(userId))
+            return Unauthorized("You must be logged in.");
+
+        try
+        {
+            var confirmedPlan = await stripeService.ConfirmPlanFromSessionAsync(userId, sessionId);
+            return Ok(new { plan = confirmedPlan, confirmed = true });
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("does not belong"))
+        {
+            logger.LogWarning(ex, "Confirm-plan userId mismatch. UserId {UserId} SessionId {SessionId}", userId, sessionId);
+            return StatusCode(403, new { error = "session_mismatch", message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Confirm-plan failed. UserId {UserId} SessionId {SessionId}", userId, sessionId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpPost("webhook")]
     public async Task<IActionResult> Webhook()
     {
