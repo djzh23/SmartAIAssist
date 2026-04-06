@@ -102,14 +102,14 @@ public class StripeController(
         {
             premium = new
             {
-                priceId = config["Stripe:PremiumPriceId"] ?? config["Stripe:PremiumPriceEid"],
+                priceId = config["Stripe:PremiumPriceId"],
                 price = "4.99",
                 currency = "eur",
                 interval = "month"
             },
             pro = new
             {
-                priceId = config["Stripe:ProPriceId"] ?? config["Stripe:ProPriceEid"],
+                priceId = config["Stripe:ProPriceId"],
                 price = "9.99",
                 currency = "eur",
                 interval = "month"
