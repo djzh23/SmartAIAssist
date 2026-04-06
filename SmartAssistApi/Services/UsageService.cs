@@ -89,6 +89,28 @@ public class UsageService(IConfiguration config, HttpClient http)
         catch { /* best-effort */ }
     }
 
+    public async Task SetStripeCustomerIdAsync(string userId, string customerId)
+    {
+        try
+        {
+            await RedisSetAsync($"stripe_customer:{userId}", customerId);
+            await RedisSetAsync($"user_by_stripe:{customerId}", userId);
+        }
+        catch { }
+    }
+
+    public async Task<string?> GetUserIdByStripeCustomerIdAsync(string customerId)
+    {
+        try { return await RedisGetAsync($"user_by_stripe:{customerId}"); }
+        catch { return null; }
+    }
+
+    public async Task<string?> GetStripeCustomerIdAsync(string userId)
+    {
+        try { return await RedisGetAsync($"stripe_customer:{userId}"); }
+        catch { return null; }
+    }
+
     public static int GetDailyLimit(string plan) => plan switch
     {
         "anonymous" => 2,

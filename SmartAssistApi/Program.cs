@@ -30,6 +30,7 @@ builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddHttpClient<ISpeechService, ElevenLabsSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddScoped<ClerkAuthService>();
+builder.Services.AddScoped<StripeService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>
@@ -52,5 +53,14 @@ if (string.IsNullOrWhiteSpace(elevenLabsApiKey))
 }
 
 app.UseCors("BlazorClient");
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/stripe/webhook"))
+        context.Request.EnableBuffering();
+
+    await next();
+});
+
 app.MapControllers();
 app.Run();
