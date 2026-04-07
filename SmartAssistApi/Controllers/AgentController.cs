@@ -92,10 +92,11 @@ public class AgentController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to read usage and plan for user {UserId}", userId);
-            return StatusCode(500, new
+            // 503 = temporary storage unavailability, not a code bug — lets the client retry
+            return StatusCode(503, new
             {
                 error = "usage_read_failed",
-                message = "Failed to read usage and plan from storage.",
+                message = "Failed to read usage and plan from storage. Please retry.",
                 details = ex.Message,
             });
         }
