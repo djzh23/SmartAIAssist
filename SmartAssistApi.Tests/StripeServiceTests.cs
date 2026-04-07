@@ -187,6 +187,7 @@ public class StripeServiceTests
 
         var controller = new AgentController(
             agentServiceMock.Object,
+            new ConversationService(),
             usage,
             clerkMock.Object,
             agentLoggerMock.Object)

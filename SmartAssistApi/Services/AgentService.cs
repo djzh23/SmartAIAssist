@@ -1,4 +1,5 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
 using Anthropic.SDK.Messaging;
@@ -8,244 +9,227 @@ using Tool = Anthropic.SDK.Common.Tool;
 
 namespace SmartAssistApi.Services;
 
-public class AgentService(IConfiguration config) : IAgentService
+public class AgentService(
+    IConfiguration config,
+    ConversationService conversationService,
+    SystemPromptBuilder systemPromptBuilder,
+    JobContextExtractor jobExtractor,
+    ILogger<AgentService> logger) : IAgentService
 {
-    private readonly AnthropicClient _client = new(config["ANTHROPIC_API_KEY"]!);
+    private readonly AnthropicClient _client = new(config["ANTHROPIC_API_KEY"]
+        ?? throw new InvalidOperationException("ANTHROPIC_API_KEY missing"));
 
     public async Task<AgentResponse> RunAsync(AgentRequest request)
     {
-        var isLanguageLearning = request.LanguageLearningMode
-            && request.NativeLanguage is not null
-            && request.TargetLanguage is not null;
+        var sessionId = request.SessionId
+            ?? throw new ArgumentException("SessionId is required", nameof(request.SessionId));
+        var toolType = string.IsNullOrWhiteSpace(request.ToolType)
+            ? "general"
+            : request.ToolType.ToLowerInvariant();
 
-        var tools = new List<Tool>
-        {
-            Tool.FromFunc(
-                "get_weather",
-                ([FunctionParameter("Name der Stadt", true)] string city) =>
-                    WeatherTool.GetWeatherAsync(city).GetAwaiter().GetResult()
-            ),
-            Tool.FromFunc(
-                "analyze_job",
-                ([FunctionParameter("Job posting text or URL of the job listing", true)] string input) =>
-                    JobAnalyzerTool.AnalyzeJobAsync(input).GetAwaiter().GetResult()
-            ),
-            Tool.FromFunc(
-                "translate_text",
-                ([FunctionParameter("Text to translate", true)] string text,
-                 [FunctionParameter("Target language code (e.g. es, fr, de)", true)] string targetLanguage,
-                 [FunctionParameter("Native language code (e.g. de, en)", true)] string nativeLanguage) =>
-                    TranslationTool.TranslateAsync(text, nativeLanguage, targetLanguage).GetAwaiter().GetResult()
-            )
-        };
+        var context = await conversationService.GetContextAsync(sessionId, toolType);
 
-        var messages = new List<Message>
+        if (toolType == "jobanalyzer"
+            && request.Message.Length > 150
+            && (context.Job is null || !context.Job.IsAnalyzed))
         {
-            new(RoleType.User, request.Message)
-        };
+            var jobContext = await jobExtractor.ExtractAsync(request.Message);
+            await conversationService.UpdateContextAsync(sessionId, toolType, ctx => ctx.Job = jobContext);
+            context = await conversationService.GetContextAsync(sessionId, toolType);
+        }
+
+        if (toolType == "interviewprep"
+            && request.Message.Length > 200
+            && context.UserCV is null)
+        {
+            await conversationService.UpdateContextAsync(sessionId, toolType, ctx => ctx.UserCV = request.Message);
+            context = await conversationService.GetContextAsync(sessionId, toolType);
+        }
+
+        if (toolType == "programming" && LooksLikeCode(request.Message))
+        {
+            await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+            {
+                ctx.CurrentCodeContext = request.Message[..Math.Min(request.Message.Length, 3000)];
+                ctx.ProgrammingLanguage ??= InferProgrammingLanguage(request.Message);
+            });
+            context = await conversationService.GetContextAsync(sessionId, toolType);
+        }
+
+        await ExtractUserFactsAsync(request.Message, sessionId, toolType);
+        context = await conversationService.GetContextAsync(sessionId, toolType);
+
+        var systemPrompt = BuildSystemPrompt(toolType, context, request);
+        var history = await conversationService.GetHistoryAsync(sessionId, toolType);
+        history.Add(new Message(RoleType.User, request.Message));
 
         var parameters = new MessageParameters
         {
-            Model = config["Anthropic:Model"]!,
-            MaxTokens = config.GetValue<int>("Anthropic:MaxTokens"),
-            Stream = false,
-            Temperature = config.GetValue<decimal>("Anthropic:Temperature"),
-            Messages = messages,
-            Tools = tools
+            Model = config["Anthropic:Model"] ?? "claude-sonnet-4-5-20250929",
+            MaxTokens = 2000,
+            Temperature = 1.0m,
+            Messages = history,
+            Tools = BuildTools(toolType),
+            System = new List<SystemMessage> { new(systemPrompt) },
         };
-
-        if (isLanguageLearning)
-        {
-            parameters.System = new List<SystemMessage>
-            {
-                new(LanguageLearningTool.BuildSystemPrompt(
-                    request.NativeLanguage!,
-                    request.TargetLanguage!,
-                    request.NativeLanguageCode,
-                    request.TargetLanguageCode,
-                    request.Level,
-                    request.LearningGoal))
-            };
-        }
 
         var response = await _client.Messages.GetClaudeMessageAsync(parameters);
 
-        if (response.ToolCalls != null && response.ToolCalls.Any())
+        string finalReply;
+        string? toolUsed = null;
+
+        if (response.ToolCalls is { Count: > 0 })
         {
-            messages.Add(response.Message);
+            history.Add(response.Message);
 
-            string? jobText = null;
-            foreach (var toolCall in response.ToolCalls)
+            foreach (var call in response.ToolCalls)
             {
-                var result = toolCall.Invoke<string>();
-                if (result.StartsWith("JOB_ANALYSIS_REQUEST:", StringComparison.Ordinal))
-                    jobText = result["JOB_ANALYSIS_REQUEST:".Length..];
-                messages.Add(new Message(toolCall, result));
-            }
-
-            // Job analysis: make a dedicated Claude call with job analysis system prompt
-            if (jobText is not null)
-            {
-                var jobParams = new MessageParameters
+                string result;
+                try
                 {
-                    Model = config["Anthropic:Model"]!,
-                    MaxTokens = config.GetValue<int>("Anthropic:MaxTokens"),
-                    Stream = false,
-                    Temperature = config.GetValue<decimal>("Anthropic:Temperature"),
-                    Messages = new List<Message>
-                    {
-                        new(RoleType.User, $"Job posting:\n\n{jobText}")
-                    },
-                    System = new List<SystemMessage>
-                    {
-                        new(JobAnalyzerTool.BuildJobAnalysisPrompt())
-                    }
-                };
-                var jobResponse = await _client.Messages.GetClaudeMessageAsync(jobParams);
-                return new AgentResponse(jobResponse.Message.ToString(), "analyze_job");
+                    result = call.Invoke<string>();
+                    toolUsed = call.Name;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Tool invocation failed. SessionId {SessionId} ToolType {ToolType} ToolName {ToolName}",
+                        sessionId, toolType, call.Name);
+                    result = $"Tool execution failed: {ex.Message}";
+                }
+
+                history.Add(new Message(call, result));
             }
 
+            parameters.Messages = history;
             var final = await _client.Messages.GetClaudeMessageAsync(parameters);
-            var finalText = final.Message.ToString();
-
-            if (isLanguageLearning)
-            {
-                var learningData = LanguageLearningTool.ParseResponse(finalText);
-                if (learningData is not null)
-                    return new AgentResponse(learningData.TargetLanguageText, response.ToolCalls.First().Name, learningData);
-            }
-
-            return new AgentResponse(finalText, response.ToolCalls.First().Name);
+            finalReply = final.Message.ToString();
+            history.Add(final.Message);
         }
-
-        var rawText = response.Message.ToString();
-
-        if (isLanguageLearning)
+        else
         {
-            var learningData = LanguageLearningTool.ParseResponse(rawText);
-            if (learningData is not null)
-                return new AgentResponse(learningData.TargetLanguageText, null, learningData);
+            finalReply = response.Message.ToString();
+            history.Add(response.Message);
         }
 
-        return new AgentResponse(rawText);
+        if (toolType == "interviewprep")
+        {
+            var askedQuestion = ExtractInterviewQuestion(finalReply);
+            if (!string.IsNullOrWhiteSpace(askedQuestion))
+            {
+                await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+                {
+                    if (!ctx.PractisedQuestions.Contains(askedQuestion, StringComparer.OrdinalIgnoreCase))
+                        ctx.PractisedQuestions.Add(askedQuestion);
+                });
+            }
+        }
+
+        await conversationService.SaveHistoryAsync(sessionId, toolType, history);
+
+        return new AgentResponse(finalReply, toolUsed);
     }
 
     public async IAsyncEnumerable<AgentStreamChunk> StreamAsync(
         AgentRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var isLanguageLearning = request.LanguageLearningMode
-            && request.NativeLanguage is not null
-            && request.TargetLanguage is not null;
+        ct.ThrowIfCancellationRequested();
+        var result = await RunAsync(request);
+        yield return AgentStreamChunk.TextPart(result.Reply);
+        yield return AgentStreamChunk.Done(result.ToolUsed);
+    }
 
-        var tools = BuildTools();
-        var messages = new List<Message> { new(RoleType.User, request.Message) };
-        var baseParams = BuildParameters(messages, tools, isLanguageLearning, request);
-
-        // ── First call: non-streaming to detect tool use ──────────────────────
-        // Tool-calling requires a round-trip regardless, so the overhead is minimal.
-        var firstResponse = await _client.Messages.GetClaudeMessageAsync(baseParams);
-
-        if (firstResponse.ToolCalls is { Count: > 0 })
-        {
-            messages.Add(firstResponse.Message);
-
-            string? jobText = null;
-            foreach (var toolCall in firstResponse.ToolCalls)
-            {
-                var result = toolCall.Invoke<string>();
-                if (result.StartsWith("JOB_ANALYSIS_REQUEST:", StringComparison.Ordinal))
-                    jobText = result["JOB_ANALYSIS_REQUEST:".Length..];
-                messages.Add(new Message(toolCall, result));
-            }
-
-            if (jobText is not null)
-            {
-                // Stream the dedicated job-analysis response
-                var jobParams = new MessageParameters
+    private List<Tool> BuildTools(string toolType) => toolType switch
+    {
+        "weather" =>
+        [
+            Tool.FromFunc("get_weather",
+                ([FunctionParameter("City name", true)] string city) =>
+                    WeatherTool.GetWeatherAsync(city).Result)
+        ],
+        "jokes" =>
+        [
+            Tool.FromFunc("get_joke",
+                ([FunctionParameter("Topic optional", false)] string topic) =>
                 {
-                    Model     = config["Anthropic:Model"]!,
-                    MaxTokens = config.GetValue<int>("Anthropic:MaxTokens"),
-                    Stream    = true,
-                    Temperature = config.GetValue<decimal>("Anthropic:Temperature"),
-                    Messages  = new List<Message> { new(RoleType.User, $"Job posting:\n\n{jobText}") },
-                    System    = new List<SystemMessage> { new(JobAnalyzerTool.BuildJobAnalysisPrompt()) },
-                };
-                await foreach (var chunk in StreamTextAsync(jobParams, ct))
-                    yield return AgentStreamChunk.TextPart(chunk);
-                yield return AgentStreamChunk.Done("analyze_job");
-                yield break;
+                    _ = topic;
+                    return JokeTool.GetJokeAsync().Result;
+                })
+        ],
+        "language" =>
+        [
+            Tool.FromFunc("translate_text",
+                ([FunctionParameter("Text", true)] string text,
+                 [FunctionParameter("Target language code", true)] string lang) =>
+                    TranslationTool.TranslateAsync(text, "auto", lang).Result)
+        ],
+        _ => []
+    };
+
+    private string BuildSystemPrompt(string toolType, SessionContext context, AgentRequest request) =>
+        systemPromptBuilder.BuildPrompt(toolType, context, request);
+
+    private async Task ExtractUserFactsAsync(string message, string sessionId, string toolType)
+    {
+        var facts = new List<string>();
+
+        var patterns = new[]
+        {
+            @"(?i)\bmy name is\s+([a-z][a-z\- ]{1,30})",
+            @"(?i)\bi am\s+([a-z][a-z\- ]{2,40})",
+            @"(?i)\bi have\s+(\d+\+?\s+years?\s+of\s+experience[\w\s\-]*)",
+            @"(?i)\bi work as\s+([a-z][a-z\-\s]{2,40})",
+            @"(?i)\bi live in\s+([a-z][a-z\-\s]{2,40})",
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(message, pattern);
+            if (match.Success)
+            {
+                var fact = match.Groups[1].Value.Trim();
+                if (!string.IsNullOrWhiteSpace(fact))
+                    facts.Add(fact);
+            }
+        }
+
+        if (facts.Count == 0)
+            return;
+
+        await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+        {
+            foreach (var fact in facts)
+            {
+                if (!ctx.UserFacts.Contains(fact, StringComparer.OrdinalIgnoreCase))
+                    ctx.UserFacts.Add(fact);
             }
 
-            // Stream the follow-up response after tool results
-            baseParams.Messages = messages;
-            baseParams.Stream   = true;
-            await foreach (var chunk in StreamTextAsync(baseParams, ct))
-                yield return AgentStreamChunk.TextPart(chunk);
-            yield return AgentStreamChunk.Done(firstResponse.ToolCalls.First().Name);
-            yield break;
-        }
-
-        // ── No tools — re-stream the first response's content ─────────────────
-        // We already have the full text; emit it in one chunk for simplicity,
-        // OR re-issue as a streaming call for incremental display.
-        var streamParams = BuildParameters(
-            new List<Message> { new(RoleType.User, request.Message) }, tools, isLanguageLearning, request);
-        streamParams.Stream = true;
-        await foreach (var chunk in StreamTextAsync(streamParams, ct))
-            yield return AgentStreamChunk.TextPart(chunk);
-        yield return AgentStreamChunk.Done();
+            if (ctx.UserFacts.Count > 30)
+                ctx.UserFacts = ctx.UserFacts.TakeLast(30).ToList();
+        });
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    private static bool LooksLikeCode(string text) =>
+        text.Contains("```", StringComparison.Ordinal)
+        || Regex.IsMatch(text, @"(?m)^\s*(public|private|class|function|def|const|let|var|if\s*\(|for\s*\(|while\s*\()")
+        || text.Contains(";", StringComparison.Ordinal);
 
-    private List<Tool> BuildTools() =>
-    [
-        Tool.FromFunc("get_weather",
-            ([FunctionParameter("Name der Stadt", true)] string city) =>
-                WeatherTool.GetWeatherAsync(city).GetAwaiter().GetResult()),
-        Tool.FromFunc("analyze_job",
-            ([FunctionParameter("Job posting text or URL", true)] string input) =>
-                JobAnalyzerTool.AnalyzeJobAsync(input).GetAwaiter().GetResult()),
-        Tool.FromFunc("translate_text",
-            ([FunctionParameter("Text to translate", true)] string text,
-             [FunctionParameter("Target language code", true)] string targetLanguage,
-             [FunctionParameter("Native language code",  true)] string nativeLanguage) =>
-                TranslationTool.TranslateAsync(text, nativeLanguage, targetLanguage).GetAwaiter().GetResult()),
-    ];
-
-    private MessageParameters BuildParameters(
-        List<Message> messages, List<Tool> tools, bool isLanguageLearning, AgentRequest request)
+    private static string InferProgrammingLanguage(string message)
     {
-        var p = new MessageParameters
-        {
-            Model       = config["Anthropic:Model"]!,
-            MaxTokens   = config.GetValue<int>("Anthropic:MaxTokens"),
-            Stream      = false,
-            Temperature = config.GetValue<decimal>("Anthropic:Temperature"),
-            Messages    = messages,
-            Tools       = tools,
-        };
-        if (isLanguageLearning)
-            p.System = new List<SystemMessage>
-            {
-                new(LanguageLearningTool.BuildSystemPrompt(
-                    request.NativeLanguage!, request.TargetLanguage!,
-                    request.NativeLanguageCode, request.TargetLanguageCode,
-                    request.Level, request.LearningGoal))
-            };
-        return p;
+        if (Regex.IsMatch(message, @"\busing\s+System\b|\bnamespace\b|\bpublic\s+class\b", RegexOptions.IgnoreCase)) return "csharp";
+        if (Regex.IsMatch(message, @"\bdef\s+\w+\(|\bimport\s+\w+", RegexOptions.IgnoreCase)) return "python";
+        if (Regex.IsMatch(message, @"\bfunction\b|\bconst\b|\blet\b|=>", RegexOptions.IgnoreCase)) return "javascript";
+        if (Regex.IsMatch(message, @"\bSELECT\b|\bFROM\b|\bWHERE\b", RegexOptions.IgnoreCase)) return "sql";
+        return "text";
     }
 
-    private async IAsyncEnumerable<string> StreamTextAsync(
-        MessageParameters parameters,
-        [EnumeratorCancellation] CancellationToken ct = default)
+    private static string? ExtractInterviewQuestion(string reply)
     {
-        await foreach (var streamEvent in _client.Messages.StreamClaudeMessageAsync(parameters, ct))
-        {
-            if (streamEvent.Delta?.Type == "text_delta"
-                && streamEvent.Delta.Text is { Length: > 0 } text)
-                yield return text;
-        }
+        var m = Regex.Match(reply, @"\[YOUR QUESTION\]\s*:\s*""?([^""\n]+)", RegexOptions.IgnoreCase);
+        if (m.Success)
+            return m.Groups[1].Value.Trim();
+
+        m = Regex.Match(reply, @"\[NEXT QUESTION\]\s*:\s*""?([^""\n]+)", RegexOptions.IgnoreCase);
+        return m.Success ? m.Groups[1].Value.Trim() : null;
     }
 }

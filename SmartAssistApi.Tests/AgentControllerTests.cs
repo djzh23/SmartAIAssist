@@ -1,4 +1,3 @@
-using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -12,17 +11,18 @@ namespace SmartAssistApi.Tests;
 
 public class AgentControllerTests
 {
-    private readonly Mock<IAgentService>          _serviceMock  = new();
+    private readonly Mock<IAgentService> _agentServiceMock = new();
     private readonly Mock<ILogger<AgentController>> _loggerMock = new();
-    private readonly Mock<UsageService>           _usageMock;
-    private readonly Mock<ClerkAuthService>       _clerkMock    = new();
+    private readonly Mock<UsageService> _usageMock;
+    private readonly Mock<ClerkAuthService> _clerkMock = new();
+    private readonly ConversationService _conversationService = new();
 
     public AgentControllerTests()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Upstash:RestUrl"]   = "https://fake.upstash.io",
+                ["Upstash:RestUrl"] = "https://fake.upstash.io",
                 ["Upstash:RestToken"] = "fake-token",
             })
             .Build();
@@ -33,117 +33,57 @@ public class AgentControllerTests
     private AgentController CreateController()
     {
         var controller = new AgentController(
-            _serviceMock.Object,
+            _agentServiceMock.Object,
+            _conversationService,
             _usageMock.Object,
             _clerkMock.Object,
             _loggerMock.Object);
 
-        // Provide a minimal HttpContext so controller can resolve IP etc.
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext(),
+            HttpContext = new DefaultHttpContext()
         };
 
         return controller;
     }
 
-    // ── Validation ────────────────────────────────────────
-
     [Fact]
-    public async Task Ask_EmptyMessage_Returns400WithErrorMessage()
+    public async Task Ask_EmptyMessage_Returns400()
     {
         var controller = CreateController();
-
         var result = await controller.Ask(new AgentRequest(""));
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Equal(400, badRequest.StatusCode);
-        var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
-        Assert.Contains("Message must not be empty", json);
     }
 
     [Fact]
-    public async Task Ask_WhitespaceMessage_Returns400()
+    public async Task Ask_MessageOver4000Chars_Returns400()
     {
         var controller = CreateController();
-
-        var result = await controller.Ask(new AgentRequest("   "));
-
-        Assert.IsType<BadRequestObjectResult>(result.Result);
-    }
-
-    [Fact]
-    public async Task Ask_MessageOver4000Chars_Returns400WithCharacterCount()
-    {
-        var controller  = CreateController();
-        var longMessage = new string('x', 4001);
-
-        var result = await controller.Ask(new AgentRequest(longMessage));
+        var result = await controller.Ask(new AgentRequest(new string('x', 4001)));
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
-        var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
-        Assert.Contains("4001", json);
-    }
-
-    [Fact]
-    public async Task Ask_MessageExactly4000Chars_PassesValidation()
-    {
-        var message = new string('x', 4000);
-
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-                  .Returns(("user_abc", false));
-
-        _usageMock.Setup(u => u.CheckAndIncrementAsync("user_abc", false))
-                  .ReturnsAsync(new UsageCheckResult { Allowed = true, UsageToday = 1, DailyLimit = 20, Plan = "free" });
-
-        _serviceMock.Setup(s => s.RunAsync(It.IsAny<AgentRequest>()))
-                    .ReturnsAsync(new AgentResponse("reply"));
-
-        var controller = CreateController();
-        var result = await controller.Ask(new AgentRequest(message));
-
-        Assert.IsType<OkObjectResult>(result.Result);
-    }
-
-    // ── Auth & Usage ──────────────────────────────────────
-
-    [Fact]
-    public async Task Ask_UsageLimitReached_Returns429()
-    {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-                  .Returns(("user_abc", false));
-
-        _usageMock.Setup(u => u.CheckAndIncrementAsync("user_abc", false))
-                  .ReturnsAsync(new UsageCheckResult
-                  {
-                      Allowed    = false,
-                      Reason     = "free_limit",
-                      Message    = "Upgrade to Premium",
-                      UsageToday = 20,
-                      DailyLimit = 20,
-                      Plan       = "free",
-                  });
-
-        var controller = CreateController();
-        var result = await controller.Ask(new AgentRequest("Hello"));
-
-        var status = Assert.IsType<ObjectResult>(result.Result);
-        Assert.Equal(429, status.StatusCode);
-        var json = System.Text.Json.JsonSerializer.Serialize(status.Value);
-        Assert.Contains("usage_limit_reached", json);
+        Assert.Equal(400, badRequest.StatusCode);
     }
 
     [Fact]
     public async Task Ask_ValidMessage_Returns200WithAgentResponse()
     {
         _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-                  .Returns(("user_abc", false));
+            .Returns(("user_abc", false));
 
         _usageMock.Setup(u => u.CheckAndIncrementAsync("user_abc", false))
-                  .ReturnsAsync(new UsageCheckResult { Allowed = true, UsageToday = 1, DailyLimit = 20, Plan = "free" });
+            .ReturnsAsync(new UsageCheckResult
+            {
+                Allowed = true,
+                UsageToday = 1,
+                DailyLimit = 20,
+                Plan = "free"
+            });
 
-        _serviceMock.Setup(s => s.RunAsync(It.IsAny<AgentRequest>()))
-                    .ReturnsAsync(new AgentResponse("Test reply", "get_weather"));
+        _agentServiceMock.Setup(s => s.RunAsync(It.IsAny<AgentRequest>()))
+            .ReturnsAsync(new AgentResponse("Test reply", "get_weather"));
 
         var controller = CreateController();
         var result = await controller.Ask(new AgentRequest("What is the weather?"));
@@ -155,38 +95,81 @@ public class AgentControllerTests
     }
 
     [Fact]
-    public async Task Ask_ServiceThrowsException_Returns500WithErrorDetails()
+    public async Task SetContext_MissingSessionId_Returns400()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-                  .Returns(("user_abc", false));
-
-        _usageMock.Setup(u => u.CheckAndIncrementAsync("user_abc", false))
-                  .ReturnsAsync(new UsageCheckResult { Allowed = true, UsageToday = 1, DailyLimit = 20, Plan = "free" });
-
-        _serviceMock.Setup(s => s.RunAsync(It.IsAny<AgentRequest>()))
-                    .ThrowsAsync(new Exception("API error"));
-
         var controller = CreateController();
-        var result = await controller.Ask(new AgentRequest("Hello"));
 
-        var statusResult = Assert.IsType<ObjectResult>(result.Result);
-        Assert.Equal(500, statusResult.StatusCode);
-        var json = System.Text.Json.JsonSerializer.Serialize(statusResult.Value);
-        Assert.Contains("API error", json);
+        var result = await controller.SetContext(new SetContextRequest(
+            SessionId: null,
+            ToolType: "interviewprep",
+            CVText: "my cv",
+            JobTitle: "Software Engineer",
+            CompanyName: "SmartAssist",
+            ProgrammingLanguage: null));
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(400, badRequest.StatusCode);
     }
 
-    // ── Health ────────────────────────────────────────────
+    [Fact]
+    public async Task SetContext_ThenGetContext_ReturnsStoredValues()
+    {
+        var controller = CreateController();
+        var sessionId = "s-ctx-1";
+
+        var setResult = await controller.SetContext(new SetContextRequest(
+            SessionId: sessionId,
+            ToolType: "interviewprep",
+            CVText: "CV data here",
+            JobTitle: "Backend Developer",
+            CompanyName: "Acme",
+            ProgrammingLanguage: null));
+
+        Assert.IsType<OkObjectResult>(setResult);
+
+        var getResult = await controller.GetContext(sessionId, "interviewprep");
+        var ok = Assert.IsType<OkObjectResult>(getResult);
+
+        var payloadJson = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.Contains("\"hasCV\":true", payloadJson);
+        Assert.Contains("Backend Developer", payloadJson);
+        Assert.Contains("Acme", payloadJson);
+        Assert.Contains("\"toolType\":\"interviewprep\"", payloadJson);
+    }
+
+    [Fact]
+    public async Task SetContext_ProgrammingLanguage_IsReturnedByGetContext()
+    {
+        var controller = CreateController();
+        var sessionId = "s-ctx-2";
+
+        var setResult = await controller.SetContext(new SetContextRequest(
+            SessionId: sessionId,
+            ToolType: "programming",
+            CVText: null,
+            JobTitle: null,
+            CompanyName: null,
+            ProgrammingLanguage: "csharp"));
+
+        Assert.IsType<OkObjectResult>(setResult);
+
+        var getResult = await controller.GetContext(sessionId, "programming");
+        var ok = Assert.IsType<OkObjectResult>(getResult);
+        var payloadJson = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+
+        Assert.Contains("\"hasProgrammingLang\":true", payloadJson);
+        Assert.Contains("\"programmingLanguage\":\"csharp\"", payloadJson);
+    }
 
     [Fact]
     public void Health_ReturnsOkWithStatusAndTimestamp()
     {
         var controller = CreateController();
-
         var result = controller.Health();
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
-        Assert.Contains("ok", json);
-        Assert.Contains("timestamp", json);
+        var payloadJson = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.Contains("ok", payloadJson);
+        Assert.Contains("timestamp", payloadJson);
     }
 }

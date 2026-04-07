@@ -9,6 +9,7 @@ namespace SmartAssistApi.Controllers;
 [Route("api/[controller]")]
 public class AgentController(
     IAgentService agentService,
+    ConversationService conversationService,
     UsageService usageService,
     ClerkAuthService clerkAuthService,
     ILogger<AgentController> logger) : ControllerBase
@@ -43,7 +44,7 @@ public class AgentController(
         }
 
         Response.Headers.Append("X-Usage-Today",  usageCheck.UsageToday.ToString());
-        Response.Headers.Append("X-Usage-Limit",  usageCheck.DailyLimit == int.MaxValue ? "∞" : usageCheck.DailyLimit.ToString());
+        Response.Headers.Append("X-Usage-Limit",  usageCheck.DailyLimit == int.MaxValue ? "unlimited" : usageCheck.DailyLimit.ToString());
         Response.Headers.Append("X-Usage-Plan",   usageCheck.Plan);
 
         try
@@ -90,7 +91,7 @@ public class AgentController(
         Response.Headers["Cache-Control"]    = "no-cache";
         Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx buffering
         Response.Headers.Append("X-Usage-Today", usageCheck.UsageToday.ToString());
-        Response.Headers.Append("X-Usage-Limit", usageCheck.DailyLimit == int.MaxValue ? "∞" : usageCheck.DailyLimit.ToString());
+        Response.Headers.Append("X-Usage-Limit", usageCheck.DailyLimit == int.MaxValue ? "unlimited" : usageCheck.DailyLimit.ToString());
         Response.Headers.Append("X-Usage-Plan",  usageCheck.Plan);
 
         try
@@ -167,4 +168,97 @@ public class AgentController(
 
     [HttpGet("health")]
     public IActionResult Health() => Ok(new { status = "ok", timestamp = DateTime.UtcNow });
+
+    [HttpPost("context")]
+    public async Task<IActionResult> SetContext([FromBody] SetContextRequest request)
+    {
+        _ = clerkAuthService.ExtractUserId(Request);
+
+        if (string.IsNullOrWhiteSpace(request.SessionId))
+            return BadRequest(new { error = "SessionId required." });
+
+        var toolType = string.IsNullOrWhiteSpace(request.ToolType)
+            ? "general"
+            : request.ToolType.ToLowerInvariant();
+
+        try
+        {
+            if (request.CVText is not null || request.JobTitle is not null || request.CompanyName is not null)
+            {
+                await conversationService.UpdateContextAsync(
+                    request.SessionId,
+                    toolType,
+                    ctx =>
+                    {
+                        if (request.CVText is not null)
+                            ctx.UserCV = request.CVText;
+                        if (request.JobTitle is not null)
+                            ctx.InterviewJobTitle = request.JobTitle;
+                        if (request.CompanyName is not null)
+                            ctx.InterviewCompany = request.CompanyName;
+                    });
+            }
+
+            if (request.ProgrammingLanguage is not null)
+            {
+                await conversationService.UpdateContextAsync(
+                    request.SessionId,
+                    toolType,
+                    ctx => ctx.ProgrammingLanguage = request.ProgrammingLanguage);
+            }
+
+            return Ok(new { success = true, sessionId = request.SessionId, toolType });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to update agent context. SessionId {SessionId} ToolType {ToolType}", request.SessionId, toolType);
+            return StatusCode(500, new { error = "context_update_failed", message = ex.Message });
+        }
+    }
+
+    [HttpGet("context/{sessionId}/{toolType}")]
+    public async Task<IActionResult> GetContext(string sessionId, string toolType)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return BadRequest(new { error = "SessionId required." });
+
+        var normalizedToolType = string.IsNullOrWhiteSpace(toolType)
+            ? "general"
+            : toolType.ToLowerInvariant();
+
+        try
+        {
+            var context = await conversationService.GetContextAsync(sessionId, normalizedToolType);
+            return Ok(new
+            {
+                sessionId = context.SessionId,
+                toolType = context.ToolType,
+                hasJob = context.Job?.IsAnalyzed == true,
+                jobTitle = context.Job?.JobTitle,
+                companyName = context.Job?.CompanyName,
+                hasCV = !string.IsNullOrWhiteSpace(context.UserCV),
+                userCV = context.UserCV,
+                interviewJobTitle = context.InterviewJobTitle,
+                interviewCompany = context.InterviewCompany,
+                hasProgrammingLang = !string.IsNullOrWhiteSpace(context.ProgrammingLanguage),
+                programmingLanguage = context.ProgrammingLanguage,
+                userFacts = context.UserFacts,
+                practisedQuestions = context.PractisedQuestions,
+                lastActivity = context.LastActivity,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to read agent context. SessionId {SessionId} ToolType {ToolType}", sessionId, normalizedToolType);
+            return StatusCode(500, new { error = "context_read_failed", message = ex.Message });
+        }
+    }
 }
+
+public record SetContextRequest(
+    string? SessionId,
+    string? ToolType,
+    string? CVText,
+    string? JobTitle,
+    string? CompanyName,
+    string? ProgrammingLanguage);

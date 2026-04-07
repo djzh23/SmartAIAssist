@@ -36,7 +36,11 @@ var allowedOrigins = localOrigins
     .ToArray();
 
 builder.Services.AddControllers();
-builder.Services.AddScoped<IAgentService, AgentService>();
+builder.Services.AddSingleton<ConversationService>();
+builder.Services.AddSingleton<SystemPromptBuilder>();
+builder.Services.AddScoped<JobContextExtractor>();
+builder.Services.AddScoped<AgentService>();
+builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());
 builder.Services.AddHttpClient<ISpeechService, ElevenLabsSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddScoped<ClerkAuthService>();

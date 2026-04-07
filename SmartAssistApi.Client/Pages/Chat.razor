@@ -1,4 +1,4 @@
-@page "/chat"
+﻿@page "/chat"
 @inject AgentApiService AgentApi
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -16,7 +16,7 @@
         <button class="sidebar-open-btn" @onclick="ToggleSidebar" title="Open sessions">→</button>
     }
 
-    <!-- Zone 1 — Session sidebar -->
+    <!-- Zone 1 - Session sidebar -->
     <aside class="chat-sidebar @(sidebarOpen ? "sidebar-open" : "")">
 
         <div class="sidebar-topbar">
@@ -91,7 +91,7 @@
                                 {
                                     <span class="session-tool-badge">@badge</span>
                                 }
-                                @(preview.Length > 28 ? preview[..28] + "…" : preview)
+                                @(preview.Length > 28 ? preview[..28] + "..." : preview)
                             </span>
                             <span class="session-time">@lastTime</span>
                         </div>
@@ -109,7 +109,7 @@
         }
     </aside>
 
-    <!-- Zone 2 + 3 — Main chat -->
+    <!-- Zone 2 + 3 - Main chat -->
     <main class="chat-main">
         <div class="chat-content-wrapper">
 
@@ -206,7 +206,7 @@
                 </div>
             }
 
-            <!-- Zone 3 — Input area -->
+            <!-- Zone 3 - Input area -->
             <div class="chat-input-area">
                 <div class="chat-input-box @(isInputFocused ? "focused" : "")">
                     <textarea class="chat-textarea"
@@ -288,6 +288,7 @@
         "language"    => "🌍",
         "jokes"       => "😄",
         "jobanalyzer" => "💼",
+        "programming" => "💻",
         _             => null
     };
 
@@ -429,8 +430,9 @@
         {
             "weather"     => "🌤️ Weather Assistant activated! Ask me about weather in any city.\nTry: 'Wie ist das Wetter in Berlin?'",
             "jokes"       => "😄 Joke mode on! Ask me for a joke anytime.",
-            "language"    => "🌍 Language Learning Mode activated!\nI will translate your messages and respond in Spanish.\nChange your target language in the panel on the left.\nTry writing: 'Hallo, wie geht es dir?'",
-            "jobanalyzer" => "💼 Job Analyzer ready!\nPaste a job posting text or share a URL.\nI'll analyze the role and give you personalized CV tips.\n\nTry: 'Analyze this job: [paste your job posting here]'",
+            "language"    => "🌍 Language Learning Mode activated!\nI will translate your messages and respond in the selected language.\nChange your target language in the panel on the left.\nTry writing: 'Hallo, wie geht es dir?'",
+            "jobanalyzer" => "💼 Job Analyzer activated! Paste a job post or URL to get tailored advice.",
+            "programming" => "💻 Programming Assistant activated! Paste code, stack traces, or architecture questions.",
             _             => null
         };
 
@@ -523,11 +525,12 @@
 
     private string InputPlaceholder => currentToolType switch
     {
-        "weather"     => "Ask about weather in any city… e.g. 'Wie ist das Wetter in Berlin?'",
-        "jobanalyzer" => "Paste a job posting or URL to analyze…",
-        "jokes"       => "Ask for a joke… e.g. 'Tell me a programming joke'",
-        "language"    => "Write something and I'll translate it for you…",
-        _             => "Type a message…"
+        "weather"     => "Ask about weather in any city... e.g. 'Wie ist das Wetter in Berlin?'",
+        "jobanalyzer" => "Paste a job posting or URL to analyze...",
+        "jokes"       => "Ask for a joke... e.g. 'Tell me a programming joke'",
+        "language"    => "Write something and I'll translate it for you...",
+        "programming" => "Paste code, stack traces, or architecture questions...",
+        _             => "Type a message..."
     };
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -560,6 +563,7 @@
             var response = await AgentApi.AskAsync(
                 text,
                 activeSessionId,
+                currentToolType,
                 languageLearningMode,
                 languageLearningMode ? targetLanguageName : null,
                 languageLearningMode ? nativeLanguageName : null,
@@ -588,16 +592,16 @@
         }
     }
 
-    // ── Job analysis markdown → colored HTML cards ─────────
+    // Job analysis markdown -> colored HTML cards
     private static MarkupString RenderJobAnalysis(string text)
     {
-        var sectionStyles = new Dictionary<string, (string bg, string border, string color)>
+        var sectionClasses = new Dictionary<string, string>
         {
-            ["📋"] = ("#EFF6FF", "#3B82F6", "#1D4ED8"),
-            ["🎯"] = ("#F5F3FF", "#7C3AED", "#5B21B6"),
-            ["📄"] = ("#F0FDF4", "#10B981", "#065F46"),
-            ["🔑"] = ("#FFFBEB", "#F59E0B", "#92400E"),
-            ["⚡"] = ("#FFF7ED", "#F97316", "#9A3412"),
+            ["📋"] = "job-section-summary",
+            ["🎯"] = "job-section-targets",
+            ["📄"] = "job-section-document",
+            ["🔑"] = "job-section-keywords",
+            ["⚡"] = "job-section-action",
         };
 
         var sb = new System.Text.StringBuilder();
@@ -615,13 +619,11 @@
             if (nl < 0) { header = section.TrimStart('#').Trim(); body = ""; }
             else { header = section[..nl].TrimStart('#').Trim(); body = section[(nl + 1)..].Trim(); }
 
-            var matched = sectionStyles.FirstOrDefault(kv => header.Contains(kv.Key));
-            var (bg, border, color) = matched.Value != default
-                ? matched.Value
-                : ("#F9FAFB", "#9CA3AF", "#374151");
+            var matched = sectionClasses.FirstOrDefault(kv => header.Contains(kv.Key));
+            var sectionClass = string.IsNullOrEmpty(matched.Value) ? "job-section-default" : matched.Value;
 
-            sb.Append($"<div class=\"job-section\" style=\"background:{bg};border-left:4px solid {border}\">");
-            sb.Append($"<div class=\"job-section-title\" style=\"color:{color}\">{System.Net.WebUtility.HtmlEncode(header)}</div>");
+            sb.Append($"<div class=\"job-section {sectionClass}\">");
+            sb.Append($"<div class=\"job-section-title {sectionClass}-title\">{System.Net.WebUtility.HtmlEncode(header)}</div>");
             sb.Append("<div class=\"job-section-body\">");
             sb.Append(JobMarkdownToHtml(body));
             sb.Append("</div></div>");
@@ -663,13 +665,13 @@
     private static string JobFormatInline(string text)
     {
         var encoded = System.Net.WebUtility.HtmlEncode(text);
-        // bold: **text** → <strong>
+        // bold: **text** -> <strong>
         encoded = System.Text.RegularExpressions.Regex.Replace(
             encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
-        // inline code: `text` → <code>
+        // inline code: `text` -> <code>
         encoded = System.Text.RegularExpressions.Regex.Replace(
             encoded, @"`(.+?)`",
-            "<code style=\"background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:0.82em\">$1</code>");
+            "<code class=\"job-inline-code\">$1</code>");
         return encoded;
     }
 

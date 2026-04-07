@@ -9,6 +9,7 @@ public class AgentApiService(HttpClient http)
     public async Task<AgentResponse> AskAsync(
         string message,
         string? sessionId = null,
+        string? toolType = null,
         bool languageLearningMode = false,
         string? targetLanguage = null,
         string? nativeLanguage = null,
@@ -19,7 +20,7 @@ public class AgentApiService(HttpClient http)
     {
         var request = new AgentRequest(
             message, sessionId, languageLearningMode,
-            targetLanguage, nativeLanguage, targetLanguageCode, nativeLanguageCode, level, learningGoal);
+            targetLanguage, nativeLanguage, targetLanguageCode, nativeLanguageCode, level, learningGoal, toolType);
 
         var response = await http.PostAsJsonAsync("api/agent/ask", request);
         response.EnsureSuccessStatusCode();

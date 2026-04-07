@@ -881,6 +881,8 @@
 .job-section {
     border-radius: 8px;
     padding: 14px 16px;
+    background: var(--color-bg-secondary);
+    border-left: 4px solid var(--color-primary-light);
 }
 
 .job-section-title {
@@ -888,12 +890,13 @@
     font-weight: 700;
     letter-spacing: 0.02em;
     margin-bottom: 10px;
+    color: var(--color-primary);
 }
 
 .job-section-body {
     font-size: 0.875rem;
     line-height: 1.65;
-    color: #374151;
+    color: var(--color-text);
 }
 
 .job-section-body p {
@@ -916,7 +919,60 @@
 
 .job-section-body strong {
     font-weight: 600;
-    color: #1F2937;
+    color: var(--color-text);
+}
+
+.job-section-summary {
+    background: var(--color-primary-light);
+    border-left-color: var(--color-primary);
+}
+
+.job-section-targets {
+    background: var(--color-tool-bg);
+    border-left-color: var(--color-tool-border);
+}
+
+.job-section-document {
+    background: var(--color-bg-secondary);
+    border-left-color: var(--color-success);
+}
+
+.job-section-keywords {
+    background: var(--color-primary-light);
+    border-left-color: var(--color-primary-hover);
+}
+
+.job-section-action {
+    background: var(--color-tool-bg);
+    border-left-color: var(--color-success);
+}
+
+.job-section-summary-title {
+    color: var(--color-primary-hover);
+}
+
+.job-section-targets-title {
+    color: var(--color-tool-text);
+}
+
+.job-section-document-title {
+    color: var(--color-success);
+}
+
+.job-section-keywords-title {
+    color: var(--color-primary-hover);
+}
+
+.job-section-action-title {
+    color: var(--color-success);
+}
+
+.job-inline-code {
+    background: var(--color-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.82em;
+    border: 1px solid var(--color-primary-light);
 }
 
 .ll-tip {

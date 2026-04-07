@@ -9,7 +9,8 @@ public record AgentRequest(
     string? TargetLanguageCode = null,
     string? NativeLanguageCode = null,
     string? Level = null,
-    string? LearningGoal = null
+    string? LearningGoal = null,
+    string? ToolType = null
 );
 
 public class LanguageLearningResponse

@@ -1,4 +1,4 @@
-@inject NavigationManager Nav
+﻿@inject NavigationManager Nav
 @implements IDisposable
 
 <div class="nav-brand" @onclick="CloseNav">
@@ -39,6 +39,10 @@
     <a class="nav-link-item @IsActiveTool("language")" @onclick='() => NavigateToChat("language")' @onclick:preventDefault href="chat?tool=language">
         <span class="nav-icon">🌍</span>
         <span>Language</span>
+    </a>
+    <a class="nav-link-item @IsActiveTool("programming")" @onclick='() => NavigateToChat("programming")' @onclick:preventDefault href="chat?tool=programming">
+        <span class="nav-icon">💻</span>
+        <span>Programming</span>
     </a>
 </nav>
 

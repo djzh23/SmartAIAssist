@@ -1,30 +1,44 @@
-@page "/tools"
+﻿@page "/tools"
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<PageTitle>Tools — SmartAssist</PageTitle>
+<PageTitle>Tools - SmartAssist</PageTitle>
 
 <div class="tools-page">
     <h1 class="tools-heading">Available Tools</h1>
     <p class="tools-subheading">Click any card to learn more and try it in chat.</p>
 
-    <div class="tools-grid">
-        @foreach (var tool in tools)
-        {
-            <div class="tool-card @(tool.IsFeatured ? "featured" : "")"
-                 @onclick="() => OpenModal(tool)">
-                <div class="tool-icon-circle" style="background: @tool.IconBg">
-                    <span class="tool-emoji">@tool.Icon</span>
-                </div>
-                <div class="tool-name-row">
-                    <div class="tool-name">@tool.Name</div>
-                    @if (tool.IsFeatured) { <span class="tool-badge-featured">FEATURED</span> }
-                </div>
-                <p class="tool-description">@tool.ShortDescription</p>
-                <div class="tool-try-hint">Click to learn more →</div>
-            </div>
-        }
-    </div>
+    @if (tools.Count == 0)
+    {
+        <div class="tools-empty">
+            <div class="tools-empty-title">No tools available</div>
+            <div class="tools-empty-text">There are currently no tools to show.</div>
+        </div>
+    }
+    else
+    {
+        <div class="tools-grid">
+            @foreach (var tool in tools)
+            {
+                <button type="button"
+                        class="tool-card @(tool.IsFeatured ? "featured" : "")"
+                        @onclick="() => OpenModal(tool)">
+                    <div class="tool-icon-circle @GetIconClass(tool.Id)">
+                        <span class="tool-emoji">@tool.Icon</span>
+                    </div>
+                    <div class="tool-name-row">
+                        <div class="tool-name">@tool.Name</div>
+                        @if (tool.IsFeatured)
+                        {
+                            <span class="tool-badge-featured">FEATURED</span>
+                        }
+                    </div>
+                    <p class="tool-description">@tool.ShortDescription</p>
+                    <div class="tool-try-hint">Click to learn more -&gt;</div>
+                </button>
+            }
+        </div>
+    }
 </div>
 
 @if (selectedTool is not null)
@@ -32,7 +46,7 @@
     <div class="modal-backdrop" @onclick="CloseModal" @onkeydown="HandleModalKey" tabindex="-1">
         <div class="modal-box" @onclick:stopPropagation="true">
             <div class="modal-icon">
-                <div class="modal-icon-circle" style="background: @selectedTool.IconBg">
+                <div class="modal-icon-circle @GetIconClass(selectedTool.Id)">
                     <span class="modal-emoji">@selectedTool.Icon</span>
                 </div>
             </div>
@@ -43,7 +57,7 @@
                 <div class="modal-examples-label">Example prompts</div>
                 @foreach (var example in selectedTool.Examples)
                 {
-                    <div class="modal-example-item">💬 @example</div>
+                    <div class="modal-example-item">ðŸ’¬ @example</div>
                 }
             </div>
 
@@ -69,7 +83,6 @@
         string FullDescription,
         string[] Examples,
         string Icon,
-        string IconBg,
         string ChatParam,
         bool IsFeatured = false
     );
@@ -78,28 +91,44 @@
     [
         new("weather", "Weather Assistant",
             "Get real-time weather for any city",
-            "Ask about weather in any city worldwide. The AI uses live weather data to give you current conditions, temperature, and helpful tips.",
+            "Ask about weather in any city worldwide. The assistant uses live weather data to give you current conditions, temperature, and helpful tips.",
             ["Wie ist das Wetter in Berlin?", "What is the weather in Tokyo?", "Is it raining in London today?"],
-            "🌤️", "#E8F4FD", "weather"),
+            "🌤️", "weather"),
 
         new("jobanalyzer", "Job Analyzer",
-            "Paste a job posting or URL — get CV tips to land the interview",
-            "Paste a job posting text or share a URL to a job listing. The AI analyzes the role, identifies what they really want, and gives you personalized CV optimization tips and keywords.",
+            "Paste a job posting or URL - get CV tips to land the interview",
+            "Paste a job posting text or share a URL to a job listing. The assistant analyzes the role, identifies the requirements, and gives personalized CV optimization tips and keywords.",
             ["Analyze this job: [paste job text here]", "Analyze this job: https://jobs.example.com/posting/123"],
-            "💼", "#FFF8F0", "jobanalyzer", IsFeatured: false),
+            "💼", "jobanalyzer"),
 
         new("jokes", "Joke Generator",
             "Get a random joke to brighten your day",
-            "Need a laugh? Ask for a random joke anytime. The AI fetches fresh jokes and delivers them with perfect timing.",
+            "Need a laugh? Ask for a random joke anytime. The assistant keeps the tone light and delivers fresh jokes on demand.",
             ["Erzähl mir einen Witz", "Tell me a programming joke", "Give me a funny joke about dogs"],
-            "😄", "#F3E8FF", "jokes"),
+            "😄", "jokes"),
 
         new("language", "Language Learning Mode",
             "Chat and learn a new language simultaneously",
-            "Activate a target language and start chatting in your native language. The AI translates your messages and responds in your target language — perfect for learners.",
-            ["Activate Spanish mode, then write: Hallo wie geht es dir?", "Guten Morgen — practice Spanish every day"],
-            "🌍", "#E8FEF0", "language", IsFeatured: true),
+            "Activate a target language and start chatting in your native language. The assistant translates your messages and responds in your target language.",
+            ["Activate Spanish mode, then write: Hallo wie geht es dir?", "Guten Morgen - practice Spanish every day"],
+            "🌍", "language", IsFeatured: true),
+
+        new("programming", "Programming Assistant",
+            "Debug code, explain concepts, and improve architecture",
+            "Share code snippets, bugs, or architecture questions. The assistant keeps programming context inside the same session and gives concrete, production-oriented guidance.",
+            ["Why does this C# LINQ query throw a null reference?", "Refactor this API service for better testability", "Explain this Python recursion bug and fix it"],
+            "💻", "programming"),
     ];
+
+    private static string GetIconClass(string toolId) => toolId switch
+    {
+        "weather" => "tool-icon-weather",
+        "jobanalyzer" => "tool-icon-jobanalyzer",
+        "jokes" => "tool-icon-jokes",
+        "language" => "tool-icon-language",
+        "programming" => "tool-icon-programming",
+        _ => "tool-icon-default"
+    };
 
     private void OpenModal(ToolInfo tool)
     {
@@ -113,7 +142,8 @@
 
     private void HandleModalKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape") CloseModal();
+        if (e.Key == "Escape")
+            CloseModal();
     }
 }
 
@@ -136,6 +166,25 @@
         font-size: 0.9rem;
     }
 
+    .tools-empty {
+        background: var(--color-bg-secondary);
+        border: 1px solid var(--color-primary-light);
+        border-radius: var(--radius-md);
+        padding: var(--space-lg);
+        color: var(--color-text-muted);
+    }
+
+    .tools-empty-title {
+        color: var(--color-text);
+        font-weight: 600;
+        margin-bottom: var(--space-xs);
+    }
+
+    .tools-empty-text {
+        font-size: 0.92rem;
+        line-height: 1.5;
+    }
+
     .tools-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -144,7 +193,7 @@
 
     .tool-card {
         background: var(--color-bg);
-        border: 1.5px solid #e5e7eb;
+        border: 1px solid var(--color-primary-light);
         border-radius: var(--radius-md);
         padding: var(--space-lg);
         cursor: pointer;
@@ -152,6 +201,7 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-sm);
+        text-align: left;
     }
 
     .tool-card:hover {
@@ -173,6 +223,30 @@
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
+    }
+
+    .tool-icon-weather {
+        background: var(--color-tool-bg);
+    }
+
+    .tool-icon-jobanalyzer {
+        background: var(--color-primary-light);
+    }
+
+    .tool-icon-jokes {
+        background: var(--color-bg-secondary);
+    }
+
+    .tool-icon-language {
+        background: var(--color-tool-bg);
+    }
+
+    .tool-icon-programming {
+        background: var(--color-primary-light);
+    }
+
+    .tool-icon-default {
+        background: var(--color-bg-secondary);
     }
 
     .tool-emoji {
@@ -219,7 +293,6 @@
         font-weight: 500;
     }
 
-    /* ── Modal ─────────────────────────────────────────── */
     .modal-backdrop {
         position: fixed;
         inset: 0;
@@ -234,8 +307,13 @@
     }
 
     @@keyframes fadeIn {
-        from { opacity: 0; }
-        to   { opacity: 1; }
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
+        }
     }
 
     .modal-box {
@@ -248,12 +326,19 @@
         flex-direction: column;
         gap: var(--space-md);
         animation: slideUp 0.18s ease;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
     }
 
     @@keyframes slideUp {
-        from { opacity: 0; transform: translateY(10px); }
-        to   { opacity: 1; transform: translateY(0); }
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     .modal-icon {
@@ -315,7 +400,7 @@
         padding: 6px 10px;
         background: var(--color-bg);
         border-radius: var(--radius-sm);
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--color-primary-light);
         line-height: 1.4;
     }
 
@@ -346,7 +431,7 @@
         flex: 1;
         background: none;
         color: var(--color-text-muted);
-        border: 1.5px solid #e5e7eb;
+        border: 1px solid var(--color-primary-light);
         border-radius: var(--radius-sm);
         padding: 11px 20px;
         font-size: 0.9rem;
