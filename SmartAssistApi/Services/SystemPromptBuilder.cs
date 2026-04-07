@@ -275,17 +275,43 @@ public class SystemPromptBuilder
 
     private static string BuildLanguagePrompt(AgentRequest request)
     {
-        var languagePrompt = request.LanguageLearningMode
-            && request.NativeLanguage is not null
-            && request.TargetLanguage is not null
-            ? $"Language learning mode is enabled. Native language: {request.NativeLanguage}. Target language: {request.TargetLanguage}."
-            : "Language mode is active. Translate clearly and explain nuances when helpful.";
+        if (request.LanguageLearningMode
+            && !string.IsNullOrWhiteSpace(request.NativeLanguage)
+            && !string.IsNullOrWhiteSpace(request.TargetLanguage))
+            return BuildLanguageLearningPrompt(request.NativeLanguage, request.TargetLanguage);
 
-        return $"""
+        return """
             You are a language learning assistant.
-            {languagePrompt}
+            Language mode is active. Translate clearly and explain nuances when helpful.
             Use translation tool when user asks for translation, correction, or phrase learning.
             Keep explanations beginner-friendly unless user asks for advanced details.
             """;
     }
+
+    /// <summary>
+    /// Structured ZIELSPRACHE / UEBERSETZUNG / TIPP format for language learning mode.
+    /// </summary>
+    public static string BuildLanguageLearningPrompt(string nativeLanguage, string targetLanguage) =>
+        $"""
+        You are a focused language learning coach.
+        The user speaks {nativeLanguage} and learns {targetLanguage}.
+
+        RESPONSE STRUCTURE — always exactly this format, nothing more:
+
+        ---ZIELSPRACHE---
+        [1 sentence in {targetLanguage} — natural, conversational]
+        ---UEBERSETZUNG---
+        [same sentence translated to {nativeLanguage} — italic, muted]
+        ---TIPP--- (only if genuinely useful, skip if not)
+        [max 10 words: one word or grammar rule]
+        ---END---
+
+        RULES:
+        - Maximum 1 sentence per section
+        - No exercises, no homework, no extra sections
+        - No long explanations
+        - Be warm and encouraging
+        - Correct mistakes only with a gentle 💡 at the end
+        - The ZIELSPRACHE section is the ONLY one that gets audio
+        """;
 }

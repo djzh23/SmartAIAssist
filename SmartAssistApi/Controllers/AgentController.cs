@@ -12,6 +12,7 @@ public class AgentController(
     ConversationService conversationService,
     UsageService usageService,
     ClerkAuthService clerkAuthService,
+    ISpeechService speechService,
     ILogger<AgentController> logger) : ControllerBase
 {
     [HttpPost("ask")]
@@ -168,6 +169,41 @@ public class AgentController(
 
     [HttpGet("health")]
     public IActionResult Health() => Ok(new { status = "ok", timestamp = DateTime.UtcNow });
+
+    /// <summary>ElevenLabs TTS via same contract as <c>/api/speech/tts</c>; path alias for agent clients.</summary>
+    [HttpPost("speak")]
+    public async Task<IActionResult> Speak([FromBody] SpeechRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text))
+            return BadRequest(new { error = "Text must not be empty." });
+
+        if (request.Text.Length > 1200)
+            return BadRequest(new { error = $"Text must not exceed 1200 characters (received {request.Text.Length})." });
+
+        if (string.IsNullOrWhiteSpace(request.LanguageCode))
+            return BadRequest(new { error = "LanguageCode must not be empty." });
+
+        try
+        {
+            var speech = await speechService.SynthesizeAsync(request, cancellationToken);
+            return File(speech.Audio, speech.ContentType);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Speech configuration error (agent speak)");
+            return StatusCode(500, new { error = ex.Message });
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "Speech provider request failed (agent speak)");
+            return StatusCode(502, new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Agent speak endpoint failed");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 
     [HttpPost("context")]
     public async Task<IActionResult> SetContext([FromBody] SetContextRequest request)

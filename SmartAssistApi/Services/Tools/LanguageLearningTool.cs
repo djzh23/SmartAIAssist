@@ -1,9 +1,11 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using SmartAssistApi.Models;
+using SmartAssistApi.Services;
 
 namespace SmartAssistApi.Services.Tools;
 
-public static class LanguageLearningTool
+public static partial class LanguageLearningTool
 {
     public static string BuildSystemPrompt(
         string nativeLanguage,
@@ -13,30 +15,22 @@ public static class LanguageLearningTool
         string? level = null,
         string? learningGoal = null)
     {
-        return $$"""
-            You are a friendly language learning assistant.
-            The user speaks {{nativeLanguage}} and is learning {{targetLanguage}}.
-
-            RESPONSE FORMAT — always return a JSON object in exactly this structure, nothing else:
-
-            {
-              "target": "Your response in {{targetLanguage}} only — 1-2 sentences max. Keep it natural and conversational.",
-              "native": "The same response translated to {{nativeLanguage}} — helps understanding.",
-              "tip": "One grammar tip OR one vocabulary word — maximum 1 item. Format: word/rule → meaning. Return null if not genuinely useful."
-            }
-
-            Rules:
-            - Return ONLY the JSON object — no markdown, no code blocks, no extra text before or after
-            - Keep each field SHORT — 1-2 sentences only
-            - Be encouraging and warm
-            - Do NOT add exercises, hints, notes sections
-            - Do NOT add mini exercises or homework
-            - If user just greets you, just greet back — tip should be null
-            """;
+        _ = nativeLanguageCode;
+        _ = targetLanguageCode;
+        _ = level;
+        _ = learningGoal;
+        return SystemPromptBuilder.BuildLanguageLearningPrompt(nativeLanguage, targetLanguage);
     }
 
     public static LanguageLearningResponse? ParseResponse(string rawText)
     {
+        if (string.IsNullOrWhiteSpace(rawText))
+            return null;
+
+        var structured = ParseStructuredBlocks(rawText);
+        if (structured is not null)
+            return structured;
+
         try
         {
             var start = rawText.IndexOf('{');
@@ -61,4 +55,33 @@ public static class LanguageLearningTool
             return null;
         }
     }
+
+    private static LanguageLearningResponse? ParseStructuredBlocks(string text)
+    {
+        var targetMatch = ZielRegex().Match(text);
+        if (!targetMatch.Success)
+            return null;
+
+        var targetText = targetMatch.Groups[1].Value.Trim();
+        var translationMatch = UebersetzungRegex().Match(text);
+        var translationText = translationMatch.Success ? translationMatch.Groups[1].Value.Trim() : "";
+        var tipMatch = TippRegex().Match(text);
+        var tipText = tipMatch.Success ? tipMatch.Groups[1].Value.Trim() : null;
+
+        return new LanguageLearningResponse
+        {
+            TargetLanguageText = targetText,
+            NativeLanguageText = translationText,
+            LearnTip = string.IsNullOrWhiteSpace(tipText) ? null : tipText
+        };
+    }
+
+    [GeneratedRegex(@"---ZIELSPRACHE---([\s\S]*?)---UEBERSETZUNG---", RegexOptions.IgnoreCase)]
+    private static partial Regex ZielRegex();
+
+    [GeneratedRegex(@"---UEBERSETZUNG---([\s\S]*?)(?:---TIPP---|---END---)", RegexOptions.IgnoreCase)]
+    private static partial Regex UebersetzungRegex();
+
+    [GeneratedRegex(@"---TIPP---([\s\S]*?)---END---", RegexOptions.IgnoreCase)]
+    private static partial Regex TippRegex();
 }
