@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
 using Anthropic.SDK.Messaging;
@@ -127,5 +128,124 @@ public class AgentService(IConfiguration config) : IAgentService
         }
 
         return new AgentResponse(rawText);
+    }
+
+    public async IAsyncEnumerable<AgentStreamChunk> StreamAsync(
+        AgentRequest request,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var isLanguageLearning = request.LanguageLearningMode
+            && request.NativeLanguage is not null
+            && request.TargetLanguage is not null;
+
+        var tools = BuildTools();
+        var messages = new List<Message> { new(RoleType.User, request.Message) };
+        var baseParams = BuildParameters(messages, tools, isLanguageLearning, request);
+
+        // ── First call: non-streaming to detect tool use ──────────────────────
+        // Tool-calling requires a round-trip regardless, so the overhead is minimal.
+        var firstResponse = await _client.Messages.GetClaudeMessageAsync(baseParams);
+
+        if (firstResponse.ToolCalls is { Count: > 0 })
+        {
+            messages.Add(firstResponse.Message);
+
+            string? jobText = null;
+            foreach (var toolCall in firstResponse.ToolCalls)
+            {
+                var result = toolCall.Invoke<string>();
+                if (result.StartsWith("JOB_ANALYSIS_REQUEST:", StringComparison.Ordinal))
+                    jobText = result["JOB_ANALYSIS_REQUEST:".Length..];
+                messages.Add(new Message(toolCall, result));
+            }
+
+            if (jobText is not null)
+            {
+                // Stream the dedicated job-analysis response
+                var jobParams = new MessageParameters
+                {
+                    Model     = config["Anthropic:Model"]!,
+                    MaxTokens = config.GetValue<int>("Anthropic:MaxTokens"),
+                    Stream    = true,
+                    Temperature = config.GetValue<decimal>("Anthropic:Temperature"),
+                    Messages  = new List<Message> { new(RoleType.User, $"Job posting:\n\n{jobText}") },
+                    System    = new List<SystemMessage> { new(JobAnalyzerTool.BuildJobAnalysisPrompt()) },
+                };
+                await foreach (var chunk in StreamTextAsync(jobParams, ct))
+                    yield return AgentStreamChunk.TextPart(chunk);
+                yield return AgentStreamChunk.Done("analyze_job");
+                yield break;
+            }
+
+            // Stream the follow-up response after tool results
+            baseParams.Messages = messages;
+            baseParams.Stream   = true;
+            await foreach (var chunk in StreamTextAsync(baseParams, ct))
+                yield return AgentStreamChunk.TextPart(chunk);
+            yield return AgentStreamChunk.Done(firstResponse.ToolCalls.First().Name);
+            yield break;
+        }
+
+        // ── No tools — re-stream the first response's content ─────────────────
+        // We already have the full text; emit it in one chunk for simplicity,
+        // OR re-issue as a streaming call for incremental display.
+        var streamParams = BuildParameters(
+            new List<Message> { new(RoleType.User, request.Message) }, tools, isLanguageLearning, request);
+        streamParams.Stream = true;
+        await foreach (var chunk in StreamTextAsync(streamParams, ct))
+            yield return AgentStreamChunk.TextPart(chunk);
+        yield return AgentStreamChunk.Done();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private List<Tool> BuildTools() =>
+    [
+        Tool.FromFunc("get_weather",
+            ([FunctionParameter("Name der Stadt", true)] string city) =>
+                WeatherTool.GetWeatherAsync(city).GetAwaiter().GetResult()),
+        Tool.FromFunc("analyze_job",
+            ([FunctionParameter("Job posting text or URL", true)] string input) =>
+                JobAnalyzerTool.AnalyzeJobAsync(input).GetAwaiter().GetResult()),
+        Tool.FromFunc("translate_text",
+            ([FunctionParameter("Text to translate", true)] string text,
+             [FunctionParameter("Target language code", true)] string targetLanguage,
+             [FunctionParameter("Native language code",  true)] string nativeLanguage) =>
+                TranslationTool.TranslateAsync(text, nativeLanguage, targetLanguage).GetAwaiter().GetResult()),
+    ];
+
+    private MessageParameters BuildParameters(
+        List<Message> messages, List<Tool> tools, bool isLanguageLearning, AgentRequest request)
+    {
+        var p = new MessageParameters
+        {
+            Model       = config["Anthropic:Model"]!,
+            MaxTokens   = config.GetValue<int>("Anthropic:MaxTokens"),
+            Stream      = false,
+            Temperature = config.GetValue<decimal>("Anthropic:Temperature"),
+            Messages    = messages,
+            Tools       = tools,
+        };
+        if (isLanguageLearning)
+            p.System = new List<SystemMessage>
+            {
+                new(LanguageLearningTool.BuildSystemPrompt(
+                    request.NativeLanguage!, request.TargetLanguage!,
+                    request.NativeLanguageCode, request.TargetLanguageCode,
+                    request.Level, request.LearningGoal))
+            };
+        return p;
+    }
+
+    private async IAsyncEnumerable<string> StreamTextAsync(
+        MessageParameters parameters,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await foreach (var streamEvent in _client.Messages.StreamClaudeMessageAsync(parameters, ct))
+        {
+            if (streamEvent.Delta?.Type == "text_delta"
+                && streamEvent.Delta.Text is { Length: > 0 } text)
+                yield return text;
+        }
     }
 }

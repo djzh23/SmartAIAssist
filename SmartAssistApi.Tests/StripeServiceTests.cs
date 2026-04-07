@@ -67,6 +67,11 @@ public class StripeServiceTests
             .Setup(x => x.TryAcquireStripeEventAsync("evt_1"))
             .ReturnsAsync(true);
 
+        // New: GetPlanAsync is called before SetPlanAsync to enforce upgrade-only rule
+        usageMock
+            .Setup(x => x.GetPlanAsync("user_abc"))
+            .ReturnsAsync("free");
+
         StripeWebhookAuditRecord? audit = null;
         usageMock
             .Setup(x => x.RecordStripeWebhookAuditAsync(It.IsAny<StripeWebhookAuditRecord>()))

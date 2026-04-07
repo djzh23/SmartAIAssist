@@ -120,6 +120,23 @@ public class StripeService
         await HandleStripeEventAsync(stripeEvent);
     }
 
+    // ── Plan rank — used to prevent stale webhooks from downgrading an account ──
+    private static readonly Dictionary<string, int> PlanRank = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["free"]    = 0,
+        ["premium"] = 1,
+        ["pro"]     = 2,
+    };
+    private static int Rank(string plan) => PlanRank.GetValueOrDefault(plan, 0);
+
+    private string? PlanFromPriceId(string? priceId)
+    {
+        if (string.IsNullOrWhiteSpace(priceId)) return null;
+        if (priceId == _config["Stripe:ProPriceId"])      return "pro";
+        if (priceId == _config["Stripe:PremiumPriceId"]) return "premium";
+        return null;
+    }
+
     public async Task HandleStripeEventAsync(Event stripeEvent)
     {
         if (string.IsNullOrWhiteSpace(stripeEvent.Id))
@@ -200,7 +217,19 @@ public class StripeService
                 $"Unsupported Stripe plan metadata '{plan}' for event {stripeEvent.Id}.");
         }
 
-        await _usageService.SetPlanAsync(userId, plan);
+        // Only upgrade — never overwrite a higher plan with a lower one.
+        // This prevents old premium webhook retries from downgrading a user who already upgraded to pro.
+        var currentPlan = await _usageService.GetPlanAsync(userId);
+        if (Rank(plan) <= Rank(currentPlan))
+        {
+            _logger.LogInformation(
+                "Checkout webhook skipped — plan would not upgrade. EventId {StripeEventId} UserId {UserId} CurrentPlan {CurrentPlan} IncomingPlan {IncomingPlan}",
+                stripeEvent.Id, userId, currentPlan, plan);
+        }
+        else
+        {
+            await _usageService.SetPlanAsync(userId, plan);
+        }
 
         if (!string.IsNullOrWhiteSpace(session.CustomerId))
             await _usageService.SetStripeCustomerIdAsync(userId, session.CustomerId);
@@ -229,56 +258,80 @@ public class StripeService
 
     private async Task HandleSubscriptionChangedAsync(Event stripeEvent, Subscription subscription)
     {
-        if (!string.Equals(subscription.Status, "canceled", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogDebug(
-                "Stripe subscription update ignored because status is not canceled. EventId {StripeEventId} SubscriptionId {SubscriptionId} Status {Status}",
-                stripeEvent.Id,
-                subscription.Id,
-                subscription.Status);
-            return;
-        }
-
         if (string.IsNullOrWhiteSpace(subscription.CustomerId))
         {
             _logger.LogError(
-                "Stripe subscription cancellation missing customer id. EventId {StripeEventId} SubscriptionId {SubscriptionId}",
-                stripeEvent.Id,
-                subscription.Id);
+                "Stripe subscription event missing customer id. EventId {StripeEventId} SubscriptionId {SubscriptionId}",
+                stripeEvent.Id, subscription.Id);
             throw new InvalidOperationException($"Stripe subscription event {stripeEvent.Id} has no customer id.");
         }
 
         var userId = await _usageService.GetUserIdByStripeCustomerIdAsync(subscription.CustomerId);
         if (string.IsNullOrWhiteSpace(userId))
         {
-            _logger.LogError(
-                "No user mapping found for Stripe customer during cancellation. EventId {StripeEventId} CustomerId {CustomerId}",
-                stripeEvent.Id,
-                subscription.CustomerId);
-            throw new InvalidOperationException(
-                $"No user mapping found for Stripe customer {subscription.CustomerId} (event {stripeEvent.Id}).");
+            _logger.LogWarning(
+                "No user mapping for Stripe customer — subscription event ignored. EventId {StripeEventId} CustomerId {CustomerId}",
+                stripeEvent.Id, subscription.CustomerId);
+            return; // Customer not yet mapped — checkout webhook hasn't fired yet; safe to ignore
         }
 
-        await _usageService.SetPlanAsync(userId, "free");
+        string newPlan;
+        string auditResult;
+
+        if (string.Equals(subscription.Status, "canceled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(subscription.Status, "unpaid", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(subscription.Status, "incomplete_expired", StringComparison.OrdinalIgnoreCase))
+        {
+            // Subscription ended — downgrade to free
+            newPlan = "free";
+            auditResult = "downgraded";
+        }
+        else if (string.Equals(subscription.Status, "active", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(subscription.Status, "trialing", StringComparison.OrdinalIgnoreCase))
+        {
+            // Active subscription — map price ID to plan name (handles portal upgrades premium → pro)
+            var priceId = subscription.Items?.Data?.FirstOrDefault()?.Price?.Id;
+            var mappedPlan = PlanFromPriceId(priceId);
+
+            if (mappedPlan is null)
+            {
+                _logger.LogDebug(
+                    "Stripe subscription update ignored — price ID not mapped to a known plan. EventId {StripeEventId} PriceId {PriceId}",
+                    stripeEvent.Id, priceId);
+                return;
+            }
+
+            var currentPlan = await _usageService.GetPlanAsync(userId);
+            if (Rank(mappedPlan) <= Rank(currentPlan))
+            {
+                _logger.LogDebug(
+                    "Stripe subscription update ignored — plan would not change. EventId {StripeEventId} CurrentPlan {CurrentPlan} MappedPlan {MappedPlan}",
+                    stripeEvent.Id, currentPlan, mappedPlan);
+                return;
+            }
+
+            newPlan = mappedPlan;
+            auditResult = "upgraded";
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Stripe subscription event ignored — unhandled status. EventId {StripeEventId} Status {Status}",
+                stripeEvent.Id, subscription.Status);
+            return;
+        }
+
+        await _usageService.SetPlanAsync(userId, newPlan);
 
         var audit = new StripeWebhookAuditRecord(
-            stripeEvent.Id,
-            stripeEvent.Type,
-            null,
-            userId,
-            "free",
-            DateTimeOffset.UtcNow.ToString("O"),
-            subscription.CustomerId,
-            subscription.Id,
-            "downgraded");
+            stripeEvent.Id, stripeEvent.Type, null, userId, newPlan,
+            DateTimeOffset.UtcNow.ToString("O"), subscription.CustomerId, subscription.Id, auditResult);
 
         await _usageService.RecordStripeWebhookAuditAsync(audit);
 
         _logger.LogInformation(
-            "Stripe subscription canceled and user downgraded. EventId {StripeEventId} UserId {UserId} CustomerId {CustomerId}",
-            stripeEvent.Id,
-            userId,
-            subscription.CustomerId);
+            "Stripe subscription changed. EventId {StripeEventId} UserId {UserId} NewPlan {NewPlan} Result {Result}",
+            stripeEvent.Id, userId, newPlan, auditResult);
     }
 
     private async Task HandleInvoicePaidAsync(Event stripeEvent, Invoice invoice)
