@@ -15,6 +15,7 @@ public class AgentControllerTests
     private readonly Mock<ILogger<AgentController>> _loggerMock = new();
     private readonly Mock<UsageService> _usageMock;
     private readonly Mock<ClerkAuthService> _clerkMock = new();
+    private readonly Mock<ISpeechService> _speechMock = new();
     private readonly ConversationService _conversationService = new();
 
     public AgentControllerTests()
@@ -37,6 +38,7 @@ public class AgentControllerTests
             _conversationService,
             _usageMock.Object,
             _clerkMock.Object,
+            _speechMock.Object,
             _loggerMock.Object);
 
         controller.ControllerContext = new ControllerContext
@@ -68,6 +70,16 @@ public class AgentControllerTests
     }
 
     [Fact]
+    public async Task Ask_MissingSessionId_Returns400()
+    {
+        var controller = CreateController();
+        var result = await controller.Ask(new AgentRequest("Hello world"));
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal(400, badRequest.StatusCode);
+    }
+
+    [Fact]
     public async Task Ask_ValidMessage_Returns200WithAgentResponse()
     {
         _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
@@ -86,12 +98,78 @@ public class AgentControllerTests
             .ReturnsAsync(new AgentResponse("Test reply", "get_weather"));
 
         var controller = CreateController();
-        var result = await controller.Ask(new AgentRequest("What is the weather?"));
+        var result = await controller.Ask(new AgentRequest("What is the weather?", SessionId: "sess-1"));
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<AgentResponse>(ok.Value);
         Assert.Equal("Test reply", response.Reply);
         Assert.Equal("get_weather", response.ToolUsed);
+    }
+
+    [Fact]
+    public async Task Ask_AnonymousUser_Returns200WithAgentResponse()
+    {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("ip:127.0.0.1", true));
+
+        _usageMock.Setup(u => u.CheckAndIncrementAsync("ip:127.0.0.1", true))
+            .ReturnsAsync(new UsageCheckResult
+            {
+                Allowed = true,
+                UsageToday = 1,
+                DailyLimit = 2,
+                Plan = "anonymous"
+            });
+
+        _agentServiceMock.Setup(s => s.RunAsync(It.IsAny<AgentRequest>()))
+            .ReturnsAsync(new AgentResponse("Berlin weather is sunny.", "get_weather"));
+
+        var controller = CreateController();
+        var result = await controller.Ask(new AgentRequest("Wie ist das Wetter in Berlin?", SessionId: "demo-1", ToolType: "general"));
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<AgentResponse>(ok.Value);
+        Assert.Equal("Berlin weather is sunny.", response.Reply);
+    }
+
+    [Fact]
+    public async Task Ask_AnonymousUsageLimitReached_Returns429()
+    {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("ip:127.0.0.1", true));
+
+        _usageMock.Setup(u => u.CheckAndIncrementAsync("ip:127.0.0.1", true))
+            .ReturnsAsync(new UsageCheckResult
+            {
+                Allowed = false,
+                Reason = "anonymous_limit",
+                Message = "Sign in to get 20 free responses per day",
+                UsageToday = 2,
+                DailyLimit = 2,
+                Plan = "anonymous"
+            });
+
+        var controller = CreateController();
+        var result = await controller.Ask(new AgentRequest("Third message", SessionId: "demo-1"));
+
+        var obj = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(429, obj.StatusCode);
+    }
+
+    [Fact]
+    public async Task Ask_UsageServiceThrows_Returns503()
+    {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("ip:127.0.0.1", true));
+
+        _usageMock.Setup(u => u.CheckAndIncrementAsync("ip:127.0.0.1", true))
+            .ThrowsAsync(new InvalidOperationException("Upstash connection refused"));
+
+        var controller = CreateController();
+        var result = await controller.Ask(new AgentRequest("Hello", SessionId: "demo-1"));
+
+        var obj = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(503, obj.StatusCode);
     }
 
     [Fact]

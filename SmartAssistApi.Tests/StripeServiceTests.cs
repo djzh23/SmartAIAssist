@@ -185,11 +185,13 @@ public class StripeServiceTests
         var agentLoggerMock = new Mock<ILogger<AgentController>>();
         clerkMock.Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("user_flow", false));
 
+        var speechMock = new Mock<ISpeechService>();
         var controller = new AgentController(
             agentServiceMock.Object,
             new ConversationService(),
             usage,
             clerkMock.Object,
+            speechMock.Object,
             agentLoggerMock.Object)
         {
             ControllerContext = new ControllerContext

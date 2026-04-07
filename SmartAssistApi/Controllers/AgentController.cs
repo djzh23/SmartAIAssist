@@ -19,20 +19,45 @@ public class AgentController(
     public async Task<ActionResult<AgentResponse>> Ask([FromBody] AgentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Message))
-            return BadRequest(new { error = "Message must not be empty." });
+            return BadRequest(new { error = "message_empty", message = "Message must not be empty." });
 
         if (request.Message.Length > 4000)
-            return BadRequest(new { error = $"Message must not exceed 4000 characters (received {request.Message.Length})." });
+            return BadRequest(new { error = "message_too_long", message = $"Message must not exceed 4000 characters (received {request.Message.Length})." });
+
+        if (string.IsNullOrWhiteSpace(request.SessionId))
+            return BadRequest(new { error = "session_id_required", message = "SessionId must not be empty." });
 
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
 
         if (userId is null)
-            return Unauthorized(new { error = "Invalid authentication token." });
+            return Unauthorized(new { error = "auth_failed", message = "Invalid authentication token." });
 
-        var usageCheck = await usageService.CheckAndIncrementAsync(userId, isAnonymous);
+        logger.LogInformation(
+            "Ask request. UserId {UserId} IsAnonymous {IsAnonymous} SessionId {SessionId} ToolType {ToolType}",
+            userId, isAnonymous, request.SessionId, request.ToolType ?? "general");
+
+        UsageCheckResult usageCheck;
+        try
+        {
+            usageCheck = await usageService.CheckAndIncrementAsync(userId, isAnonymous);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Usage check failed (storage). UserId {UserId} IsAnonymous {IsAnonymous} SessionId {SessionId}",
+                userId, isAnonymous, request.SessionId);
+            return StatusCode(503, new
+            {
+                error = "usage_check_failed",
+                message = "Usage service temporarily unavailable. Please retry.",
+            });
+        }
 
         if (!usageCheck.Allowed)
         {
+            logger.LogInformation(
+                "Usage limit reached. UserId {UserId} Plan {Plan} UsageToday {UsageToday} DailyLimit {DailyLimit}",
+                userId, usageCheck.Plan, usageCheck.UsageToday, usageCheck.DailyLimit);
             return StatusCode(429, new
             {
                 error      = "usage_limit_reached",
@@ -55,8 +80,10 @@ public class AgentController(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Fehler im AgentService");
-            return StatusCode(500, new { error = ex.Message, details = ex.InnerException?.Message });
+            logger.LogError(ex,
+                "Agent execution failed. UserId {UserId} SessionId {SessionId} ToolType {ToolType}",
+                userId, request.SessionId, request.ToolType ?? "general");
+            return StatusCode(500, new { error = "agent_error", message = ex.Message, details = ex.InnerException?.Message });
         }
     }
 
@@ -66,16 +93,53 @@ public class AgentController(
         if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 4000)
         {
             Response.StatusCode = 400;
-            await Response.WriteAsync(JsonSerializer.Serialize(new { error = "Invalid message." }));
+            await Response.WriteAsync(JsonSerializer.Serialize(new { error = "message_invalid", message = "Message must not be empty and must not exceed 4000 characters." }));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.SessionId))
+        {
+            Response.StatusCode = 400;
+            await Response.WriteAsync(JsonSerializer.Serialize(new { error = "session_id_required", message = "SessionId must not be empty." }));
             return;
         }
 
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (userId is null) { Response.StatusCode = 401; return; }
+        if (userId is null)
+        {
+            Response.StatusCode = 401;
+            await Response.WriteAsync(JsonSerializer.Serialize(new { error = "auth_failed", message = "Invalid authentication token." }));
+            return;
+        }
 
-        var usageCheck = await usageService.CheckAndIncrementAsync(userId, isAnonymous);
+        logger.LogInformation(
+            "Stream request. UserId {UserId} IsAnonymous {IsAnonymous} SessionId {SessionId} ToolType {ToolType}",
+            userId, isAnonymous, request.SessionId, request.ToolType ?? "general");
+
+        UsageCheckResult usageCheck;
+        try
+        {
+            usageCheck = await usageService.CheckAndIncrementAsync(userId, isAnonymous);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Usage check failed (storage). UserId {UserId} IsAnonymous {IsAnonymous} SessionId {SessionId}",
+                userId, isAnonymous, request.SessionId);
+            Response.StatusCode = 503;
+            await Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                error = "usage_check_failed",
+                message = "Usage service temporarily unavailable. Please retry.",
+            }));
+            return;
+        }
+
         if (!usageCheck.Allowed)
         {
+            logger.LogInformation(
+                "Usage limit reached. UserId {UserId} Plan {Plan} UsageToday {UsageToday} DailyLimit {DailyLimit}",
+                userId, usageCheck.Plan, usageCheck.UsageToday, usageCheck.DailyLimit);
             Response.StatusCode = 429;
             await Response.WriteAsync(JsonSerializer.Serialize(new
             {
@@ -90,7 +154,7 @@ public class AgentController(
 
         Response.ContentType = "text/event-stream; charset=utf-8";
         Response.Headers["Cache-Control"]    = "no-cache";
-        Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx buffering
+        Response.Headers["X-Accel-Buffering"] = "no";
         Response.Headers.Append("X-Usage-Today", usageCheck.UsageToday.ToString());
         Response.Headers.Append("X-Usage-Limit", usageCheck.DailyLimit == int.MaxValue ? "unlimited" : usageCheck.DailyLimit.ToString());
         Response.Headers.Append("X-Usage-Plan",  usageCheck.Plan);
@@ -115,7 +179,9 @@ public class AgentController(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Streaming error for user {UserId}", userId);
+            logger.LogError(ex,
+                "Streaming error. UserId {UserId} SessionId {SessionId} ToolType {ToolType}",
+                userId, request.SessionId, request.ToolType ?? "general");
             var err = JsonSerializer.Serialize(new { type = "error", message = ex.Message });
             await Response.WriteAsync($"data: {err}\n\n");
             await Response.Body.FlushAsync();
