@@ -56,6 +56,9 @@ public class AgentService(
             context = await conversationService.GetContextAsync(sessionId, toolType);
         }
 
+        await UpdateConversationLanguageAsync(sessionId, toolType, request.Message, context);
+        context = await conversationService.GetContextAsync(sessionId, toolType);
+
         await ExtractUserFactsAsync(request.Message, sessionId, toolType);
         context = await conversationService.GetContextAsync(sessionId, toolType);
 
@@ -168,6 +171,35 @@ public class AgentService(
 
     private string BuildSystemPrompt(string toolType, SessionContext context, AgentRequest request) =>
         systemPromptBuilder.BuildPrompt(toolType, context, request);
+
+    private async Task UpdateConversationLanguageAsync(
+        string sessionId,
+        string toolType,
+        string message,
+        SessionContext context)
+    {
+        var detected = ConversationLanguageDetector.DetectLanguage(message);
+
+        await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+        {
+            if (string.IsNullOrWhiteSpace(ctx.ConversationLanguage))
+                ctx.ConversationLanguage = "de";
+
+            if (!string.IsNullOrWhiteSpace(detected))
+                ctx.ConversationLanguage = detected;
+        });
+
+        if (!string.IsNullOrWhiteSpace(detected)
+            && !string.Equals(detected, context.ConversationLanguage, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogInformation(
+                "Conversation language switched. SessionId {SessionId} ToolType {ToolType} From {FromLanguage} To {ToLanguage}",
+                sessionId,
+                toolType,
+                context.ConversationLanguage,
+                detected);
+        }
+    }
 
     private async Task ExtractUserFactsAsync(string message, string sessionId, string toolType)
     {

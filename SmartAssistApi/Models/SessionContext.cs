@@ -4,6 +4,7 @@ public class SessionContext
 {
     public string SessionId { get; set; } = "";
     public string ToolType { get; set; } = "general";
+    public string ConversationLanguage { get; set; } = "de";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime LastActivity { get; set; } = DateTime.UtcNow;
     public JobContext? Job { get; set; }

@@ -4,16 +4,25 @@ namespace SmartAssistApi.Services;
 
 public class SystemPromptBuilder
 {
-    public string BuildPrompt(string toolType, SessionContext context, AgentRequest request) => toolType switch
+    public string BuildPrompt(string toolType, SessionContext context, AgentRequest request)
     {
-        "jobanalyzer" => BuildJobAnalyzerPrompt(context),
-        "interviewprep" => BuildInterviewPrepPrompt(context),
-        "programming" => BuildProgrammingPrompt(context),
-        "language" => BuildLanguagePrompt(request),
-        "weather" => BuildWeatherPrompt(),
-        "jokes" => BuildJokesPrompt(),
-        _ => BuildGeneralPrompt(),
-    };
+        var toolPrompt = toolType switch
+        {
+            "jobanalyzer" => BuildJobAnalyzerPrompt(context),
+            "interviewprep" => BuildInterviewPrepPrompt(context),
+            "programming" => BuildProgrammingPrompt(context),
+            "language" => BuildLanguagePrompt(request),
+            "weather" => BuildWeatherPrompt(),
+            "jokes" => BuildJokesPrompt(),
+            _ => BuildGeneralPrompt(),
+        };
+
+        var languageRule = toolType == "language"
+            ? BuildLanguageToolConversationInstruction(context)
+            : BuildConversationLanguageInstruction(context);
+
+        return $"{toolPrompt}\n\n{languageRule}";
+    }
 
     public string BuildJobAnalyzerPrompt(SessionContext context)
     {
@@ -75,7 +84,7 @@ public class SystemPromptBuilder
             Location: {job.Location}
 
             KEY REQUIREMENTS:
-            {string.Join("\n", job.KeyRequirements.Select(r => $"• {r}"))}
+            {string.Join("\n", job.KeyRequirements.Select(r => $"- {r}"))}
 
             ATS KEYWORDS (must appear in CV):
             {string.Join(", ", job.Keywords)}
@@ -88,7 +97,7 @@ public class SystemPromptBuilder
 
             USER BACKGROUND:
             {(context.UserFacts.Any()
-                ? string.Join("\n", context.UserFacts.Select(f => $"• {f}"))
+                ? string.Join("\n", context.UserFacts.Select(f => $"- {f}"))
                 : "Not yet known - ask when relevant")}
 
             ABSOLUTE RULES:
@@ -119,9 +128,9 @@ public class SystemPromptBuilder
             [YOUR QUESTION]: "..."
             After user answers ->
             [FEEDBACK]:
-              ✅ What was good: ...
-              🔧 What to improve: ...
-              💡 Better answer structure: ...
+              - What was good: ...
+              - What to improve: ...
+              - Better answer structure: ...
             [NEXT QUESTION]: "..."
             """;
 
@@ -206,6 +215,40 @@ public class SystemPromptBuilder
             {codeContext}
 
             If user shares code, remember and reference that code in follow-up answers.
+            """;
+    }
+
+    private static string BuildConversationLanguageInstruction(SessionContext context)
+    {
+        var lang = string.Equals(context.ConversationLanguage, "en", StringComparison.OrdinalIgnoreCase)
+            ? "en"
+            : "de";
+
+        return lang == "de"
+            ? """
+              LANGUAGE MODE:
+              - Always answer in German.
+              - Keep this language until the user clearly switches to English.
+              - If the user switches to English, continue in English in following turns.
+              """
+            : """
+              LANGUAGE MODE:
+              - Always answer in English.
+              - Keep this language until the user clearly switches to German.
+              - If the user switches to German, continue in German in following turns.
+              """;
+    }
+
+    private static string BuildLanguageToolConversationInstruction(SessionContext context)
+    {
+        var lang = string.Equals(context.ConversationLanguage, "en", StringComparison.OrdinalIgnoreCase)
+            ? "English"
+            : "German";
+
+        return $"""
+            CONVERSATION LANGUAGE CONTEXT:
+            - For explanations and clarifications, prefer {lang}.
+            - For translation output, follow the target language requested by the user.
             """;
     }
 

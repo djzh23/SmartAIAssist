@@ -233,6 +233,7 @@ public class AgentController(
             {
                 sessionId = context.SessionId,
                 toolType = context.ToolType,
+                conversationLanguage = context.ConversationLanguage,
                 hasJob = context.Job?.IsAnalyzed == true,
                 jobTitle = context.Job?.JobTitle,
                 companyName = context.Job?.CompanyName,
