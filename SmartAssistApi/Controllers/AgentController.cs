@@ -83,7 +83,7 @@ public class AgentController(
             logger.LogError(ex,
                 "Agent execution failed. UserId {UserId} SessionId {SessionId} ToolType {ToolType}",
                 userId, request.SessionId, request.ToolType ?? "general");
-            return StatusCode(500, new { error = "agent_error", message = ex.Message, details = ex.InnerException?.Message });
+            return StatusCode(500, new { error = "agent_error", message = "An internal error occurred. Please try again." });
         }
     }
 
@@ -240,6 +240,10 @@ public class AgentController(
     [HttpPost("speak")]
     public async Task<IActionResult> Speak([FromBody] SpeechRequest request, CancellationToken cancellationToken)
     {
+        var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous)
+            return Unauthorized(new { error = "auth_required", message = "You must be signed in to use audio." });
+
         if (string.IsNullOrWhiteSpace(request.Text))
             return BadRequest(new { error = "Text must not be empty." });
 
@@ -257,24 +261,26 @@ public class AgentController(
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Speech configuration error (agent speak)");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "speech_config_error", message = "Speech service is not configured correctly." });
         }
         catch (HttpRequestException ex)
         {
             logger.LogError(ex, "Speech provider request failed (agent speak)");
-            return StatusCode(502, new { error = ex.Message });
+            return StatusCode(502, new { error = "speech_provider_error", message = "Speech provider returned an error." });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Agent speak endpoint failed");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "speech_error", message = "An internal error occurred." });
         }
     }
 
     [HttpPost("context")]
     public async Task<IActionResult> SetContext([FromBody] SetContextRequest request)
     {
-        _ = clerkAuthService.ExtractUserId(Request);
+        var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous)
+            return Unauthorized(new { error = "auth_required", message = "You must be signed in to set context." });
 
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return BadRequest(new { error = "SessionId required." });
@@ -314,7 +320,7 @@ public class AgentController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to update agent context. SessionId {SessionId} ToolType {ToolType}", request.SessionId, toolType);
-            return StatusCode(500, new { error = "context_update_failed", message = ex.Message });
+            return StatusCode(500, new { error = "context_update_failed" });
         }
     }
 
@@ -323,6 +329,10 @@ public class AgentController(
     {
         if (string.IsNullOrWhiteSpace(sessionId))
             return BadRequest(new { error = "SessionId required." });
+
+        var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous)
+            return Unauthorized(new { error = "auth_required", message = "You must be signed in to read context." });
 
         var normalizedToolType = string.IsNullOrWhiteSpace(toolType)
             ? "general"
@@ -340,7 +350,7 @@ public class AgentController(
                 jobTitle = context.Job?.JobTitle,
                 companyName = context.Job?.CompanyName,
                 hasCV = !string.IsNullOrWhiteSpace(context.UserCV),
-                userCV = context.UserCV,
+                // userCV is intentionally omitted — never expose raw CV text over the API
                 interviewJobTitle = context.InterviewJobTitle,
                 interviewCompany = context.InterviewCompany,
                 hasProgrammingLang = !string.IsNullOrWhiteSpace(context.ProgrammingLanguage),
@@ -353,7 +363,7 @@ public class AgentController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to read agent context. SessionId {SessionId} ToolType {ToolType}", sessionId, normalizedToolType);
-            return StatusCode(500, new { error = "context_read_failed", message = ex.Message });
+            return StatusCode(500, new { error = "context_read_failed" });
         }
     }
 }

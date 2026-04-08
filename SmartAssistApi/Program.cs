@@ -46,6 +46,7 @@ builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
 builder.Services.AddScoped<StripeService>();
+builder.Services.AddHostedService<ConversationCleanupService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>

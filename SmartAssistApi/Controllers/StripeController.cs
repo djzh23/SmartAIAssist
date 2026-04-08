@@ -54,7 +54,7 @@ public class StripeController(
                 normalizedPlan,
                 HttpContext.TraceIdentifier);
 
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "checkout_failed" });
         }
     }
 
@@ -84,7 +84,7 @@ public class StripeController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Error creating portal session. UserId {UserId}", userId);
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "portal_failed" });
         }
     }
 
@@ -111,7 +111,7 @@ public class StripeController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Confirm-plan failed. UserId {UserId} SessionId {SessionId}", userId, sessionId);
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "confirm_plan_failed" });
         }
     }
 
