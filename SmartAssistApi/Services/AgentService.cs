@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
@@ -72,7 +72,7 @@ public class AgentService(
             MaxTokens = 2000,
             Temperature = 1.0m,
             Messages = history,
-            Tools = BuildTools(toolType),
+            Tools = BuildTools(toolType, request),
             System = new List<SystemMessage> { new(systemPrompt) },
         };
 
@@ -142,7 +142,7 @@ public class AgentService(
         yield return AgentStreamChunk.Done(result.ToolUsed);
     }
 
-    private List<Tool> BuildTools(string toolType) => toolType switch
+    private static List<Tool> BuildTools(string toolType, AgentRequest request) => toolType switch
     {
         "weather" =>
         [
@@ -159,6 +159,9 @@ public class AgentService(
                     return JokeTool.GetJokeAsync().Result;
                 })
         ],
+        // In structured learning mode (---ZIELSPRACHE--- format) Claude must respond
+        // directly without calling external tools — the tool would break the format.
+        "language" when request.LanguageLearningMode => [],
         "language" =>
         [
             Tool.FromFunc("translate_text",

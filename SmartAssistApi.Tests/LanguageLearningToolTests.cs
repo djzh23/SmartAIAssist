@@ -62,6 +62,8 @@ public class LanguageLearningToolTests
 
         Assert.Contains("German", prompt);
         Assert.Contains("Spanish", prompt);
-        Assert.Contains("JSON", prompt);
+        Assert.Contains("---ZIELSPRACHE---", prompt);
+        Assert.Contains("---UEBERSETZUNG---", prompt);
+        Assert.Contains("---END---", prompt);
     }
 }

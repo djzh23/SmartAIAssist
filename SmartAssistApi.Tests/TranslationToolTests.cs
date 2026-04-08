@@ -51,14 +51,13 @@ public class TranslationToolTests
     }
 
     [Fact]
-    public void BuildSystemPrompt_IncludesJsonStructure()
+    public void BuildSystemPrompt_IncludesStructuredMarkers()
     {
         var result = LanguageLearningTool.BuildSystemPrompt("English", "French");
 
-        Assert.Contains("\"target\"", result);
-        Assert.Contains("\"native\"", result);
-        Assert.Contains("\"tip\"", result);
-        Assert.Contains("JSON", result);
+        Assert.Contains("---ZIELSPRACHE---", result);
+        Assert.Contains("---UEBERSETZUNG---", result);
+        Assert.Contains("---END---", result);
     }
 
     [Fact]
