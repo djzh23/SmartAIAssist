@@ -41,7 +41,7 @@ builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddScoped<JobContextExtractor>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());
-builder.Services.AddHttpClient<ISpeechService, ElevenLabsSpeechService>();
+builder.Services.AddHttpClient<ISpeechService, OpenAiSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
@@ -61,11 +61,11 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 startupLogger.LogInformation("CORS allowed origins: {Origins}", string.Join(", ", allowedOrigins));
-var elevenLabsApiKey = app.Configuration["ELEVENLABS_API_KEY"] ?? app.Configuration["ElevenLabs:ApiKey"];
-if (string.IsNullOrWhiteSpace(elevenLabsApiKey))
+var openAiApiKey = app.Configuration["OPENAI_API_KEY"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+if (string.IsNullOrWhiteSpace(openAiApiKey))
 {
     startupLogger.LogWarning(
-        "ElevenLabs API key is not configured. Set ELEVENLABS_API_KEY (environment variable) or dotnet user-secrets for project SmartAssistApi.csproj.");
+        "OpenAI API key is not configured. TTS will fail. Set OPENAI_API_KEY as an environment variable.");
 }
 
 app.UseCors("BlazorClient");
