@@ -41,7 +41,7 @@ builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddScoped<JobContextExtractor>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());
-builder.Services.AddHttpClient<ISpeechService, OpenAiSpeechService>();
+builder.Services.AddHttpClient<ISpeechService, AzureSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
@@ -61,11 +61,11 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 startupLogger.LogInformation("CORS allowed origins: {Origins}", string.Join(", ", allowedOrigins));
-var openAiApiKey = app.Configuration["OPENAI_API_KEY"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-if (string.IsNullOrWhiteSpace(openAiApiKey))
+var azureSpeechKey = app.Configuration["AZURE_SPEECH_KEY"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
+if (string.IsNullOrWhiteSpace(azureSpeechKey))
 {
     startupLogger.LogWarning(
-        "OpenAI API key is not configured. TTS will fail. Set OPENAI_API_KEY as an environment variable.");
+        "Azure Speech API key is not configured. TTS will fail. Set AZURE_SPEECH_KEY as an environment variable.");
 }
 
 app.UseCors("BlazorClient");
