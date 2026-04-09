@@ -236,6 +236,65 @@ public class AgentController(
     [HttpGet("health")]
     public IActionResult Health() => Ok(new { status = "ok", timestamp = DateTime.UtcNow });
 
+    /// <summary>
+    /// Public demo endpoint — no Clerk auth required. Uses its own per-IP daily counter
+    /// (separate from regular anonymous quota) so demo users never see a 429 error.
+    /// Limit: 5 requests per IP per day.
+    /// </summary>
+    [HttpPost("demo")]
+    public async Task<ActionResult<AgentResponse>> Demo([FromBody] AgentRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return BadRequest(new { error = "message_empty" });
+
+        if (request.Message.Length > 4000)
+            return BadRequest(new { error = "message_too_long" });
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var demoUserId = $"demo_agent:{ip}";
+        const int demoLimit = 5;
+
+        int currentUsage;
+        try
+        {
+            currentUsage = await usageService.GetUsageTodayAsync(demoUserId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Demo usage check failed for IP {IP}", ip);
+            return StatusCode(503, new { error = "usage_check_failed" });
+        }
+
+        if (currentUsage >= demoLimit)
+            return StatusCode(429, new
+            {
+                error = "demo_limit_reached",
+                reason = "demo_limit",
+                message = "Demo limit reached. Sign up for 20 free messages per day.",
+            });
+
+        var sessionId = string.IsNullOrWhiteSpace(request.SessionId)
+            ? $"demo_{ip}_{DateTime.UtcNow:yyyyMMdd}"
+            : request.SessionId;
+
+        var demoRequest = request with { SessionId = sessionId };
+
+        logger.LogInformation("Demo request. IP {IP} Usage {Usage}/{Limit} ToolType {ToolType}",
+            ip, currentUsage + 1, demoLimit, request.ToolType ?? "general");
+
+        try
+        {
+            await usageService.IncrementUsageAsync(demoUserId);
+            var result = await agentService.RunAsync(demoRequest);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Demo agent execution failed. IP {IP} ToolType {ToolType}", ip, request.ToolType);
+            return StatusCode(500, new { error = "agent_error", message = "An internal error occurred. Please try again." });
+        }
+    }
+
     /// <summary>ElevenLabs TTS via same contract as <c>/api/speech/tts</c>; path alias for agent clients.</summary>
     [HttpPost("speak")]
     public async Task<IActionResult> Speak([FromBody] SpeechRequest request, CancellationToken cancellationToken)
