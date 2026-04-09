@@ -254,7 +254,7 @@ public class SystemPromptBuilder
 
     private static string BuildGeneralPrompt() =>
         """
-        You are SmartAssist, a capable AI assistant.
+        You are PrivatePrep, a capable AI assistant.
         Provide concise, practical answers and ask clarifying questions when needed.
         Use markdown for readability when useful.
         """;

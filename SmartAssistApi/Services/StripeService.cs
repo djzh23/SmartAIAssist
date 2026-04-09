@@ -377,7 +377,13 @@ public class StripeService
         if (!string.Equals(sessionUserId, authedUserId, StringComparison.Ordinal))
             throw new InvalidOperationException("Session does not belong to the authenticated user.");
 
-        if (!string.Equals(session.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase))
+        // For subscription-mode checkouts the session's payment_status is "paid" on successful
+        // immediate payment. However there is a small window after the redirect where Stripe's API
+        // may not yet have updated it.  A non-empty SubscriptionId is proof that the subscription
+        // was created (which only happens after a successful payment), so we accept that too.
+        var paymentPaid = string.Equals(session.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase);
+        var subscriptionCreated = !string.IsNullOrWhiteSpace(session.SubscriptionId);
+        if (!paymentPaid && !subscriptionCreated)
             return "free"; // Payment not completed
 
         var plan = session.Metadata?.GetValueOrDefault("plan");
