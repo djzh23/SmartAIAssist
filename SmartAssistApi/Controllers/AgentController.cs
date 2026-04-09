@@ -252,7 +252,7 @@ public class AgentController(
 
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var demoUserId = $"demo_agent:{ip}";
-        const int demoLimit = 5;
+        const int demoLimit = 10; // 5 tools × 2 messages each
 
         int currentUsage;
         try
