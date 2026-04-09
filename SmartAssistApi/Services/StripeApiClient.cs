@@ -9,7 +9,7 @@ public interface IStripeApiClient
     Task<Session> GetCheckoutSessionAsync(string sessionId);
     Task<Stripe.BillingPortal.Session> CreateBillingPortalSessionAsync(Stripe.BillingPortal.SessionCreateOptions options);
     Task<StripeList<Subscription>> ListCustomerSubscriptionsAsync(string customerId);
-    Task<StripeList<Customer>> SearchCustomersByEmailAsync(string email);
+    Task<StripeSearchResult<Customer>> SearchCustomersByEmailAsync(string email);
 }
 
 public sealed class StripeApiClient : IStripeApiClient
@@ -43,7 +43,7 @@ public sealed class StripeApiClient : IStripeApiClient
         });
     }
 
-    public Task<StripeList<Customer>> SearchCustomersByEmailAsync(string email)
+    public Task<StripeSearchResult<Customer>> SearchCustomersByEmailAsync(string email)
     {
         var service = new CustomerService();
         return service.SearchAsync(new CustomerSearchOptions
