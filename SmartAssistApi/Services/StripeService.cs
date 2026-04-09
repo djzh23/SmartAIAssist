@@ -402,6 +402,47 @@ public class StripeService
         return plan;
     }
 
+    /// <summary>
+    /// Looks up the user's active Stripe subscription and updates Redis to match.
+    /// This is the authoritative fallback when both the webhook and confirm-plan have failed.
+    /// Returns the confirmed plan ("premium" | "pro") or "free" if no active subscription found.
+    /// </summary>
+    public async Task<string> SyncPlanFromStripeAsync(string userId)
+    {
+        var customerId = await _usageService.GetStripeCustomerIdAsync(userId);
+        if (string.IsNullOrWhiteSpace(customerId))
+        {
+            _logger.LogWarning("SyncPlanFromStripe: no Stripe customer ID found for user {UserId}", userId);
+            return "free";
+        }
+
+        var subscriptions = await _stripeApiClient.ListCustomerSubscriptionsAsync(customerId);
+        var activeSub = subscriptions.Data.FirstOrDefault();
+
+        if (activeSub is null)
+        {
+            _logger.LogWarning("SyncPlanFromStripe: no active subscription for customer {CustomerId} UserId {UserId}", customerId, userId);
+            return "free";
+        }
+
+        var priceId = activeSub.Items?.Data?.FirstOrDefault()?.Price?.Id;
+        var plan = PlanFromPriceId(priceId);
+
+        if (plan is null)
+        {
+            _logger.LogWarning("SyncPlanFromStripe: unknown price {PriceId} for customer {CustomerId}", priceId, customerId);
+            return "free";
+        }
+
+        await _usageService.SetPlanAsync(userId, plan);
+
+        _logger.LogInformation(
+            "SyncPlanFromStripe: plan synced from Stripe. UserId {UserId} Plan {Plan} SubscriptionId {SubId}",
+            userId, plan, activeSub.Id);
+
+        return plan;
+    }
+
     private string ResolveSuccessUrl()
     {
         var configured = _config["Frontend:SuccessUrl"];

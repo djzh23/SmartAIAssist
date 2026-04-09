@@ -115,6 +115,29 @@ public class StripeController(
         }
     }
 
+    /// <summary>
+    /// Queries Stripe directly for the user's active subscription and updates Redis to match.
+    /// Provides a reliable self-service repair when webhook + confirm-plan both failed.
+    /// </summary>
+    [HttpPost("sync-plan")]
+    public async Task<IActionResult> SyncPlan()
+    {
+        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous || string.IsNullOrWhiteSpace(userId))
+            return Unauthorized("You must be logged in.");
+
+        try
+        {
+            var plan = await stripeService.SyncPlanFromStripeAsync(userId);
+            return Ok(new { plan, synced = true });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Sync-plan failed. UserId {UserId}", userId);
+            return StatusCode(500, new { error = "sync_plan_failed" });
+        }
+    }
+
     [HttpPost("webhook")]
     public async Task<IActionResult> Webhook()
     {
