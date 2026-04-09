@@ -9,6 +9,7 @@ public interface IStripeApiClient
     Task<Session> GetCheckoutSessionAsync(string sessionId);
     Task<Stripe.BillingPortal.Session> CreateBillingPortalSessionAsync(Stripe.BillingPortal.SessionCreateOptions options);
     Task<StripeList<Subscription>> ListCustomerSubscriptionsAsync(string customerId);
+    Task<StripeList<Customer>> SearchCustomersByEmailAsync(string email);
 }
 
 public sealed class StripeApiClient : IStripeApiClient
@@ -39,6 +40,16 @@ public sealed class StripeApiClient : IStripeApiClient
             Customer = customerId,
             Status   = "active",
             Expand   = ["data.items.data.price"],
+        });
+    }
+
+    public Task<StripeList<Customer>> SearchCustomersByEmailAsync(string email)
+    {
+        var service = new CustomerService();
+        return service.SearchAsync(new CustomerSearchOptions
+        {
+            Query = $"email:'{email}'",
+            Limit = 5,
         });
     }
 }

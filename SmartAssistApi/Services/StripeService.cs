@@ -405,23 +405,60 @@ public class StripeService
     /// <summary>
     /// Looks up the user's active Stripe subscription and updates Redis to match.
     /// This is the authoritative fallback when both the webhook and confirm-plan have failed.
+    ///
+    /// Strategy:
+    ///   1. Look up Stripe customer ID from Redis (set during normal checkout/webhook).
+    ///   2. If not found and email is provided, search Stripe by email (webhook never fired).
+    ///   3. List the customer's active subscriptions, map the price to a plan, update Redis.
+    ///
     /// Returns the confirmed plan ("premium" | "pro") or "free" if no active subscription found.
     /// </summary>
-    public async Task<string> SyncPlanFromStripeAsync(string userId)
+    public async Task<string> SyncPlanFromStripeAsync(string userId, string? userEmail = null)
     {
+        // ── 1. Resolve Stripe customer ID ────────────────────────────────────────
         var customerId = await _usageService.GetStripeCustomerIdAsync(userId);
+
+        if (string.IsNullOrWhiteSpace(customerId) && !string.IsNullOrWhiteSpace(userEmail))
+        {
+            _logger.LogInformation(
+                "SyncPlanFromStripe: no Redis customer mapping — searching Stripe by email. UserId {UserId} Email {Email}",
+                userId, userEmail);
+
+            var customers = await _stripeApiClient.SearchCustomersByEmailAsync(userEmail);
+            // Pick the most recently created customer that has an active subscription.
+            customerId = customers.Data.FirstOrDefault()?.Id;
+
+            if (string.IsNullOrWhiteSpace(customerId))
+            {
+                _logger.LogWarning(
+                    "SyncPlanFromStripe: no Stripe customer found by email. UserId {UserId} Email {Email}",
+                    userId, userEmail);
+                return "free";
+            }
+
+            // Persist the mapping so future lookups hit Redis, not Stripe.
+            await _usageService.SetStripeCustomerIdAsync(userId, customerId);
+
+            _logger.LogInformation(
+                "SyncPlanFromStripe: customer found by email, mapping persisted. UserId {UserId} CustomerId {CustomerId}",
+                userId, customerId);
+        }
+
         if (string.IsNullOrWhiteSpace(customerId))
         {
-            _logger.LogWarning("SyncPlanFromStripe: no Stripe customer ID found for user {UserId}", userId);
+            _logger.LogWarning("SyncPlanFromStripe: no Stripe customer ID and no email provided. UserId {UserId}", userId);
             return "free";
         }
 
+        // ── 2. Resolve active subscription ───────────────────────────────────────
         var subscriptions = await _stripeApiClient.ListCustomerSubscriptionsAsync(customerId);
         var activeSub = subscriptions.Data.FirstOrDefault();
 
         if (activeSub is null)
         {
-            _logger.LogWarning("SyncPlanFromStripe: no active subscription for customer {CustomerId} UserId {UserId}", customerId, userId);
+            _logger.LogWarning(
+                "SyncPlanFromStripe: no active subscription for customer {CustomerId} UserId {UserId}",
+                customerId, userId);
             return "free";
         }
 
@@ -430,10 +467,13 @@ public class StripeService
 
         if (plan is null)
         {
-            _logger.LogWarning("SyncPlanFromStripe: unknown price {PriceId} for customer {CustomerId}", priceId, customerId);
+            _logger.LogWarning(
+                "SyncPlanFromStripe: unknown price {PriceId} for customer {CustomerId}",
+                priceId, customerId);
             return "free";
         }
 
+        // ── 3. Persist in Redis ───────────────────────────────────────────────────
         await _usageService.SetPlanAsync(userId, plan);
 
         _logger.LogInformation(

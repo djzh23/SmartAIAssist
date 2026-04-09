@@ -117,10 +117,11 @@ public class StripeController(
 
     /// <summary>
     /// Queries Stripe directly for the user's active subscription and updates Redis to match.
-    /// Provides a reliable self-service repair when webhook + confirm-plan both failed.
+    /// Accepts an optional { email } in the request body so that a Stripe customer can be
+    /// located even when the customer-ID mapping was never written to Redis (webhook missed).
     /// </summary>
     [HttpPost("sync-plan")]
-    public async Task<IActionResult> SyncPlan()
+    public async Task<IActionResult> SyncPlan([FromBody] SyncPlanRequest? body = null)
     {
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
         if (isAnonymous || string.IsNullOrWhiteSpace(userId))
@@ -128,7 +129,7 @@ public class StripeController(
 
         try
         {
-            var plan = await stripeService.SyncPlanFromStripeAsync(userId);
+            var plan = await stripeService.SyncPlanFromStripeAsync(userId, body?.Email);
             return Ok(new { plan, synced = true });
         }
         catch (Exception ex)
@@ -225,3 +226,4 @@ public class StripeController(
 }
 
 public record CheckoutRequest(string Plan, string? Email, string? UserId);
+public record SyncPlanRequest(string? Email);
