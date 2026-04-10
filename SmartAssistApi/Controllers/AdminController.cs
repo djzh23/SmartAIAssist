@@ -99,16 +99,6 @@ public class AdminController(
     private bool IsAdmin()
     {
         var (userId, _) = clerkAuth.ExtractUserId(Request);
-        if (string.IsNullOrWhiteSpace(userId))
-            return false;
-
-        var configured = configuration["Admin:UserIds"]
-            ?? Environment.GetEnvironmentVariable("ADMIN_USER_IDS")
-            ?? string.Empty;
-
-        var admins = configured
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return admins.Length > 0 && admins.Contains(userId, StringComparer.Ordinal);
+        return AdminAuthorization.IsUserInAdminList(userId, configuration);
     }
 }

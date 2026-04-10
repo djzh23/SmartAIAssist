@@ -57,12 +57,16 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
 
             var costStr = cost.ToString(CultureInfo.InvariantCulture);
 
+            // Per-tool message counts on the user day hash (tc_{tool}) — one HINCRBY, no read-modify-write race.
+            var toolCountField = $"tc_{tool}";
+
             var pipe = new List<object[]>
             {
                 new object[] { "HINCRBY", userDay, "messages", 1 },
                 new object[] { "HINCRBY", userDay, "input_tokens", inputTokens },
                 new object[] { "HINCRBY", userDay, "output_tokens", outputTokens },
                 new object[] { "HINCRBYFLOAT", userDay, "cost_usd", costStr },
+                new object[] { "HINCRBY", userDay, toolCountField, 1 },
                 new object[] { "HINCRBY", userModel, "messages", 1 },
                 new object[] { "HINCRBY", userModel, "input_tokens", inputTokens },
                 new object[] { "HINCRBY", userModel, "output_tokens", outputTokens },
@@ -108,7 +112,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         }
     }
 
-    public async Task<AdminDashboardData> GetDashboardDataAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<AdminDashboardData> GetDashboardDataAsync(CancellationToken cancellationToken = default)
     {
         var today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -180,7 +184,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         for (var d = start; d <= end; d = d.AddDays(1))
         {
             var ds = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            var day = await ReadUserDayAsync(userId, ds, cancellationToken).ConfigureAwait(false);
+            var day = await ReadUserDayFullAsync(userId, ds, cancellationToken).ConfigureAwait(false);
             summary.TotalMessages += day.Messages;
             summary.TotalInputTokens += day.InputTokens;
             summary.TotalOutputTokens += day.OutputTokens;
@@ -212,7 +216,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
 
         foreach (var uid in userIds)
         {
-            var day = await ReadUserDayAsync(uid, date, cancellationToken).ConfigureAwait(false);
+            var day = await ReadUserDayFullAsync(uid, date, cancellationToken).ConfigureAwait(false);
             if (day.Messages == 0 && day.CostUsd == 0)
                 continue;
 
@@ -221,6 +225,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             {
                 UserId = uid,
                 Plan = plan,
+                TopTool = day.TopTool,
                 TotalMessages = day.Messages,
                 TotalInputTokens = day.InputTokens,
                 TotalOutputTokens = day.OutputTokens,
@@ -345,8 +350,41 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
     private async Task<(int Messages, int InputTokens, int OutputTokens, decimal CostUsd)> ReadGlobalDayAsync(string date, CancellationToken ct) =>
         await ReadHashMetricsAsync($"tokens:global:daily:{date}", ct).ConfigureAwait(false);
 
-    private async Task<(int Messages, int InputTokens, int OutputTokens, decimal CostUsd)> ReadUserDayAsync(string userId, string date, CancellationToken ct) =>
-        await ReadHashMetricsAsync($"tokens:daily:{userId}:{date}", ct).ConfigureAwait(false);
+    private async Task<(int Messages, int InputTokens, int OutputTokens, decimal CostUsd, string? TopTool)> ReadUserDayFullAsync(string userId, string date, CancellationToken ct)
+    {
+        var map = await RedisHGetAllAsync($"tokens:daily:{userId}:{date}", ct).ConfigureAwait(false);
+        return (
+            ParseInt(map, "messages"),
+            ParseInt(map, "input_tokens"),
+            ParseInt(map, "output_tokens"),
+            ParseDecimal(map, "cost_usd"),
+            ParseTopToolFromTcFields(map));
+    }
+
+    /// <summary>Pick tool with highest tc_* count; ties broken by lexicographic tool name.</summary>
+    internal static string? ParseTopToolFromTcFields(Dictionary<string, string> map)
+    {
+        string? best = null;
+        var bestCount = -1;
+        const string prefix = "tc_";
+        foreach (var kv in map)
+        {
+            if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+            if (!int.TryParse(kv.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var c))
+                continue;
+            var toolName = kv.Key.Length > prefix.Length ? kv.Key[prefix.Length..] : "";
+            if (string.IsNullOrEmpty(toolName))
+                continue;
+            if (c > bestCount || (c == bestCount && string.Compare(toolName, best, StringComparison.Ordinal) < 0))
+            {
+                bestCount = c;
+                best = toolName;
+            }
+        }
+
+        return best;
+    }
 
     private async Task<(int Messages, int Input, int Output, decimal Cost)> ReadHashMetricsAsync(string key, CancellationToken ct)
     {

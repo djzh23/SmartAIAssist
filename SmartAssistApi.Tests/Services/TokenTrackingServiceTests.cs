@@ -14,6 +14,42 @@ public class TokenTrackingServiceTests
     public void CalculateCost_ReturnsCorrectAmount(string model, int input, int output, decimal expected)
     {
         var result = TokenTrackingService.CalculateCost(model, input, output);
-        Assert.Equal(expected, decimal.Round(result, 4));
+        Assert.Equal(expected, result, precision: 4);
+    }
+
+    [Fact]
+    public void ParseTopToolFromTcFields_Empty_ReturnsNull()
+    {
+        Assert.Null(TokenTrackingService.ParseTopToolFromTcFields(new Dictionary<string, string>()));
+    }
+
+    [Fact]
+    public void ParseTopToolFromTcFields_SingleTool_ReturnsTool()
+    {
+        var map = new Dictionary<string, string> { ["tc_general"] = "5" };
+        Assert.Equal("general", TokenTrackingService.ParseTopToolFromTcFields(map));
+    }
+
+    [Fact]
+    public void ParseTopToolFromTcFields_PicksHighestCount()
+    {
+        var map = new Dictionary<string, string>
+        {
+            ["tc_general"] = "3",
+            ["tc_language"] = "10",
+            ["messages"] = "13",
+        };
+        Assert.Equal("language", TokenTrackingService.ParseTopToolFromTcFields(map));
+    }
+
+    [Fact]
+    public void ParseTopToolFromTcFields_TieBreaksLexicographically()
+    {
+        var map = new Dictionary<string, string>
+        {
+            ["tc_zebra"] = "5",
+            ["tc_apple"] = "5",
+        };
+        Assert.Equal("apple", TokenTrackingService.ParseTopToolFromTcFields(map));
     }
 }

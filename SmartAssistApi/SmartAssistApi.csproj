@@ -6,6 +6,9 @@
 		<UserSecretsId>smartassistapi-31e7bfee-4f6f-470c-9a75-tts</UserSecretsId>
 	</PropertyGroup>
 	<ItemGroup>
+		<InternalsVisibleTo Include="SmartAssistApi.Tests" />
+	</ItemGroup>
+	<ItemGroup>
 		<PackageReference Include="Anthropic.SDK" Version="4.1.1" />
 		<PackageReference Include="Stripe.net" Version="51.0.0" />
 	</ItemGroup>
