@@ -5,6 +5,9 @@ namespace SmartAssistApi.Services;
 
 public class ConversationService
 {
+    /// <summary>Sliding window of user/assistant turns sent to the model (input cost control).</summary>
+    public const int MaxHistoryMessages = 6;
+
     private readonly Dictionary<string, List<Message>> _histories = new();
     private readonly Dictionary<string, SessionContext> _contexts = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -35,7 +38,7 @@ public class ConversationService
         try
         {
             var key = HistoryKey(sessionId, toolType);
-            _histories[key] = messages.TakeLast(20).ToList();
+            _histories[key] = messages.TakeLast(MaxHistoryMessages).ToList();
         }
         finally
         {

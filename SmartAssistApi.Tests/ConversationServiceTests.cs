@@ -39,7 +39,7 @@ public class ConversationServiceTests
     }
 
     [Fact]
-    public async Task SaveHistoryAsync_StoresSlidingWindowOfTwenty()
+    public async Task SaveHistoryAsync_StoresSlidingWindow()
     {
         var sut = new ConversationService();
         var messages = Enumerable.Range(1, 25)
@@ -49,8 +49,8 @@ public class ConversationServiceTests
         await sut.SaveHistoryAsync("session-window", "general", messages);
         var stored = await sut.GetHistoryAsync("session-window", "general");
 
-        Assert.Equal(20, stored.Count);
-        Assert.Contains("m6", stored.First().ToString());
+        Assert.Equal(ConversationService.MaxHistoryMessages, stored.Count);
+        Assert.Contains("m20", stored.First().ToString());
         Assert.Contains("m25", stored.Last().ToString());
     }
 

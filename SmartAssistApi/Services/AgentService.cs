@@ -27,46 +27,48 @@ public class AgentService(
             ? "general"
             : request.ToolType.ToLowerInvariant();
 
+        var userMessage = SanitizeUserMessage(request.Message, toolType);
+
         var context = await conversationService.GetContextAsync(sessionId, toolType);
 
         if (toolType == "jobanalyzer"
-            && request.Message.Length > 150
+            && userMessage.Length > 150
             && (context.Job is null || !context.Job.IsAnalyzed))
         {
-            var jobContext = await jobExtractor.ExtractAsync(request.Message);
+            var jobContext = await jobExtractor.ExtractAsync(userMessage);
             await conversationService.UpdateContextAsync(sessionId, toolType, ctx => ctx.Job = jobContext);
             context = await conversationService.GetContextAsync(sessionId, toolType);
         }
 
         if (toolType == "interviewprep"
-            && request.Message.Length > 200
+            && userMessage.Length > 200
             && context.UserCV is null)
         {
-            await conversationService.UpdateContextAsync(sessionId, toolType, ctx => ctx.UserCV = request.Message);
+            await conversationService.UpdateContextAsync(sessionId, toolType, ctx => ctx.UserCV = userMessage);
             context = await conversationService.GetContextAsync(sessionId, toolType);
         }
 
-        if (toolType == "programming" && LooksLikeCode(request.Message))
+        if (toolType == "programming" && LooksLikeCode(userMessage))
         {
             await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
             {
-                ctx.CurrentCodeContext = request.Message[..Math.Min(request.Message.Length, 3000)];
-                ctx.ProgrammingLanguage ??= InferProgrammingLanguage(request.Message);
+                ctx.CurrentCodeContext = userMessage[..Math.Min(userMessage.Length, 3000)];
+                ctx.ProgrammingLanguage ??= InferProgrammingLanguage(userMessage);
             });
             context = await conversationService.GetContextAsync(sessionId, toolType);
         }
 
-        await UpdateConversationLanguageAsync(sessionId, toolType, request.Message, context);
+        await UpdateConversationLanguageAsync(sessionId, toolType, userMessage, context);
         context = await conversationService.GetContextAsync(sessionId, toolType);
 
-        await ExtractUserFactsAsync(request.Message, sessionId, toolType);
+        await ExtractUserFactsAsync(userMessage, sessionId, toolType);
         context = await conversationService.GetContextAsync(sessionId, toolType);
 
         var promptParts = systemPromptBuilder.BuildPromptParts(toolType, context, request);
         LogCachedPrefixEffectiveness(toolType, request.SessionId, promptParts);
 
         var history = await conversationService.GetHistoryAsync(sessionId, toolType);
-        history.Add(new Message(RoleType.User, request.Message));
+        history.Add(new Message(RoleType.User, userMessage));
 
         var parameters = new MessageParameters
         {
@@ -165,15 +167,33 @@ public class AgentService(
 
     private static int MaxTokensFor(string toolType) => toolType switch
     {
-        "general" => 800,
+        "general" => 600,
         "language" => 600,
-        "jobanalyzer" => 1500,
-        "interviewprep" => 1200,
-        "programming" => 1500,
+        "jobanalyzer" => 1000,
+        "interviewprep" => 1000,
+        "programming" => 1200,
         "weather" => 300,
         "jokes" => 300,
-        _ => 800,
+        _ => 600,
     };
+
+    /// <summary>
+    /// Strip HTML/noise from pasted job ads and long CV text to cut input tokens (no silent quality hacks elsewhere).
+    /// </summary>
+    private static string SanitizeUserMessage(string message, string toolType)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return message;
+
+        var s = message.Trim();
+        if (toolType is not ("jobanalyzer" or "interviewprep"))
+            return s;
+
+        s = Regex.Replace(s, "<[^>]+>", " ", RegexOptions.Singleline);
+        s = Regex.Replace(s, @"[ \t]+", " ");
+        s = Regex.Replace(s, @"(\r?\n){3,}", "\n\n");
+        return s.Trim();
+    }
 
     private static void AccumulateTokenUsage(
         MessageResponse? resp,

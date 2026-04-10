@@ -6,21 +6,21 @@ namespace SmartAssistApi.Tests;
 public class AgentModelSelectorTests
 {
     [Theory]
-    [InlineData("general", true)]
-    [InlineData("language", true)]
-    [InlineData("", true)]
-    [InlineData("   ", true)]
-    [InlineData("jobanalyzer", false)]
-    [InlineData("interviewprep", false)]
-    [InlineData("programming", false)]
-    [InlineData("weather", false)]
-    public void UsesHaikuModel_ExpectedForTool(string tool, bool expectHaiku)
+    [InlineData("general")]
+    [InlineData("language")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("jobanalyzer")]
+    [InlineData("interviewprep")]
+    [InlineData("programming")]
+    [InlineData("weather")]
+    public void UsesHaikuModel_DefaultsToTrue(string tool)
     {
-        Assert.Equal(expectHaiku, AgentModelSelector.UsesHaikuModel(tool));
+        Assert.True(AgentModelSelector.UsesHaikuModel(tool));
     }
 
     [Fact]
-    public void ResolveModel_HaikuTools_UsesHaikuModelIdOrConfig()
+    public void ResolveModel_UsesHaikuByDefault_ForAllTools()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>())
@@ -28,10 +28,12 @@ public class AgentModelSelectorTests
 
         Assert.Equal(AgentModelSelector.DefaultHaikuModelId, AgentModelSelector.ResolveModel("general", config));
         Assert.Equal(AgentModelSelector.DefaultHaikuModelId, AgentModelSelector.ResolveModel("language", config));
+        Assert.Equal(AgentModelSelector.DefaultHaikuModelId, AgentModelSelector.ResolveModel("jobanalyzer", config));
+        Assert.Equal(AgentModelSelector.DefaultHaikuModelId, AgentModelSelector.ResolveModel("programming", config));
     }
 
     [Fact]
-    public void ResolveModel_HaikuTools_RespectsAnthropicHaikuModel()
+    public void ResolveModel_RespectsAnthropicHaikuModel()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Anthropic:HaikuModel"] = "custom-haiku-id" })
@@ -41,20 +43,29 @@ public class AgentModelSelectorTests
     }
 
     [Fact]
-    public void ResolveModel_OtherTools_UsesSonnetModelIdOrConfig()
+    public void ResolveModel_SonnetTools_OptsInSingleTool()
     {
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Anthropic:Model"] = "claude-sonnet-4-20250514",
+                ["Anthropic:SonnetTools"] = "jobanalyzer",
+            })
             .Build();
 
-        Assert.Equal(AgentModelSelector.DefaultSonnetModelId, AgentModelSelector.ResolveModel("jobanalyzer", config));
+        Assert.Equal("claude-sonnet-4-20250514", AgentModelSelector.ResolveModel("jobanalyzer", config));
+        Assert.Equal(AgentModelSelector.DefaultHaikuModelId, AgentModelSelector.ResolveModel("interviewprep", config));
     }
 
     [Fact]
-    public void ResolveModel_OtherTools_RespectsAnthropicModel()
+    public void ResolveModel_SonnetTools_Star_ForcesSonnetForAll()
     {
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Anthropic:Model"] = "claude-sonnet-4-20250514" })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Anthropic:Model"] = "claude-sonnet-4-20250514",
+                ["Anthropic:SonnetTools"] = "*",
+            })
             .Build();
 
         Assert.Equal("claude-sonnet-4-20250514", AgentModelSelector.ResolveModel("programming", config));
