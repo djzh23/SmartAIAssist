@@ -71,7 +71,7 @@ public class AgentService(
         var parameters = new MessageParameters
         {
             Model = AgentModelSelector.ResolveModel(toolType, config),
-            MaxTokens = 2000,
+            MaxTokens = MaxTokensFor(toolType),
             Temperature = 1.0m,
             Messages = history,
             Tools = BuildTools(toolType, request),
@@ -162,6 +162,18 @@ public class AgentService(
             cacheCreationInputTokens,
             cacheReadInputTokens);
     }
+
+    private static int MaxTokensFor(string toolType) => toolType switch
+    {
+        "general" => 800,
+        "language" => 600,
+        "jobanalyzer" => 1500,
+        "interviewprep" => 1200,
+        "programming" => 1500,
+        "weather" => 300,
+        "jokes" => 300,
+        _ => 800,
+    };
 
     private static void AccumulateTokenUsage(
         MessageResponse? resp,
