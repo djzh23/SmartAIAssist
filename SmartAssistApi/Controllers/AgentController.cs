@@ -168,7 +168,14 @@ public class AgentController(
                 string json;
                 if (chunk.IsDone)
                 {
-                    FireTokenTracking(userId, request.ToolType, chunk.InputTokens, chunk.OutputTokens, chunk.Model);
+                    FireTokenTracking(
+                        userId,
+                        request.ToolType,
+                        chunk.InputTokens,
+                        chunk.OutputTokens,
+                        chunk.Model,
+                        chunk.CacheCreationInputTokens,
+                        chunk.CacheReadInputTokens);
                     json = JsonSerializer.Serialize(new
                     {
                         type = "done",
@@ -176,6 +183,8 @@ public class AgentController(
                         inputTokens = chunk.InputTokens,
                         outputTokens = chunk.OutputTokens,
                         model = chunk.Model,
+                        cacheCreationInputTokens = chunk.CacheCreationInputTokens,
+                        cacheReadInputTokens = chunk.CacheReadInputTokens,
                     });
                 }
                 else
@@ -442,19 +451,36 @@ public class AgentController(
     private void FireTokenTracking(string userId, string? toolTypeRaw, AgentResponse result)
     {
         var tool = string.IsNullOrWhiteSpace(toolTypeRaw) ? "general" : toolTypeRaw.ToLowerInvariant();
-        if (result.InputTokens is not { } i || result.OutputTokens is not { } o || (i == 0 && o == 0))
+        if (result.InputTokens is not { } i || result.OutputTokens is not { } o)
             return;
 
-        _ = tokenTrackingService.TrackUsageAsync(userId, tool, result.Model ?? "unknown", i, o);
+        var cc = result.CacheCreationInputTokens ?? 0;
+        var cr = result.CacheReadInputTokens ?? 0;
+        if (i == 0 && o == 0 && cc == 0 && cr == 0)
+            return;
+
+        _ = tokenTrackingService.TrackUsageAsync(userId, tool, result.Model ?? "unknown", i, o, cc, cr);
     }
 
-    private void FireTokenTracking(string userId, string? toolTypeRaw, int? inputTokens, int? outputTokens, string? model)
+    private void FireTokenTracking(
+        string userId,
+        string? toolTypeRaw,
+        int? inputTokens,
+        int? outputTokens,
+        string? model,
+        int? cacheCreationInputTokens = null,
+        int? cacheReadInputTokens = null)
     {
         var tool = string.IsNullOrWhiteSpace(toolTypeRaw) ? "general" : toolTypeRaw.ToLowerInvariant();
-        if (inputTokens is not { } i || outputTokens is not { } o || (i == 0 && o == 0))
+        if (inputTokens is not { } i || outputTokens is not { } o)
             return;
 
-        _ = tokenTrackingService.TrackUsageAsync(userId, tool, model ?? "unknown", i, o);
+        var cc = cacheCreationInputTokens ?? 0;
+        var cr = cacheReadInputTokens ?? 0;
+        if (i == 0 && o == 0 && cc == 0 && cr == 0)
+            return;
+
+        _ = tokenTrackingService.TrackUsageAsync(userId, tool, model ?? "unknown", i, o, cc, cr);
     }
 }
 

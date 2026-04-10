@@ -195,7 +195,14 @@ public class StripeServiceTests
             .Build();
         var tokenTrackingMock = new Mock<TokenTrackingService>(tokenCfg, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
         tokenTrackingMock
-            .Setup(t => t.TrackUsageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>()))
+            .Setup(t => t.TrackUsageAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>()))
             .Returns(Task.CompletedTask);
 
         var controller = new AgentController(

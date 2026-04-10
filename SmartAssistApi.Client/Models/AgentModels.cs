@@ -26,7 +26,9 @@ public record AgentResponse(
     LanguageLearningResponse? LearningData = null,
     int? InputTokens = null,
     int? OutputTokens = null,
-    string? Model = null);
+    string? Model = null,
+    int? CacheCreationInputTokens = null,
+    int? CacheReadInputTokens = null);
 
 public class ChatMessage
 {

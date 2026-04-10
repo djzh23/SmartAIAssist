@@ -68,20 +68,34 @@ public class AgentService(
 
         var parameters = new MessageParameters
         {
-            Model = config["Anthropic:Model"] ?? "claude-sonnet-4-5-20250929",
+            Model = AgentModelSelector.ResolveModel(toolType, config),
             MaxTokens = 2000,
             Temperature = 1.0m,
             Messages = history,
             Tools = BuildTools(toolType, request),
-            System = new List<SystemMessage> { new(systemPrompt) },
+            System =
+            [
+                new SystemMessage(
+                    systemPrompt,
+                    new CacheControl { Type = CacheControlType.ephemeral }),
+            ],
+            PromptCaching = PromptCacheType.FineGrained,
         };
 
         var inputTokens = 0;
         var outputTokens = 0;
+        var cacheCreationInputTokens = 0;
+        var cacheReadInputTokens = 0;
         var modelUsed = parameters.Model;
 
         var response = await _client.Messages.GetClaudeMessageAsync(parameters);
-        AccumulateTokenUsage(response, ref inputTokens, ref outputTokens, ref modelUsed);
+        AccumulateTokenUsage(
+            response,
+            ref inputTokens,
+            ref outputTokens,
+            ref cacheCreationInputTokens,
+            ref cacheReadInputTokens,
+            ref modelUsed);
 
         string finalReply;
         string? toolUsed = null;
@@ -110,7 +124,13 @@ public class AgentService(
 
             parameters.Messages = history;
             var final = await _client.Messages.GetClaudeMessageAsync(parameters);
-            AccumulateTokenUsage(final, ref inputTokens, ref outputTokens, ref modelUsed);
+            AccumulateTokenUsage(
+                final,
+                ref inputTokens,
+                ref outputTokens,
+                ref cacheCreationInputTokens,
+                ref cacheReadInputTokens,
+                ref modelUsed);
             finalReply = final.Message.ToString();
             history.Add(final.Message);
         }
@@ -141,16 +161,26 @@ public class AgentService(
             null,
             inputTokens,
             outputTokens,
-            modelUsed);
+            modelUsed,
+            cacheCreationInputTokens,
+            cacheReadInputTokens);
     }
 
-    private static void AccumulateTokenUsage(MessageResponse? resp, ref int inputTokens, ref int outputTokens, ref string? modelUsed)
+    private static void AccumulateTokenUsage(
+        MessageResponse? resp,
+        ref int inputTokens,
+        ref int outputTokens,
+        ref int cacheCreationInputTokens,
+        ref int cacheReadInputTokens,
+        ref string? modelUsed)
     {
         if (resp?.Usage is null)
             return;
 
         inputTokens += resp.Usage.InputTokens;
         outputTokens += resp.Usage.OutputTokens;
+        cacheCreationInputTokens += resp.Usage.CacheCreationInputTokens;
+        cacheReadInputTokens += resp.Usage.CacheReadInputTokens;
         if (!string.IsNullOrWhiteSpace(resp.Model))
             modelUsed = resp.Model;
     }
@@ -166,7 +196,9 @@ public class AgentService(
             result.ToolUsed,
             result.InputTokens,
             result.OutputTokens,
-            result.Model);
+            result.Model,
+            result.CacheCreationInputTokens,
+            result.CacheReadInputTokens);
     }
 
     private static List<Tool> BuildTools(string toolType, AgentRequest request) => toolType switch

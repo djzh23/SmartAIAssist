@@ -33,7 +33,14 @@ public class AgentControllerTests
         _usageMock = new Mock<UsageService>(_config, new HttpClient());
         _tokenTrackingMock = new Mock<TokenTrackingService>(_config, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
         _tokenTrackingMock
-            .Setup(t => t.TrackUsageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>()))
+            .Setup(t => t.TrackUsageAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>()))
             .Returns(Task.CompletedTask);
     }
 

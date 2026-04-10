@@ -17,6 +17,8 @@ public readonly record struct AgentStreamChunk
     public int? InputTokens { get; init; }
     public int? OutputTokens { get; init; }
     public string? Model { get; init; }
+    public int? CacheCreationInputTokens { get; init; }
+    public int? CacheReadInputTokens { get; init; }
 
     public static AgentStreamChunk TextPart(string text) => new() { Text = text };
 
@@ -24,7 +26,9 @@ public readonly record struct AgentStreamChunk
         string? toolUsed = null,
         int? inputTokens = null,
         int? outputTokens = null,
-        string? model = null) =>
+        string? model = null,
+        int? cacheCreationInputTokens = null,
+        int? cacheReadInputTokens = null) =>
         new()
         {
             IsDone = true,
@@ -32,5 +36,7 @@ public readonly record struct AgentStreamChunk
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
             Model = model,
+            CacheCreationInputTokens = cacheCreationInputTokens,
+            CacheReadInputTokens = cacheReadInputTokens,
         };
 }

@@ -21,23 +21,47 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         ["claude-sonnet-4-5-20250929"] = (3.00m, 15.00m),
     };
 
-    public static decimal CalculateCost(string model, int inputTokens, int outputTokens)
+    /// <summary>
+    /// USD cost from token usage. Prompt-cache lines use Anthropic’s multipliers on the model input rate:
+    /// cache writes 1.25×, cache reads 0.10× (see prompt caching pricing).
+    /// </summary>
+    public static decimal CalculateCost(
+        string model,
+        int inputTokens,
+        int outputTokens,
+        int cacheCreationInputTokens = 0,
+        int cacheReadInputTokens = 0)
     {
+        if (cacheCreationInputTokens < 0 || cacheReadInputTokens < 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(cacheCreationInputTokens),
+                "Cache creation and cache read token counts must be non-negative.");
+
         var (inputPerM, outputPerM) = ModelPricing.GetValueOrDefault(model, (3.00m, 15.00m));
         var inputCost = (inputTokens / 1_000_000m) * inputPerM;
+        var cacheWriteCost = (cacheCreationInputTokens / 1_000_000m) * inputPerM * 1.25m;
+        var cacheReadCost = (cacheReadInputTokens / 1_000_000m) * inputPerM * 0.10m;
         var outputCost = (outputTokens / 1_000_000m) * outputPerM;
-        return inputCost + outputCost;
+        return inputCost + cacheWriteCost + cacheReadCost + outputCost;
     }
 
     /// <summary>Non-blocking friendly: swallow errors, log only.</summary>
-    public virtual async Task TrackUsageAsync(string userId, string toolType, string model, int inputTokens, int outputTokens)
+    public virtual async Task TrackUsageAsync(
+        string userId,
+        string toolType,
+        string model,
+        int inputTokens,
+        int outputTokens,
+        int cacheCreationInputTokens = 0,
+        int cacheReadInputTokens = 0)
     {
         try
         {
-            if (inputTokens < 0 || outputTokens < 0)
+            if (inputTokens < 0 || outputTokens < 0 || cacheCreationInputTokens < 0 || cacheReadInputTokens < 0)
                 return;
 
-            var cost = CalculateCost(model, inputTokens, outputTokens);
+            var cost = CalculateCost(model, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens);
+            var inputVolume = inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
             var date = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var tool = SanitizeSegment(string.IsNullOrWhiteSpace(toolType) ? "general" : toolType.ToLowerInvariant());
             var modelKey = SanitizeSegment(string.IsNullOrWhiteSpace(model) ? "unknown" : model);
@@ -63,28 +87,28 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             var pipe = new List<object[]>
             {
                 new object[] { "HINCRBY", userDay, "messages", 1 },
-                new object[] { "HINCRBY", userDay, "input_tokens", inputTokens },
+                new object[] { "HINCRBY", userDay, "input_tokens", inputVolume },
                 new object[] { "HINCRBY", userDay, "output_tokens", outputTokens },
                 new object[] { "HINCRBYFLOAT", userDay, "cost_usd", costStr },
                 new object[] { "HINCRBY", userDay, toolCountField, 1 },
                 new object[] { "HINCRBY", userModel, "messages", 1 },
-                new object[] { "HINCRBY", userModel, "input_tokens", inputTokens },
+                new object[] { "HINCRBY", userModel, "input_tokens", inputVolume },
                 new object[] { "HINCRBY", userModel, "output_tokens", outputTokens },
                 new object[] { "HINCRBYFLOAT", userModel, "cost_usd", costStr },
                 new object[] { "HINCRBY", userTool, "messages", 1 },
-                new object[] { "HINCRBY", userTool, "input_tokens", inputTokens },
+                new object[] { "HINCRBY", userTool, "input_tokens", inputVolume },
                 new object[] { "HINCRBY", userTool, "output_tokens", outputTokens },
                 new object[] { "HINCRBYFLOAT", userTool, "cost_usd", costStr },
                 new object[] { "HINCRBY", globalDay, "messages", 1 },
-                new object[] { "HINCRBY", globalDay, "input_tokens", inputTokens },
+                new object[] { "HINCRBY", globalDay, "input_tokens", inputVolume },
                 new object[] { "HINCRBY", globalDay, "output_tokens", outputTokens },
                 new object[] { "HINCRBYFLOAT", globalDay, "cost_usd", costStr },
                 new object[] { "HINCRBY", globalModel, "messages", 1 },
-                new object[] { "HINCRBY", globalModel, "input_tokens", inputTokens },
+                new object[] { "HINCRBY", globalModel, "input_tokens", inputVolume },
                 new object[] { "HINCRBY", globalModel, "output_tokens", outputTokens },
                 new object[] { "HINCRBYFLOAT", globalModel, "cost_usd", costStr },
                 new object[] { "HINCRBY", globalTool, "messages", 1 },
-                new object[] { "HINCRBY", globalTool, "input_tokens", inputTokens },
+                new object[] { "HINCRBY", globalTool, "input_tokens", inputVolume },
                 new object[] { "HINCRBY", globalTool, "output_tokens", outputTokens },
                 new object[] { "HINCRBYFLOAT", globalTool, "cost_usd", costStr },
                 new object[] { "SADD", globalUsers, userId },

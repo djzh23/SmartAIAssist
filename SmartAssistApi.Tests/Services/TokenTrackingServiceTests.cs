@@ -17,6 +17,29 @@ public class TokenTrackingServiceTests
         Assert.Equal(expected, result, precision: 4);
     }
 
+    /// <summary>Haiku $1/MTok input: 1M cache read at 0.10× → $0.10, no other usage.</summary>
+    [Fact]
+    public void CalculateCost_CacheReadOnly_Haiku_AppliesPointOneMultiplier()
+    {
+        var cost = TokenTrackingService.CalculateCost("claude-haiku-4-5-20251001", 0, 0, 0, 1_000_000);
+        Assert.Equal(0.10m, cost, precision: 4);
+    }
+
+    /// <summary>Haiku $1/MTok input: 1M cache creation at 1.25× → $1.25.</summary>
+    [Fact]
+    public void CalculateCost_CacheCreationOnly_Haiku_AppliesOnePointTwoFiveMultiplier()
+    {
+        var cost = TokenTrackingService.CalculateCost("claude-haiku-4-5-20251001", 0, 0, 1_000_000, 0);
+        Assert.Equal(1.25m, cost, precision: 4);
+    }
+
+    [Fact]
+    public void CalculateCost_NegativeCacheCreation_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TokenTrackingService.CalculateCost("claude-haiku-4-5-20251001", 100, 0, -1, 0));
+    }
+
     [Fact]
     public void ParseTopToolFromTcFields_Empty_ReturnsNull()
     {
