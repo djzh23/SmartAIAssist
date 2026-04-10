@@ -76,7 +76,12 @@ public class AgentService(
             System = new List<SystemMessage> { new(systemPrompt) },
         };
 
+        var inputTokens = 0;
+        var outputTokens = 0;
+        var modelUsed = parameters.Model;
+
         var response = await _client.Messages.GetClaudeMessageAsync(parameters);
+        AccumulateTokenUsage(response, ref inputTokens, ref outputTokens, ref modelUsed);
 
         string finalReply;
         string? toolUsed = null;
@@ -105,6 +110,7 @@ public class AgentService(
 
             parameters.Messages = history;
             var final = await _client.Messages.GetClaudeMessageAsync(parameters);
+            AccumulateTokenUsage(final, ref inputTokens, ref outputTokens, ref modelUsed);
             finalReply = final.Message.ToString();
             history.Add(final.Message);
         }
@@ -129,7 +135,24 @@ public class AgentService(
 
         await conversationService.SaveHistoryAsync(sessionId, toolType, history);
 
-        return new AgentResponse(finalReply, toolUsed);
+        return new AgentResponse(
+            finalReply,
+            toolUsed,
+            null,
+            inputTokens,
+            outputTokens,
+            modelUsed);
+    }
+
+    private static void AccumulateTokenUsage(MessageResponse? resp, ref int inputTokens, ref int outputTokens, ref string? modelUsed)
+    {
+        if (resp?.Usage is null)
+            return;
+
+        inputTokens += resp.Usage.InputTokens;
+        outputTokens += resp.Usage.OutputTokens;
+        if (!string.IsNullOrWhiteSpace(resp.Model))
+            modelUsed = resp.Model;
     }
 
     public async IAsyncEnumerable<AgentStreamChunk> StreamAsync(
@@ -139,7 +162,11 @@ public class AgentService(
         ct.ThrowIfCancellationRequested();
         var result = await RunAsync(request);
         yield return AgentStreamChunk.TextPart(result.Reply);
-        yield return AgentStreamChunk.Done(result.ToolUsed);
+        yield return AgentStreamChunk.Done(
+            result.ToolUsed,
+            result.InputTokens,
+            result.OutputTokens,
+            result.Model);
     }
 
     private static List<Tool> BuildTools(string toolType, AgentRequest request) => toolType switch

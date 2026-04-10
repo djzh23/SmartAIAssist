@@ -43,6 +43,7 @@ builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());
 builder.Services.AddHttpClient<ISpeechService, AzureSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
+builder.Services.AddHttpClient<TokenTrackingService>();
 builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
 builder.Services.AddScoped<StripeService>();

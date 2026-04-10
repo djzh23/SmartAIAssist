@@ -186,11 +186,24 @@ public class StripeServiceTests
         clerkMock.Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("user_flow", false));
 
         var speechMock = new Mock<ISpeechService>();
+        var tokenCfg = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Upstash:RestUrl"] = "https://fake.upstash.io",
+                ["Upstash:RestToken"] = "fake-token",
+            })
+            .Build();
+        var tokenTrackingMock = new Mock<TokenTrackingService>(tokenCfg, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
+        tokenTrackingMock
+            .Setup(t => t.TrackUsageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(Task.CompletedTask);
+
         var controller = new AgentController(
             agentServiceMock.Object,
             new ConversationService(),
             usage,
             clerkMock.Object,
+            tokenTrackingMock.Object,
             speechMock.Object,
             agentLoggerMock.Object)
         {

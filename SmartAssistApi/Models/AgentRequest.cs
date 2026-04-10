@@ -20,4 +20,10 @@ public class LanguageLearningResponse
     public string? LearnTip { get; set; }
 }
 
-public record AgentResponse(string Reply, string? ToolUsed = null, LanguageLearningResponse? LearningData = null);
+public record AgentResponse(
+    string Reply,
+    string? ToolUsed = null,
+    LanguageLearningResponse? LearningData = null,
+    int? InputTokens = null,
+    int? OutputTokens = null,
+    string? Model = null);

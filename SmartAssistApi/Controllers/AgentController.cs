@@ -12,6 +12,7 @@ public class AgentController(
     ConversationService conversationService,
     UsageService usageService,
     ClerkAuthService clerkAuthService,
+    TokenTrackingService tokenTrackingService,
     ISpeechService speechService,
     ILogger<AgentController> logger) : ControllerBase
 {
@@ -76,6 +77,7 @@ public class AgentController(
         try
         {
             var result = await agentService.RunAsync(request);
+            FireTokenTracking(userId, request.ToolType, result);
             return Ok(result);
         }
         catch (Exception ex)
@@ -165,7 +167,17 @@ public class AgentController(
             {
                 string json;
                 if (chunk.IsDone)
-                    json = JsonSerializer.Serialize(new { type = "done", toolUsed = chunk.ToolUsed ?? "" });
+                {
+                    FireTokenTracking(userId, request.ToolType, chunk.InputTokens, chunk.OutputTokens, chunk.Model);
+                    json = JsonSerializer.Serialize(new
+                    {
+                        type = "done",
+                        toolUsed = chunk.ToolUsed ?? "",
+                        inputTokens = chunk.InputTokens,
+                        outputTokens = chunk.OutputTokens,
+                        model = chunk.Model,
+                    });
+                }
                 else
                     json = JsonSerializer.Serialize(new { type = "chunk", text = chunk.Text ?? "" });
 
@@ -286,6 +298,7 @@ public class AgentController(
         {
             await usageService.IncrementUsageAsync(demoUserId);
             var result = await agentService.RunAsync(demoRequest);
+            FireTokenTracking(demoUserId, request.ToolType, result);
             return Ok(result);
         }
         catch (Exception ex)
@@ -424,6 +437,24 @@ public class AgentController(
             logger.LogError(ex, "Failed to read agent context. SessionId {SessionId} ToolType {ToolType}", sessionId, normalizedToolType);
             return StatusCode(500, new { error = "context_read_failed" });
         }
+    }
+
+    private void FireTokenTracking(string userId, string? toolTypeRaw, AgentResponse result)
+    {
+        var tool = string.IsNullOrWhiteSpace(toolTypeRaw) ? "general" : toolTypeRaw.ToLowerInvariant();
+        if (result.InputTokens is not { } i || result.OutputTokens is not { } o || (i == 0 && o == 0))
+            return;
+
+        _ = tokenTrackingService.TrackUsageAsync(userId, tool, result.Model ?? "unknown", i, o);
+    }
+
+    private void FireTokenTracking(string userId, string? toolTypeRaw, int? inputTokens, int? outputTokens, string? model)
+    {
+        var tool = string.IsNullOrWhiteSpace(toolTypeRaw) ? "general" : toolTypeRaw.ToLowerInvariant();
+        if (inputTokens is not { } i || outputTokens is not { } o || (i == 0 && o == 0))
+            return;
+
+        _ = tokenTrackingService.TrackUsageAsync(userId, tool, model ?? "unknown", i, o);
     }
 }
 

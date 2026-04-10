@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using SmartAssistApi.Controllers;
@@ -10,13 +12,31 @@ namespace SmartAssistApi.Tests;
 public class SpeechControllerTests
 {
     private readonly Mock<ISpeechService> _speechServiceMock = new();
+    private readonly Mock<ClerkAuthService> _clerkMock = new();
+    private readonly Mock<UsageService> _usageMock;
     private readonly Mock<ILogger<SpeechController>> _loggerMock = new();
 
-    private SpeechController CreateController() => new(_speechServiceMock.Object, _loggerMock.Object);
+    public SpeechControllerTests()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Upstash:RestUrl"] = "https://fake.upstash.io",
+                ["Upstash:RestToken"] = "fake-token",
+            })
+            .Build();
+        _usageMock = new Mock<UsageService>(config, new HttpClient());
+    }
+
+    private SpeechController CreateController() =>
+        new(_speechServiceMock.Object, _clerkMock.Object, _usageMock.Object, _loggerMock.Object);
 
     [Fact]
     public async Task TextToSpeech_EmptyText_ReturnsBadRequest()
     {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("user_x", false));
+
         var controller = CreateController();
 
         var result = await controller.TextToSpeech(new SpeechRequest("", "es"), CancellationToken.None);
@@ -28,6 +48,9 @@ public class SpeechControllerTests
     [Fact]
     public async Task TextToSpeech_ValidRequest_ReturnsAudioFile()
     {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("user_x", false));
+
         var bytes = new byte[] { 1, 2, 3, 4 };
         _speechServiceMock
             .Setup(x => x.SynthesizeAsync(It.IsAny<SpeechRequest>(), It.IsAny<CancellationToken>()))
@@ -44,6 +67,9 @@ public class SpeechControllerTests
     [Fact]
     public async Task TextToSpeech_ProviderFailure_ReturnsBadGateway()
     {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("user_x", false));
+
         _speechServiceMock
             .Setup(x => x.SynthesizeAsync(It.IsAny<SpeechRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("provider failed"));

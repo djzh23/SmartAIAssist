@@ -16,11 +16,13 @@ public class AgentControllerTests
     private readonly Mock<UsageService> _usageMock;
     private readonly Mock<ClerkAuthService> _clerkMock = new();
     private readonly Mock<ISpeechService> _speechMock = new();
+    private readonly Mock<TokenTrackingService> _tokenTrackingMock;
     private readonly ConversationService _conversationService = new();
+    private readonly IConfiguration _config;
 
     public AgentControllerTests()
     {
-        var config = new ConfigurationBuilder()
+        _config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Upstash:RestUrl"] = "https://fake.upstash.io",
@@ -28,7 +30,11 @@ public class AgentControllerTests
             })
             .Build();
 
-        _usageMock = new Mock<UsageService>(config, new HttpClient());
+        _usageMock = new Mock<UsageService>(_config, new HttpClient());
+        _tokenTrackingMock = new Mock<TokenTrackingService>(_config, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
+        _tokenTrackingMock
+            .Setup(t => t.TrackUsageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(Task.CompletedTask);
     }
 
     private AgentController CreateController()
@@ -38,6 +44,7 @@ public class AgentControllerTests
             _conversationService,
             _usageMock.Object,
             _clerkMock.Object,
+            _tokenTrackingMock.Object,
             _speechMock.Object,
             _loggerMock.Object);
 
