@@ -62,7 +62,9 @@ public class AgentService(
         await ExtractUserFactsAsync(request.Message, sessionId, toolType);
         context = await conversationService.GetContextAsync(sessionId, toolType);
 
-        var systemPrompt = BuildSystemPrompt(toolType, context, request);
+        var promptParts = systemPromptBuilder.BuildPromptParts(toolType, context, request);
+        LogCachedPrefixEffectiveness(toolType, request.SessionId, promptParts);
+
         var history = await conversationService.GetHistoryAsync(sessionId, toolType);
         history.Add(new Message(RoleType.User, request.Message));
 
@@ -73,12 +75,7 @@ public class AgentService(
             Temperature = 1.0m,
             Messages = history,
             Tools = BuildTools(toolType, request),
-            System =
-            [
-                new SystemMessage(
-                    systemPrompt,
-                    new CacheControl { Type = CacheControlType.ephemeral }),
-            ],
+            System = BuildAnthropicSystemMessages(promptParts),
             PromptCaching = PromptCacheType.FineGrained,
         };
 
@@ -231,8 +228,38 @@ public class AgentService(
         _ => []
     };
 
-    private string BuildSystemPrompt(string toolType, SessionContext context, AgentRequest request) =>
-        systemPromptBuilder.BuildPrompt(toolType, context, request);
+    /// <summary>
+    /// Fine-grained prompt cache: first block is stable per tool (cached); second block is session/turn variable (not cached).
+    /// </summary>
+    private List<SystemMessage> BuildAnthropicSystemMessages(SystemPromptParts parts)
+    {
+        var uncached = parts.UncachedSystemBlock;
+        if (string.IsNullOrWhiteSpace(uncached))
+        {
+            throw new InvalidOperationException(
+                "Anthropic system prompt: uncached block is empty. Refusing to call the model.");
+        }
+
+        return
+        [
+            new SystemMessage(parts.CachedPrefix, new CacheControl { Type = CacheControlType.ephemeral }),
+            new SystemMessage(uncached),
+        ];
+    }
+
+    private void LogCachedPrefixEffectiveness(string toolType, string sessionId, SystemPromptParts parts)
+    {
+        var approx = SystemPromptBuilder.ApproximateTokenCount(parts.CachedPrefix);
+        if (approx >= SystemPromptBuilder.MinRecommendedCachedPrefixTokens)
+            return;
+
+        logger.LogWarning(
+            "Degraded prompt caching: cached system prefix is only ~{ApproxTokens} tokens (Anthropic typically needs ~{MinTokens} tokens for an effective cache breakpoint). Expect higher input cost until the prefix grows or the model is changed. SessionId {SessionId} ToolType {ToolType}",
+            approx,
+            SystemPromptBuilder.MinRecommendedCachedPrefixTokens,
+            sessionId,
+            toolType);
+    }
 
     private async Task UpdateConversationLanguageAsync(
         string sessionId,

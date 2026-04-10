@@ -4,32 +4,191 @@ namespace SmartAssistApi.Services;
 
 public class SystemPromptBuilder
 {
-    public string BuildPrompt(string toolType, SessionContext context, AgentRequest request)
+    private const int ApproxCharsPerToken = 4;
+
+    /// <summary>Anthropic requires a minimum breakpoint size for prompt caching to apply; below this, log a visible warning.</summary>
+    public const int MinRecommendedCachedPrefixTokens = 1024;
+
+    public static int ApproximateTokenCount(string text) =>
+        string.IsNullOrEmpty(text) ? 0 : Math.Max(1, text.Length / ApproxCharsPerToken);
+
+    public string BuildPrompt(string toolType, SessionContext context, AgentRequest request) =>
+        BuildPromptParts(toolType, context, request).ToCombinedPrompt();
+
+    /// <summary>
+    /// Builds cached vs variable system prompt segments. <see cref="SystemPromptParts.CachedPrefix"/> must stay stable across
+    /// turns for the same tool type (except when tool config like language pair changes — then cache miss is expected).
+    /// </summary>
+    public SystemPromptParts BuildPromptParts(string toolType, SessionContext context, AgentRequest request)
     {
-        var toolPrompt = toolType switch
+        var normalizedTool = string.IsNullOrWhiteSpace(toolType) ? "general" : toolType.ToLowerInvariant();
+        var languageRule = LanguageRuleFor(normalizedTool, context);
+
+        if (string.IsNullOrWhiteSpace(languageRule))
         {
-            "jobanalyzer" => BuildJobAnalyzerPrompt(context),
-            "interviewprep" => BuildInterviewPrepPrompt(context),
-            "programming" => BuildProgrammingPrompt(context),
-            "language" => BuildLanguagePrompt(request),
-            "weather" => BuildWeatherPrompt(),
-            "jokes" => BuildJokesPrompt(),
-            _ => BuildGeneralPrompt(),
+            throw new InvalidOperationException(
+                $"Language rule resolved empty for tool type '{normalizedTool}'. Refusing to build system prompt.");
+        }
+
+        var parts = normalizedTool switch
+        {
+            "jobanalyzer" => BuildJobAnalyzerParts(context, languageRule),
+            "interviewprep" => BuildInterviewPrepParts(context, languageRule),
+            "programming" => BuildProgrammingParts(context, languageRule),
+            "language" => BuildLanguageToolParts(request, languageRule),
+            "weather" => new SystemPromptParts(BuildWeatherPrompt(), string.Empty, languageRule),
+            "jokes" => new SystemPromptParts(BuildJokesPrompt(), string.Empty, languageRule),
+            _ => new SystemPromptParts(BuildGeneralPrompt(), string.Empty, languageRule),
         };
 
-        var languageRule = toolType == "language"
-            ? BuildLanguageToolConversationInstruction(context)
-            : BuildConversationLanguageInstruction(context);
+        if (string.IsNullOrWhiteSpace(parts.CachedPrefix))
+        {
+            throw new InvalidOperationException(
+                $"Cached system prefix is empty for tool type '{normalizedTool}'. This is a bug in SystemPromptBuilder.");
+        }
 
-        return $"{toolPrompt}\n\n{languageRule}";
+        return parts;
     }
 
-    public string BuildJobAnalyzerPrompt(SessionContext context)
+    private static SystemPromptParts BuildLanguageToolParts(AgentRequest request, string languageRule)
+    {
+        var cached = BuildLanguagePrompt(request);
+        return new SystemPromptParts(cached, string.Empty, languageRule);
+    }
+
+    private static SystemPromptParts BuildProgrammingParts(SessionContext context, string languageRule)
+    {
+        var lang = context.ProgrammingLanguage ?? "any language";
+        var codeContext = string.IsNullOrEmpty(context.CurrentCodeContext)
+            ? "No code shared yet. Ready to help."
+            : string.Concat(
+                "Current code context:\n```\n",
+                context.CurrentCodeContext,
+                "\n```");
+
+        var cached = """
+            You are an expert programming mentor and senior software engineer.
+            You help developers write better code, debug issues, and learn
+            best practices.
+
+            """;
+
+        // Avoid embedding code fences inside a raw interpolated string (compiler/parser edge cases).
+        var dynamicHead = $"""
+            PROGRAMMING LANGUAGE CONTEXT: {lang}
+
+            RESPONSE FORMAT:
+            - Provide working code examples
+            - Use markdown code blocks with language syntax highlighting
+            - Explain WHY, not just what
+            - Point out potential issues and edge cases
+            - Suggest improvements and best practices
+            - For bugs: show problem, fix, and explanation
+
+            CODE QUALITY STANDARDS:
+            - Clean and readable code
+            - Proper error handling
+            - Performance considerations when relevant
+            - Security considerations when relevant
+
+            CONVERSATION CONTEXT:
+            """;
+
+        var dynamicTail = """
+
+            If user shares code, remember and reference that code in follow-up answers.
+            """;
+
+        var dynamicTool = string.Concat(dynamicHead, "\n", codeContext, dynamicTail);
+
+        return new SystemPromptParts(cached, dynamicTool, languageRule);
+    }
+
+    private static SystemPromptParts BuildInterviewPrepParts(SessionContext context, string languageRule)
+    {
+        var hasJob = context.InterviewJobTitle != null;
+        var hasCv = !string.IsNullOrEmpty(context.UserCV);
+
+        var cached = """
+            You are an expert interview coach who has helped hundreds of
+            candidates land jobs at top companies.
+
+            YOUR APPROACH:
+            - Ask realistic interview questions for the specific role
+            - Give detailed feedback on answers
+            - Teach the STAR method (Situation, Task, Action, Result)
+            - Share practical insider tips for this role/company
+            - Be encouraging but honest
+
+            RESPONSE FORMAT for interview practice:
+            [YOUR QUESTION]: "..."
+            After user answers ->
+            [FEEDBACK]:
+              - What was good: ...
+              - What to improve: ...
+              - Better answer structure: ...
+            [NEXT QUESTION]: "..."
+            """;
+
+        if (!hasJob && !hasCv)
+        {
+            var waiting = """
+
+                CURRENT STATE: No job or CV provided yet.
+
+                Ask the user to share:
+                1. What role/company they are interviewing for
+                2. Their CV text for personalized prep
+
+                You can start general practice, but personalized prep
+                needs role and background details.
+                """;
+            return new SystemPromptParts(cached, waiting, languageRule);
+        }
+
+        var jobSection = hasJob
+            ? $"INTERVIEW FOR: {context.InterviewJobTitle} at {context.InterviewCompany}"
+            : "ROLE: General (user has not specified role yet)";
+
+        var cvText = context.UserCV ?? string.Empty;
+        var cvSection = hasCv
+            ? $"""
+
+              CANDIDATE CV:
+              ===============
+              {cvText[..Math.Min(cvText.Length, 1500)]}
+              ===============
+              Use real CV experience in questions and feedback.
+              """
+            : "CV: Not provided yet. Ask role-specific but generic questions.";
+
+        var practiced = context.PractisedQuestions.Any()
+            ? $"ALREADY PRACTICED: {string.Join(", ", context.PractisedQuestions.TakeLast(5))}"
+            : "PRACTICED: None yet. Start foundational questions.";
+
+        var dynamicTail = $"""
+
+            {jobSection}
+            {cvSection}
+            {practiced}
+
+            ABSOLUTE RULES:
+            1. NEVER repeat questions already practiced
+            2. ALWAYS tailor to role and CV when available
+            3. Give specific, actionable feedback
+            4. Track progress by referencing practiced count
+            5. Mix behavioral, technical, and situational questions
+            """;
+
+        return new SystemPromptParts(cached, dynamicTail, languageRule);
+    }
+
+    private static SystemPromptParts BuildJobAnalyzerParts(SessionContext context, string languageRule)
     {
         var job = context.Job;
         var hasJob = job is { IsAnalyzed: true };
 
-        var basePrompt = """
+        var cached = """
             You are an expert career coach and CV specialist with 15+ years
             of experience. You help candidates craft winning applications.
 
@@ -46,7 +205,7 @@ public class SystemPromptBuilder
 
         if (!hasJob)
         {
-            return basePrompt + """
+            var waiting = """
 
                 CURRENT STATE: Waiting for job posting.
 
@@ -58,15 +217,18 @@ public class SystemPromptBuilder
                 highly personalized advice for their application.
                 Do NOT ask anything else yet.
                 """;
+            return new SystemPromptParts(cached, waiting, languageRule);
         }
 
         var cvSection = string.IsNullOrEmpty(context.UserCV)
             ? """
+
               NOTE: User hasn't shared their CV yet.
               If they ask about CV optimization, suggest they paste their CV
               for personalized feedback.
               """
             : $"""
+
               USER'S CV (analyze against job requirements):
               ================================================
               {context.UserCV[..Math.Min(context.UserCV.Length, 2000)]}
@@ -75,7 +237,7 @@ public class SystemPromptBuilder
               from their CV and how to improve them for this job.
               """;
 
-        return basePrompt + $"""
+        var dynamicTail = $"""
 
             ACTIVE JOB CONTEXT - ALWAYS USE THIS:
             ======================================
@@ -106,117 +268,14 @@ public class SystemPromptBuilder
             3. Give advice that directly addresses the listed requirements
             4. If user asks off-topic, gently redirect to job prep
             """;
+
+        return new SystemPromptParts(cached, dynamicTail, languageRule);
     }
 
-    public string BuildInterviewPrepPrompt(SessionContext context)
-    {
-        var hasJob = context.InterviewJobTitle != null;
-        var hasCv = !string.IsNullOrEmpty(context.UserCV);
-
-        var basePrompt = """
-            You are an expert interview coach who has helped hundreds of
-            candidates land jobs at top companies.
-
-            YOUR APPROACH:
-            - Ask realistic interview questions for the specific role
-            - Give detailed feedback on answers
-            - Teach the STAR method (Situation, Task, Action, Result)
-            - Share practical insider tips for this role/company
-            - Be encouraging but honest
-
-            RESPONSE FORMAT for interview practice:
-            [YOUR QUESTION]: "..."
-            After user answers ->
-            [FEEDBACK]:
-              - What was good: ...
-              - What to improve: ...
-              - Better answer structure: ...
-            [NEXT QUESTION]: "..."
-            """;
-
-        if (!hasJob && !hasCv)
-        {
-            return basePrompt + """
-
-                CURRENT STATE: No job or CV provided yet.
-
-                Ask the user to share:
-                1. What role/company they are interviewing for
-                2. Their CV text for personalized prep
-
-                You can start general practice, but personalized prep
-                needs role and background details.
-                """;
-        }
-
-        var jobSection = hasJob
-            ? $"INTERVIEW FOR: {context.InterviewJobTitle} at {context.InterviewCompany}"
-            : "ROLE: General (user has not specified role yet)";
-
-        var cvText = context.UserCV ?? string.Empty;
-        var cvSection = hasCv
-            ? $"""
-              CANDIDATE CV:
-              ===============
-              {cvText[..Math.Min(cvText.Length, 1500)]}
-              ===============
-              Use real CV experience in questions and feedback.
-              """
-            : "CV: Not provided yet. Ask role-specific but generic questions.";
-
-        var practiced = context.PractisedQuestions.Any()
-            ? $"ALREADY PRACTICED: {string.Join(", ", context.PractisedQuestions.TakeLast(5))}"
-            : "PRACTICED: None yet. Start foundational questions.";
-
-        return basePrompt + $"""
-
-            {jobSection}
-            {cvSection}
-            {practiced}
-
-            ABSOLUTE RULES:
-            1. NEVER repeat questions already practiced
-            2. ALWAYS tailor to role and CV when available
-            3. Give specific, actionable feedback
-            4. Track progress by referencing practiced count
-            5. Mix behavioral, technical, and situational questions
-            """;
-    }
-
-    public string BuildProgrammingPrompt(SessionContext context)
-    {
-        var lang = context.ProgrammingLanguage ?? "any language";
-        var codeContext = string.IsNullOrEmpty(context.CurrentCodeContext)
-            ? "No code shared yet. Ready to help."
-            : $"Current code context:\n```\n{context.CurrentCodeContext}\n```";
-
-        return $"""
-            You are an expert programming mentor and senior software engineer.
-            You help developers write better code, debug issues, and learn
-            best practices.
-
-            PROGRAMMING LANGUAGE CONTEXT: {lang}
-
-            RESPONSE FORMAT:
-            - Provide working code examples
-            - Use markdown code blocks with language syntax highlighting
-            - Explain WHY, not just what
-            - Point out potential issues and edge cases
-            - Suggest improvements and best practices
-            - For bugs: show problem, fix, and explanation
-
-            CODE QUALITY STANDARDS:
-            - Clean and readable code
-            - Proper error handling
-            - Performance considerations when relevant
-            - Security considerations when relevant
-
-            CONVERSATION CONTEXT:
-            {codeContext}
-
-            If user shares code, remember and reference that code in follow-up answers.
-            """;
-    }
+    private static string LanguageRuleFor(string toolType, SessionContext context) =>
+        toolType == "language"
+            ? BuildLanguageToolConversationInstruction(context)
+            : BuildConversationLanguageInstruction(context);
 
     private static string BuildConversationLanguageInstruction(SessionContext context)
     {
