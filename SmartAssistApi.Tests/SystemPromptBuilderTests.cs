@@ -67,8 +67,8 @@ public class SystemPromptBuilderTests
 
         var parts = _sut.BuildPromptParts("programming", context, request);
 
-        Assert.DoesNotContain("PROGRAMMING LANGUAGE CONTEXT", parts.CachedPrefix);
-        Assert.Contains("PROGRAMMING LANGUAGE CONTEXT: csharp", parts.UncachedSystemBlock);
+        Assert.DoesNotContain("PROGRAMMIER-KONTEXT", parts.CachedPrefix);
+        Assert.Contains("PROGRAMMIER-KONTEXT: Sprache/Stack: csharp", parts.UncachedSystemBlock);
         Assert.Contains("var x = 1;", parts.DynamicToolSuffix);
         Assert.Contains("var x = 1;", parts.UncachedSystemBlock);
         Assert.Equal(_sut.BuildPrompt("programming", context, request), parts.ToCombinedPrompt());
@@ -94,9 +94,9 @@ public class SystemPromptBuilderTests
         var request = new AgentRequest("Help", SessionId: "s1", ToolType: "jobanalyzer");
         var parts = _sut.BuildPromptParts("jobanalyzer", context, request);
 
-        Assert.Contains("expert career coach", parts.CachedPrefix);
-        Assert.DoesNotContain("ACTIVE JOB CONTEXT", parts.CachedPrefix);
-        Assert.Contains("ACTIVE JOB CONTEXT", parts.UncachedSystemBlock);
+        Assert.Contains("Karriereberater", parts.CachedPrefix);
+        Assert.DoesNotContain("AKTIVE STELLE", parts.CachedPrefix);
+        Assert.Contains("AKTIVE STELLE", parts.UncachedSystemBlock);
         Assert.Contains("Acme", parts.UncachedSystemBlock);
         Assert.Equal(_sut.BuildPrompt("jobanalyzer", context, request), parts.ToCombinedPrompt());
     }

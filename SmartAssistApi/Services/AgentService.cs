@@ -31,7 +31,7 @@ public class AgentService(
             ? "general"
             : request.ToolType.ToLowerInvariant();
 
-        var userMessage = SanitizeUserMessage(request.Message, toolType);
+        var userMessage = UserInputCleaner.CleanUserInput(request.Message);
 
         var context = await conversationService.GetContextAsync(sessionId, toolType);
 
@@ -74,11 +74,13 @@ public class AgentService(
         var history = await conversationService.GetHistoryAsync(sessionId, toolType);
         history.Add(new Message(RoleType.User, userMessage));
 
+        var apiMessages = TrimHistoryForLlm(history, toolType, context);
+
         var tools = BuildTools(toolType, request);
         var maxTokens = MaxTokensFor(toolType);
 
         if (ShouldTryGroqFirst(toolType, tools)
-            && AnthropicMessagesForGroqMapper.TryMap(history, out var groqMessages))
+            && AnthropicMessagesForGroqMapper.TryMap(apiMessages, out var groqMessages))
         {
             var systemCombined = promptParts.ToCombinedPrompt();
             var groqResult = await groqChat.CompleteAsync(systemCombined, groqMessages, maxTokens).ConfigureAwait(false);
@@ -112,7 +114,7 @@ public class AgentService(
             Model = AgentModelSelector.ResolveModel(toolType, config),
             MaxTokens = maxTokens,
             Temperature = 1.0m,
-            Messages = history,
+            Messages = apiMessages,
             Tools = tools,
             System = BuildAnthropicSystemMessages(promptParts),
             PromptCaching = PromptCacheType.FineGrained,
@@ -158,7 +160,7 @@ public class AgentService(
                 history.Add(new Message(call, result));
             }
 
-            parameters.Messages = history;
+            parameters.Messages = TrimHistoryForLlm(history, toolType, context);
             var final = await _client.Messages.GetClaudeMessageAsync(parameters);
             AccumulateTokenUsage(
                 final,
@@ -235,21 +237,25 @@ public class AgentService(
     };
 
     /// <summary>
-    /// Strip HTML/noise from pasted job ads and long CV text to cut input tokens (no silent quality hacks elsewhere).
+    /// Limits chat messages sent to the LLM; full <paramref name="fullHistory"/> is still persisted.
+    /// 6 messages default; 4 when job or interview session context is already loaded (system prompt carries the rest).
     /// </summary>
-    private static string SanitizeUserMessage(string message, string toolType)
+    private static List<Message> TrimHistoryForLlm(IReadOnlyList<Message> fullHistory, string toolType, SessionContext context)
     {
-        if (string.IsNullOrWhiteSpace(message))
-            return message;
+        var limit = ResolveLlmHistoryMessageLimit(toolType, context);
+        if (fullHistory.Count <= limit)
+            return fullHistory.ToList();
+        return fullHistory.TakeLast(limit).ToList();
+    }
 
-        var s = message.Trim();
-        if (toolType is not ("jobanalyzer" or "interviewprep"))
-            return s;
-
-        s = Regex.Replace(s, "<[^>]+>", " ", RegexOptions.Singleline);
-        s = Regex.Replace(s, @"[ \t]+", " ");
-        s = Regex.Replace(s, @"(\r?\n){3,}", "\n\n");
-        return s.Trim();
+    private static int ResolveLlmHistoryMessageLimit(string toolType, SessionContext context)
+    {
+        var richJob = string.Equals(toolType, "jobanalyzer", StringComparison.OrdinalIgnoreCase)
+                      && context.Job is { IsAnalyzed: true };
+        var richInterview = string.Equals(toolType, "interviewprep", StringComparison.OrdinalIgnoreCase)
+                            && (!string.IsNullOrEmpty(context.InterviewJobTitle)
+                                || !string.IsNullOrEmpty(context.UserCV));
+        return richJob || richInterview ? 4 : 6;
     }
 
     private static void AccumulateTokenUsage(
@@ -440,6 +446,10 @@ public class AgentService(
             return m.Groups[1].Value.Trim();
 
         m = Regex.Match(reply, @"\[NEXT QUESTION\]\s*:\s*""?([^""\n]+)", RegexOptions.IgnoreCase);
+        if (m.Success)
+            return m.Groups[1].Value.Trim();
+
+        m = Regex.Match(reply, @"###\s*Frage\s*1\s*:\s*(.+)", RegexOptions.IgnoreCase);
         return m.Success ? m.Groups[1].Value.Trim() : null;
     }
 }
