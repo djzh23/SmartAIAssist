@@ -3,7 +3,9 @@ using System.Text.RegularExpressions;
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
 using Anthropic.SDK.Messaging;
+using Microsoft.Extensions.Options;
 using SmartAssistApi.Models;
+using SmartAssistApi.Services.Groq;
 using SmartAssistApi.Services.Tools;
 using Tool = Anthropic.SDK.Common.Tool;
 
@@ -14,6 +16,8 @@ public class AgentService(
     ConversationService conversationService,
     SystemPromptBuilder systemPromptBuilder,
     JobContextExtractor jobExtractor,
+    GroqChatCompletionService groqChat,
+    IOptions<GroqOptions> groqOptions,
     ILogger<AgentService> logger) : IAgentService
 {
     private readonly AnthropicClient _client = new(config["ANTHROPIC_API_KEY"]
@@ -70,13 +74,46 @@ public class AgentService(
         var history = await conversationService.GetHistoryAsync(sessionId, toolType);
         history.Add(new Message(RoleType.User, userMessage));
 
+        var tools = BuildTools(toolType, request);
+        var maxTokens = MaxTokensFor(toolType);
+
+        if (ShouldTryGroqFirst(toolType, tools)
+            && AnthropicMessagesForGroqMapper.TryMap(history, out var groqMessages))
+        {
+            var systemCombined = promptParts.ToCombinedPrompt();
+            var groqResult = await groqChat.CompleteAsync(systemCombined, groqMessages, maxTokens).ConfigureAwait(false);
+            if (groqResult.Success)
+            {
+                var groqReply = groqResult.Content;
+                history.Add(new Message(RoleType.Assistant, groqReply));
+                await PostProcessInterviewPrepAsync(sessionId, toolType, groqReply);
+                await conversationService.SaveHistoryAsync(sessionId, toolType, history);
+                var groqModelLabel = $"groq/{groqResult.Model}";
+                return new AgentResponse(
+                    groqReply,
+                    null,
+                    null,
+                    groqResult.InputTokens,
+                    groqResult.OutputTokens,
+                    groqModelLabel,
+                    0,
+                    0);
+            }
+
+            logger.LogWarning(
+                "Groq completion failed or empty; falling back to Anthropic. SessionId {SessionId} ToolType {ToolType} Error {Error}",
+                sessionId,
+                toolType,
+                groqResult.Error);
+        }
+
         var parameters = new MessageParameters
         {
             Model = AgentModelSelector.ResolveModel(toolType, config),
-            MaxTokens = MaxTokensFor(toolType),
+            MaxTokens = maxTokens,
             Temperature = 1.0m,
             Messages = history,
-            Tools = BuildTools(toolType, request),
+            Tools = tools,
             System = BuildAnthropicSystemMessages(promptParts),
             PromptCaching = PromptCacheType.FineGrained,
         };
@@ -139,18 +176,7 @@ public class AgentService(
             history.Add(response.Message);
         }
 
-        if (toolType == "interviewprep")
-        {
-            var askedQuestion = ExtractInterviewQuestion(finalReply);
-            if (!string.IsNullOrWhiteSpace(askedQuestion))
-            {
-                await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
-                {
-                    if (!ctx.PractisedQuestions.Contains(askedQuestion, StringComparer.OrdinalIgnoreCase))
-                        ctx.PractisedQuestions.Add(askedQuestion);
-                });
-            }
-        }
+        await PostProcessInterviewPrepAsync(sessionId, toolType, finalReply);
 
         await conversationService.SaveHistoryAsync(sessionId, toolType, history);
 
@@ -163,6 +189,37 @@ public class AgentService(
             modelUsed,
             cacheCreationInputTokens,
             cacheReadInputTokens);
+    }
+
+    /// <summary>
+    /// Groq for every tool type when there are no Anthropic tools and history is plain user/assistant text (tool rounds stay on Anthropic).
+    /// </summary>
+    private bool ShouldTryGroqFirst(string toolType, List<Tool> tools)
+    {
+        var opt = groqOptions.Value;
+        if (!opt.UseAsPrimary || !groqChat.IsConfigured)
+            return false;
+
+        if (tools.Count > 0)
+            return false;
+
+        return true;
+    }
+
+    private async Task PostProcessInterviewPrepAsync(string sessionId, string toolType, string finalReply)
+    {
+        if (toolType != "interviewprep")
+            return;
+
+        var askedQuestion = ExtractInterviewQuestion(finalReply);
+        if (string.IsNullOrWhiteSpace(askedQuestion))
+            return;
+
+        await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+        {
+            if (!ctx.PractisedQuestions.Contains(askedQuestion, StringComparer.OrdinalIgnoreCase))
+                ctx.PractisedQuestions.Add(askedQuestion);
+        });
     }
 
     private static int MaxTokensFor(string toolType) => toolType switch

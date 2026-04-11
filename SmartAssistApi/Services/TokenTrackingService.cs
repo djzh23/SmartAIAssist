@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SmartAssistApi.Models;
@@ -19,6 +20,9 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         ["claude-haiku-4-5-20251001"] = (1.00m, 5.00m),
         ["claude-sonnet-4-20250514"] = (3.00m, 15.00m),
         ["claude-sonnet-4-5-20250929"] = (3.00m, 15.00m),
+        // groq/… — optional overrides; unknown ids use default Groq class rates below
+        ["groq/llama-3.3-70b-versatile"] = (0.59m, 0.79m),
+        ["groq/llama-3.1-8b-instant"] = (0.05m, 0.08m),
     };
 
     /// <summary>
@@ -37,7 +41,10 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
                 nameof(cacheCreationInputTokens),
                 "Cache creation and cache read token counts must be non-negative.");
 
-        var (inputPerM, outputPerM) = ModelPricing.GetValueOrDefault(model, (3.00m, 15.00m));
+        // groq/… — per-model in table or default ~70B-class estimate (adjust when Groq changes pricing).
+        var (inputPerM, outputPerM) = model.StartsWith("groq/", StringComparison.OrdinalIgnoreCase)
+            ? ModelPricing.GetValueOrDefault(model, (0.59m, 0.79m))
+            : ModelPricing.GetValueOrDefault(model, (3.00m, 15.00m));
         var inputCost = (inputTokens / 1_000_000m) * inputPerM;
         var cacheWriteCost = (cacheCreationInputTokens / 1_000_000m) * inputPerM * 1.25m;
         var cacheReadCost = (cacheReadInputTokens / 1_000_000m) * inputPerM * 0.10m;
@@ -172,6 +179,8 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         var top = await GetTopUsersAsync(today, 20, cancellationToken).ConfigureAwait(false);
         var byModel = await ReadModelAggregatesAsync(today, cancellationToken).ConfigureAwait(false);
         var byTool = await ReadToolAggregatesAsync(today, cancellationToken).ConfigureAwait(false);
+        var groqMsgs = byModel.Values.Where(m => string.Equals(m.Provider, "Groq", StringComparison.OrdinalIgnoreCase)).Sum(m => m.Messages);
+        var otherMsgs = byModel.Values.Sum(m => m.Messages) - groqMsgs;
 
         var registered = (int)await RedisCardinalityAsync("tokens:users:registered", cancellationToken).ConfigureAwait(false);
         var activeToday = (int)await RedisCardinalityAsync($"tokens:global:daily:{today}:users", cancellationToken).ConfigureAwait(false);
@@ -184,6 +193,8 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             TotalMessagesThisMonth = monthMessages,
             TotalInputTokensToday = todayData.InputTokens,
             TotalOutputTokensToday = todayData.OutputTokens,
+            GroqMessagesToday = groqMsgs,
+            OtherLlmMessagesToday = otherMsgs,
             ActiveUsersToday = activeToday,
             TotalRegisteredUsers = registered,
             PayingUsers = 0,
@@ -294,6 +305,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             dict[key] = new ModelUsage
             {
                 Model = key,
+                Provider = InferProviderFromModelKey(key),
                 Messages = m.Messages,
                 InputTokens = m.Input,
                 OutputTokens = m.Output,
@@ -340,6 +352,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             dict[name] = new ModelUsage
             {
                 Model = name,
+                Provider = InferProviderFromModelKey(name),
                 Messages = m.Messages,
                 InputTokens = m.Input,
                 OutputTokens = m.Output,
@@ -436,13 +449,26 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         return true;
     }
 
+    /// <summary>Safe Redis segment: keeps model ids readable (e.g. groq/llama-3.3-70b → groq_llama-3.3-70b).</summary>
     private static string SanitizeSegment(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
             return "unknown";
-        var chars = value.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray();
-        return chars.Length == 0 ? "unknown" : new string(chars);
+        var b = new StringBuilder(value.Trim().Length);
+        foreach (var c in value.Trim())
+        {
+            if (char.IsLetterOrDigit(c) || c is '-' or '_' or '.')
+                b.Append(c);
+            else if (c is '/' or ':')
+                b.Append('_');
+        }
+
+        var s = b.ToString();
+        return string.IsNullOrEmpty(s) ? "unknown" : s;
     }
+
+    internal static string InferProviderFromModelKey(string modelKey) =>
+        modelKey.StartsWith("groq_", StringComparison.OrdinalIgnoreCase) ? "Groq" : "Anthropic";
 
     private async Task PipelineAsync(object[][] commands, string operation)
     {

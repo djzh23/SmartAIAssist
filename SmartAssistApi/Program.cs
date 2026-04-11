@@ -1,4 +1,5 @@
 using SmartAssistApi.Services;
+using SmartAssistApi.Services.Groq;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
@@ -12,6 +13,11 @@ var upstashToken = Environment.GetEnvironmentVariable("UPSTASH_REDIS_REST_TOKEN"
     ?? Environment.GetEnvironmentVariable("UPSTASH__RESTTOKEN");
 if (upstashUrl   is not null) builder.Configuration["Upstash:RestUrl"]   = upstashUrl;
 if (upstashToken is not null) builder.Configuration["Upstash:RestToken"] = upstashToken;
+
+var groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
+if (!string.IsNullOrWhiteSpace(groqKey)) builder.Configuration["Groq:ApiKey"] = groqKey;
+var groqModel = Environment.GetEnvironmentVariable("GROQ_MODEL");
+if (!string.IsNullOrWhiteSpace(groqModel)) builder.Configuration["Groq:Model"] = groqModel;
 
 var renderPort = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(renderPort))
@@ -36,6 +42,12 @@ var allowedOrigins = localOrigins
     .ToArray();
 
 builder.Services.AddControllers();
+builder.Services.Configure<GroqOptions>(builder.Configuration.GetSection(GroqOptions.SectionName));
+builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
+{
+    client.BaseAddress = new Uri("https://api.groq.com/openai/v1/");
+    client.Timeout = TimeSpan.FromMinutes(2);
+});
 builder.Services.AddSingleton<ConversationService>();
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddScoped<JobContextExtractor>();
