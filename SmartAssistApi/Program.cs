@@ -47,6 +47,7 @@ var allowedOrigins = localOrigins
     .ToArray();
 
 builder.Services.AddControllers();
+builder.Services.AddMemoryCache();
 builder.Services.Configure<GroqOptions>(builder.Configuration.GetSection(GroqOptions.SectionName));
 builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
 {
@@ -55,6 +56,7 @@ builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
 });
 builder.Services.AddSingleton<ConversationService>();
 builder.Services.AddSingleton<SystemPromptBuilder>();
+builder.Services.AddScoped<PromptComposer>();
 builder.Services.AddScoped<JobContextExtractor>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());

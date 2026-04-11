@@ -13,7 +13,10 @@ public class CareerProfileServiceTests
             ["Upstash:RestUrl"] = "https://example.invalid",
             ["Upstash:RestToken"] = "test",
         }).Build();
-        return new CareerProfileService(config, new HttpClient());
+        return new CareerProfileService(
+            config,
+            new HttpClient(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<CareerProfileService>.Instance);
     }
 
     [Fact]

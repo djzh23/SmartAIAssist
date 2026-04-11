@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using SmartAssistApi.Models;
 
 namespace SmartAssistApi.Services;
@@ -10,7 +11,10 @@ namespace SmartAssistApi.Services;
 /// Verwaltet Karriereprofile in Redis (Upstash REST).
 /// Redis-Key: profile:{userId} → JSON-String des CareerProfile (ohne TTL).
 /// </summary>
-public class CareerProfileService(IConfiguration config, HttpClient http)
+public class CareerProfileService(
+    IConfiguration config,
+    HttpClient http,
+    ILogger<CareerProfileService> logger)
 {
     private readonly string _restUrl = RequireUpstashRestUrl(config["Upstash:RestUrl"]);
     private readonly string _restToken = RequireUpstashRestToken(config["Upstash:RestToken"]);
@@ -29,6 +33,7 @@ public class CareerProfileService(IConfiguration config, HttpClient http)
 
     private static string ProfileKey(string userId) => $"profile:{userId}";
     private static string CvRawKey(string userId) => $"profile:{userId}:cv_raw";
+    private static string ProfileVersionKey(string userId) => $"profile_version:{userId}";
 
     private static string RequireUpstashRestUrl(string? url)
     {
@@ -164,6 +169,49 @@ public class CareerProfileService(IConfiguration config, HttpClient http)
 
         var payload = JsonSerializer.Serialize(profile, JsonOpts);
         await RedisSetRawBodyAsync(ProfileKey(userId), payload);
+        try
+        {
+            await BumpProfileCacheVersionAsync(userId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Profile cache version bump failed after save for user {UserId}", userId);
+        }
+    }
+
+    /// <summary>Versions-Stempel für Prompt-Cache-Invalidierung (TTL-basierte Keys hängen davon ab).</summary>
+    public async Task BumpProfileCacheVersionAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var path = $"/set/{Uri.EscapeDataString(ProfileVersionKey(userId))}";
+        using var req = CreateRequest(HttpMethod.Post, path);
+        req.Content = new StringContent(DateTime.UtcNow.Ticks.ToString(), Encoding.UTF8, "text/plain");
+        _ = await SendAsync(req, $"set-version:{userId}");
+    }
+
+    public async Task<string> GetProfileCacheVersionAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var v = await RedisGetAsync(ProfileVersionKey(userId)).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(v) ? "0" : v.Trim();
+    }
+
+    public async Task<string?> TryGetPromptCacheAsync(string key, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await RedisGetAsync(key).ConfigureAwait(false);
+    }
+
+    public async Task SetPromptCacheAsync(string key, string value, int ttlSeconds, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await RedisSetRawBodyAsync(key, value).ConfigureAwait(false);
+        if (ttlSeconds > 0)
+        {
+            var expirePath = $"/expire/{Uri.EscapeDataString(key)}/{ttlSeconds}";
+            using var req = CreateRequest(HttpMethod.Get, expirePath);
+            _ = await SendAsync(req, $"expire:{key}");
+        }
     }
 
     public async Task SetOnboarding(

@@ -46,6 +46,7 @@ public sealed class GroqChatCompletionService
         string systemPrompt,
         IReadOnlyList<GroqChatMessage> messages,
         int maxTokens,
+        GroqSamplingOptions? sampling = null,
         CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)
@@ -66,13 +67,17 @@ public sealed class GroqChatCompletionService
         foreach (var m in messages)
             payloadMessages.Add(new Dictionary<string, object> { ["role"] = m.Role, ["content"] = m.Content });
 
+        var temperature = sampling?.Temperature ?? _opt.Temperature;
         var body = new Dictionary<string, object>
         {
             ["model"] = model,
             ["messages"] = payloadMessages,
             ["max_tokens"] = maxTokens,
-            ["temperature"] = _opt.Temperature,
+            ["temperature"] = temperature,
         };
+
+        body["frequency_penalty"] = sampling?.FrequencyPenalty ?? 0.3;
+        body["presence_penalty"] = sampling?.PresencePenalty ?? 0.1;
 
         try
         {

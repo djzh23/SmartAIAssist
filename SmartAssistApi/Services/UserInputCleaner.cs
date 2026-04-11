@@ -16,7 +16,7 @@ public static class UserInputCleaner
         var s = input.Trim();
         s = Regex.Replace(s, "<[^>]+>", " ", RegexOptions.Singleline);
         s = Regex.Replace(s, @"\n{3,}", "\n\n");
-        s = Regex.Replace(s, @" {2,}", " ");
+        s = Regex.Replace(s, @"[ \t]{2,}", " ");
         s = s.Trim();
 
         const int maxLen = 4000;

@@ -14,8 +14,7 @@ namespace SmartAssistApi.Services;
 public class AgentService(
     IConfiguration config,
     ConversationService conversationService,
-    SystemPromptBuilder systemPromptBuilder,
-    CareerProfileService careerProfileService,
+    PromptComposer promptComposer,
     JobContextExtractor jobExtractor,
     GroqChatCompletionService groqChat,
     IOptions<GroqOptions> groqOptions,
@@ -69,25 +68,26 @@ public class AgentService(
         await ExtractUserFactsAsync(userMessage, sessionId, toolType);
         context = await conversationService.GetContextAsync(sessionId, toolType);
 
-        var promptParts = systemPromptBuilder.BuildPromptParts(toolType, context, request);
-        var profileContext = await BuildCareerProfileContextAsync(request);
-        if (!string.IsNullOrEmpty(profileContext))
-            promptParts = promptParts.WithProfilePrefix(profileContext);
+        var promptParts = await promptComposer.ComposePromptPartsAsync(request.CareerProfileUserId, request, context)
+            .ConfigureAwait(false);
         LogCachedPrefixEffectiveness(toolType, request.SessionId, promptParts);
 
         var history = await conversationService.GetHistoryAsync(sessionId, toolType);
         history.Add(new Message(RoleType.User, userMessage));
 
-        var apiMessages = TrimHistoryForLlm(history, toolType, context);
+        var apiMessages = LlmHistoryTrimmer.Trim(history, toolType, context);
 
         var tools = BuildTools(toolType, request);
-        var maxTokens = MaxTokensFor(toolType);
+        var maxTokens = GroqInferenceParameters.MaxTokensFor(toolType);
 
         if (ShouldTryGroqFirst(toolType, tools)
             && AnthropicMessagesForGroqMapper.TryMap(apiMessages, out var groqMessages))
         {
             var systemCombined = promptParts.ToCombinedPrompt();
-            var groqResult = await groqChat.CompleteAsync(systemCombined, groqMessages, maxTokens).ConfigureAwait(false);
+            var sampling = GroqInferenceParameters.SamplingFor(toolType);
+            var groqResult = await groqChat
+                .CompleteAsync(systemCombined, groqMessages, maxTokens, sampling)
+                .ConfigureAwait(false);
             if (groqResult.Success)
             {
                 var groqReply = groqResult.Content;
@@ -117,7 +117,7 @@ public class AgentService(
         {
             Model = AgentModelSelector.ResolveModel(toolType, config),
             MaxTokens = maxTokens,
-            Temperature = 1.0m,
+            Temperature = GroqInferenceParameters.AnthropicTemperatureFor(toolType),
             Messages = apiMessages,
             Tools = tools,
             System = BuildAnthropicSystemMessages(promptParts),
@@ -164,7 +164,7 @@ public class AgentService(
                 history.Add(new Message(call, result));
             }
 
-            parameters.Messages = TrimHistoryForLlm(history, toolType, context);
+            parameters.Messages = LlmHistoryTrimmer.Trim(history, toolType, context);
             var final = await _client.Messages.GetClaudeMessageAsync(parameters);
             AccumulateTokenUsage(
                 final,
@@ -226,52 +226,6 @@ public class AgentService(
             if (!ctx.PractisedQuestions.Contains(askedQuestion, StringComparer.OrdinalIgnoreCase))
                 ctx.PractisedQuestions.Add(askedQuestion);
         });
-    }
-
-    private async Task<string> BuildCareerProfileContextAsync(AgentRequest request)
-    {
-        if (request.ProfileToggles is null || string.IsNullOrEmpty(request.CareerProfileUserId))
-            return string.Empty;
-
-        var profile = await careerProfileService.GetProfile(request.CareerProfileUserId);
-        if (profile is null)
-            return string.Empty;
-
-        return careerProfileService.BuildProfileContext(profile, request.ProfileToggles);
-    }
-
-    private static int MaxTokensFor(string toolType) => toolType switch
-    {
-        "general" => 600,
-        "language" => 600,
-        "jobanalyzer" => 1000,
-        "interviewprep" => 1000,
-        "programming" => 1200,
-        "weather" => 300,
-        "jokes" => 300,
-        _ => 600,
-    };
-
-    /// <summary>
-    /// Limits chat messages sent to the LLM; full <paramref name="fullHistory"/> is still persisted.
-    /// 6 messages default; 4 when job or interview session context is already loaded (system prompt carries the rest).
-    /// </summary>
-    private static List<Message> TrimHistoryForLlm(IReadOnlyList<Message> fullHistory, string toolType, SessionContext context)
-    {
-        var limit = ResolveLlmHistoryMessageLimit(toolType, context);
-        if (fullHistory.Count <= limit)
-            return fullHistory.ToList();
-        return fullHistory.TakeLast(limit).ToList();
-    }
-
-    private static int ResolveLlmHistoryMessageLimit(string toolType, SessionContext context)
-    {
-        var richJob = string.Equals(toolType, "jobanalyzer", StringComparison.OrdinalIgnoreCase)
-                      && context.Job is { IsAnalyzed: true };
-        var richInterview = string.Equals(toolType, "interviewprep", StringComparison.OrdinalIgnoreCase)
-                            && (!string.IsNullOrEmpty(context.InterviewJobTitle)
-                                || !string.IsNullOrEmpty(context.UserCV));
-        return richJob || richInterview ? 4 : 6;
     }
 
     private static void AccumulateTokenUsage(
