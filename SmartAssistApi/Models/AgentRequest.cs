@@ -10,8 +10,9 @@ public record AgentRequest(
     string? NativeLanguageCode = null,
     string? Level = null,
     string? LearningGoal = null,
-    string? ToolType = null
-);
+    string? ToolType = null,
+    ProfileContextToggles? ProfileToggles = null,
+    string? CareerProfileUserId = null);
 
 public class LanguageLearningResponse
 {

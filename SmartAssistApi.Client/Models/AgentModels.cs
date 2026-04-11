@@ -1,5 +1,14 @@
 namespace SmartAssistApi.Client.Models;
 
+public class ProfileContextToggles
+{
+    public bool IncludeBasicProfile { get; set; } = true;
+    public bool IncludeSkills { get; set; } = true;
+    public bool IncludeExperience { get; set; }
+    public bool IncludeCv { get; set; }
+    public string? ActiveTargetJobId { get; set; }
+}
+
 public record AgentRequest(
     string Message,
     string? SessionId = null,
@@ -10,8 +19,9 @@ public record AgentRequest(
     string? NativeLanguageCode = null,
     string? Level = null,
     string? LearningGoal = null,
-    string? ToolType = null
-);
+    string? ToolType = null,
+    ProfileContextToggles? ProfileToggles = null,
+    string? CareerProfileUserId = null);
 
 public class LanguageLearningResponse
 {

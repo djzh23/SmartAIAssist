@@ -50,4 +50,20 @@ public class SystemPromptPartsTests
         var parts = new SystemPromptParts("cached", string.Empty, "lang");
         Assert.Equal("lang", parts.UncachedSystemBlock);
     }
+
+    [Fact]
+    public void WithProfilePrefix_PrependsToUncachedBlock()
+    {
+        var parts = new SystemPromptParts("cached", "dynamic", "lang");
+        var next = parts.WithProfilePrefix("[NUTZERPROFIL]\nZeile");
+        Assert.Equal("[NUTZERPROFIL]\nZeile\n\ndynamic\n\nlang", next.UncachedSystemBlock);
+    }
+
+    [Fact]
+    public void WithProfilePrefix_EmptyOrWhitespace_ReturnsSame()
+    {
+        var parts = new SystemPromptParts("a", "b", "c");
+        Assert.Same(parts, parts.WithProfilePrefix(""));
+        Assert.Same(parts, parts.WithProfilePrefix("   "));
+    }
 }

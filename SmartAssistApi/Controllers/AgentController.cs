@@ -76,7 +76,8 @@ public class AgentController(
 
         try
         {
-            var result = await agentService.RunAsync(request);
+            var agentRequest = request with { CareerProfileUserId = isAnonymous ? null : userId };
+            var result = await agentService.RunAsync(agentRequest);
             FireTokenTracking(userId, request.ToolType, result);
             return Ok(result);
         }
@@ -163,7 +164,8 @@ public class AgentController(
 
         try
         {
-            await foreach (var chunk in agentService.StreamAsync(request, HttpContext.RequestAborted))
+            var agentRequest = request with { CareerProfileUserId = isAnonymous ? null : userId };
+            await foreach (var chunk in agentService.StreamAsync(agentRequest, HttpContext.RequestAborted))
             {
                 string json;
                 if (chunk.IsDone)

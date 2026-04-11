@@ -15,6 +15,7 @@ public class AgentService(
     IConfiguration config,
     ConversationService conversationService,
     SystemPromptBuilder systemPromptBuilder,
+    CareerProfileService careerProfileService,
     JobContextExtractor jobExtractor,
     GroqChatCompletionService groqChat,
     IOptions<GroqOptions> groqOptions,
@@ -69,6 +70,9 @@ public class AgentService(
         context = await conversationService.GetContextAsync(sessionId, toolType);
 
         var promptParts = systemPromptBuilder.BuildPromptParts(toolType, context, request);
+        var profileContext = await BuildCareerProfileContextAsync(request);
+        if (!string.IsNullOrEmpty(profileContext))
+            promptParts = promptParts.WithProfilePrefix(profileContext);
         LogCachedPrefixEffectiveness(toolType, request.SessionId, promptParts);
 
         var history = await conversationService.GetHistoryAsync(sessionId, toolType);
@@ -222,6 +226,18 @@ public class AgentService(
             if (!ctx.PractisedQuestions.Contains(askedQuestion, StringComparer.OrdinalIgnoreCase))
                 ctx.PractisedQuestions.Add(askedQuestion);
         });
+    }
+
+    private async Task<string> BuildCareerProfileContextAsync(AgentRequest request)
+    {
+        if (request.ProfileToggles is null || string.IsNullOrEmpty(request.CareerProfileUserId))
+            return string.Empty;
+
+        var profile = await careerProfileService.GetProfile(request.CareerProfileUserId);
+        if (profile is null)
+            return string.Empty;
+
+        return careerProfileService.BuildProfileContext(profile, request.ProfileToggles);
     }
 
     private static int MaxTokensFor(string toolType) => toolType switch

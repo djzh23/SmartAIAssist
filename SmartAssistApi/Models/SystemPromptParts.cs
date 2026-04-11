@@ -29,4 +29,16 @@ public sealed record SystemPromptParts(string CachedPrefix, string DynamicToolSu
         string.IsNullOrEmpty(DynamicToolSuffix ?? string.Empty)
             ? LanguageRule
             : $"{DynamicToolSuffix}\n\n{LanguageRule}";
+
+    /// <summary>Prepends career profile context before the rest of the uncached system block (not prompt-cached).</summary>
+    public SystemPromptParts WithProfilePrefix(string profileContext)
+    {
+        if (string.IsNullOrWhiteSpace(profileContext))
+            return this;
+
+        var head = profileContext.Trim();
+        var d = DynamicToolSuffix ?? string.Empty;
+        var newDynamic = string.IsNullOrEmpty(d) ? head : $"{head}\n\n{d}";
+        return this with { DynamicToolSuffix = newDynamic };
+    }
 }
