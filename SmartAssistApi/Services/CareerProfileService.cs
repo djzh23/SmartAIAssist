@@ -12,8 +12,8 @@ namespace SmartAssistApi.Services;
 /// </summary>
 public class CareerProfileService(IConfiguration config, HttpClient http)
 {
-    private readonly string _restUrl = config["Upstash:RestUrl"] ?? throw new InvalidOperationException("Upstash:RestUrl missing");
-    private readonly string _restToken = config["Upstash:RestToken"] ?? throw new InvalidOperationException("Upstash:RestToken missing");
+    private readonly string _restUrl = RequireUpstashRestUrl(config["Upstash:RestUrl"]);
+    private readonly string _restToken = RequireUpstashRestToken(config["Upstash:RestToken"]);
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
@@ -30,9 +30,47 @@ public class CareerProfileService(IConfiguration config, HttpClient http)
     private static string ProfileKey(string userId) => $"profile:{userId}";
     private static string CvRawKey(string userId) => $"profile:{userId}:cv_raw";
 
+    private static string RequireUpstashRestUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            throw new InvalidOperationException(
+                "Upstash:RestUrl is missing or empty. Set Upstash:RestUrl (or UPSTASH_REDIS_REST_URL) in user secrets, appsettings, or environment.");
+        }
+
+        var trimmed = url.Trim().TrimEnd('/');
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute)
+            || (absolute.Scheme != Uri.UriSchemeHttp && absolute.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException(
+                "Upstash:RestUrl must be an absolute http(s) URL (e.g. https://YOUR-REDIS.upstash.io).");
+        }
+
+        return trimmed;
+    }
+
+    private static string RequireUpstashRestToken(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new InvalidOperationException(
+                "Upstash:RestToken is missing or empty. Set Upstash:RestToken (or UPSTASH_REDIS_REST_TOKEN) in user secrets, appsettings, or environment.");
+        }
+
+        return token.Trim();
+    }
+
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
-        var req = new HttpRequestMessage(method, $"{_restUrl}{path}");
+        var relative = path.StartsWith('/') ? path : "/" + path;
+        var combined = $"{_restUrl.TrimEnd('/')}{relative}";
+        if (!Uri.TryCreate(combined, UriKind.Absolute, out var uri))
+        {
+            throw new InvalidOperationException(
+                $"Could not build Upstash request URL from RestUrl and path '{relative}'.");
+        }
+
+        var req = new HttpRequestMessage(method, uri);
         req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_restToken}");
         return req;
     }

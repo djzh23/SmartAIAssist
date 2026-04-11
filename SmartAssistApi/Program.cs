@@ -28,9 +28,14 @@ if (!string.IsNullOrWhiteSpace(renderPort))
 var localOrigins = new[]
 {
     "http://localhost:5194",
+    "http://localhost:5108",
     "http://localhost:5000",
     "http://localhost:7000",
-    "https://localhost:7001"
+    "https://localhost:7001",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
 };
 var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 var envOrigins = (Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS") ?? string.Empty)
