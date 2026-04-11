@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Configuration;
 using SmartAssistApi.Models;
 
 namespace SmartAssistApi.Services;
@@ -20,9 +21,6 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         ["claude-haiku-4-5-20251001"] = (1.00m, 5.00m),
         ["claude-sonnet-4-20250514"] = (3.00m, 15.00m),
         ["claude-sonnet-4-5-20250929"] = (3.00m, 15.00m),
-        // groq/… — optional overrides; unknown ids use default Groq class rates below
-        ["groq/llama-3.3-70b-versatile"] = (0.59m, 0.79m),
-        ["groq/llama-3.1-8b-instant"] = (0.05m, 0.08m),
     };
 
     /// <summary>
@@ -41,9 +39,9 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
                 nameof(cacheCreationInputTokens),
                 "Cache creation and cache read token counts must be non-negative.");
 
-        // groq/… — per-model in table or default ~70B-class estimate (adjust when Groq changes pricing).
+        // groq/… — treated as $0 for SmartAssist totals (free tier / not billed like Anthropic).
         var (inputPerM, outputPerM) = model.StartsWith("groq/", StringComparison.OrdinalIgnoreCase)
-            ? ModelPricing.GetValueOrDefault(model, (0.59m, 0.79m))
+            ? (0m, 0m)
             : ModelPricing.GetValueOrDefault(model, (3.00m, 15.00m));
         var inputCost = (inputTokens / 1_000_000m) * inputPerM;
         var cacheWriteCost = (cacheCreationInputTokens / 1_000_000m) * inputPerM * 1.25m;
@@ -155,7 +153,8 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         {
             var ds = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var day = await ReadGlobalDayAsync(ds, cancellationToken).ConfigureAwait(false);
-            monthCost += day.CostUsd;
+            var dayModels = await ReadModelAggregatesAsync(ds, cancellationToken).ConfigureAwait(false);
+            monthCost += dayModels.Values.Sum(m => m.CostUsd);
             monthMessages += day.Messages;
         }
 
@@ -164,6 +163,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         {
             var d = DateTime.UtcNow.Date.AddDays(-i).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var day = await ReadGlobalDayAsync(d, cancellationToken).ConfigureAwait(false);
+            var dayModels = await ReadModelAggregatesAsync(d, cancellationToken).ConfigureAwait(false);
             var active = (int)await RedisCardinalityAsync($"tokens:global:daily:{d}:users", cancellationToken).ConfigureAwait(false);
             last30.Add(new DailyUsage
             {
@@ -171,23 +171,25 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
                 Messages = day.Messages,
                 InputTokens = day.InputTokens,
                 OutputTokens = day.OutputTokens,
-                CostUsd = day.CostUsd,
+                CostUsd = dayModels.Values.Sum(m => m.CostUsd),
                 ActiveUsers = active,
             });
         }
 
         var top = await GetTopUsersAsync(today, 20, cancellationToken).ConfigureAwait(false);
-        var byModel = await ReadModelAggregatesAsync(today, cancellationToken).ConfigureAwait(false);
+        var rawByModel = await ReadModelAggregatesAsync(today, cancellationToken).ConfigureAwait(false);
+        var byModel = MergeWithConfiguredLlmPlaceholders(rawByModel, config);
         var byTool = await ReadToolAggregatesAsync(today, cancellationToken).ConfigureAwait(false);
         var groqMsgs = byModel.Values.Where(m => string.Equals(m.Provider, "Groq", StringComparison.OrdinalIgnoreCase)).Sum(m => m.Messages);
         var otherMsgs = byModel.Values.Sum(m => m.Messages) - groqMsgs;
+        var totalCostTodayLlm = byModel.Values.Sum(m => m.CostUsd);
 
         var registered = (int)await RedisCardinalityAsync("tokens:users:registered", cancellationToken).ConfigureAwait(false);
         var activeToday = (int)await RedisCardinalityAsync($"tokens:global:daily:{today}:users", cancellationToken).ConfigureAwait(false);
 
         return new AdminDashboardData
         {
-            TotalCostToday = todayData.CostUsd,
+            TotalCostToday = totalCostTodayLlm,
             TotalCostThisMonth = monthCost,
             TotalMessagesToday = todayData.Messages,
             TotalMessagesThisMonth = monthMessages,
@@ -204,6 +206,9 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             ByModel = byModel,
             ByTool = byTool,
             Last30Days = last30,
+            LlmCostPolicyNote =
+                "Groq: in SmartAssist mit 0 USD bewertet (kostenloses Kontingent). Anthropic (Haiku/Sonnet) nach konfigurierter Preisliste. " +
+                "Die Tabelle unten listet alle konfigurierten LLM-Keys; 0 = heute keine Nutzung.",
         };
     }
 
@@ -223,14 +228,17 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             summary.TotalMessages += day.Messages;
             summary.TotalInputTokens += day.InputTokens;
             summary.TotalOutputTokens += day.OutputTokens;
-            summary.TotalCostUsd += day.CostUsd;
 
             var models = await RedisMembersAsync($"tokens:daily:{userId}:{ds}:models", cancellationToken).ConfigureAwait(false);
+            decimal dayLlmCost = 0;
             foreach (var m in models)
             {
                 var mu = await ReadHashMetricsAsync($"tokens:daily:{userId}:{ds}:model:{m}", cancellationToken).ConfigureAwait(false);
+                dayLlmCost += AdjustStoredCostUsdForDisplay(m, mu.Cost);
                 MergeModel(summary.ByModel, m, mu);
             }
+
+            summary.TotalCostUsd += models.Count > 0 ? dayLlmCost : day.CostUsd;
 
             var tools = await RedisMembersAsync($"tokens:daily:{userId}:{ds}:tools", cancellationToken).ConfigureAwait(false);
             foreach (var t in tools)
@@ -241,6 +249,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         }
 
         summary.Plan = await RedisGetAsync($"plan:{userId}", cancellationToken).ConfigureAwait(false) ?? "free";
+        summary.ByModel = MergeWithConfiguredLlmPlaceholders(summary.ByModel, config);
         return summary;
     }
 
@@ -255,6 +264,9 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             if (day.Messages == 0 && day.CostUsd == 0)
                 continue;
 
+            var (llmCost, hadModelRows) = await SumUserDayLlmCostUsdAsync(uid, date, cancellationToken).ConfigureAwait(false);
+            var displayCost = hadModelRows ? llmCost : day.CostUsd;
+
             var plan = await RedisGetAsync($"plan:{uid}", cancellationToken).ConfigureAwait(false) ?? "free";
             rows.Add(new UserUsageSummary
             {
@@ -264,7 +276,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
                 TotalMessages = day.Messages,
                 TotalInputTokens = day.InputTokens,
                 TotalOutputTokens = day.OutputTokens,
-                TotalCostUsd = day.CostUsd,
+                TotalCostUsd = displayCost,
             });
         }
 
@@ -283,6 +295,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         {
             var d = DateTime.UtcNow.Date.AddDays(-i).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var day = await ReadGlobalDayAsync(d, cancellationToken).ConfigureAwait(false);
+            var dayModels = await ReadModelAggregatesAsync(d, cancellationToken).ConfigureAwait(false);
             var active = (int)await RedisCardinalityAsync($"tokens:global:daily:{d}:users", cancellationToken).ConfigureAwait(false);
             list.Add(new DailyUsage
             {
@@ -290,7 +303,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
                 Messages = day.Messages,
                 InputTokens = day.InputTokens,
                 OutputTokens = day.OutputTokens,
-                CostUsd = day.CostUsd,
+                CostUsd = dayModels.Values.Sum(m => m.CostUsd),
                 ActiveUsers = active,
             });
         }
@@ -300,6 +313,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
 
     private static void MergeModel(Dictionary<string, ModelUsage> dict, string key, (int Messages, int Input, int Output, decimal Cost) m)
     {
+        var cost = AdjustStoredCostUsdForDisplay(key, m.Cost);
         if (!dict.TryGetValue(key, out var u))
         {
             dict[key] = new ModelUsage
@@ -309,7 +323,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
                 Messages = m.Messages,
                 InputTokens = m.Input,
                 OutputTokens = m.Output,
-                CostUsd = m.Cost,
+                CostUsd = cost,
             };
             return;
         }
@@ -317,7 +331,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
         u.Messages += m.Messages;
         u.InputTokens += m.Input;
         u.OutputTokens += m.Output;
-        u.CostUsd += m.Cost;
+        u.CostUsd += cost;
     }
 
     private static void MergeTool(Dictionary<string, ToolUsage> dict, string key, (int Messages, int Input, int Output, decimal Cost) m)
@@ -356,7 +370,7 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
                 Messages = m.Messages,
                 InputTokens = m.Input,
                 OutputTokens = m.Output,
-                CostUsd = m.Cost,
+                CostUsd = AdjustStoredCostUsdForDisplay(name, m.Cost),
             };
         }
 
@@ -469,6 +483,86 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
 
     internal static string InferProviderFromModelKey(string modelKey) =>
         modelKey.StartsWith("groq_", StringComparison.OrdinalIgnoreCase) ? "Groq" : "Anthropic";
+
+    /// <summary>Redis stores legacy Groq $ from old pricing; dashboard treats Groq keys as 0 USD.</summary>
+    private static decimal AdjustStoredCostUsdForDisplay(string redisModelKey, decimal storedCostUsd) =>
+        redisModelKey.StartsWith("groq_", StringComparison.OrdinalIgnoreCase) ? 0m : storedCostUsd;
+
+    private async Task<(decimal CostUsd, bool HadPerModelRows)> SumUserDayLlmCostUsdAsync(
+        string userId,
+        string date,
+        CancellationToken ct)
+    {
+        var models = await RedisMembersAsync($"tokens:daily:{userId}:{date}:models", ct).ConfigureAwait(false);
+        if (models.Count == 0)
+            return (0m, false);
+
+        decimal s = 0;
+        foreach (var m in models)
+        {
+            var mu = await ReadHashMetricsAsync($"tokens:daily:{userId}:{date}:model:{m}", ct).ConfigureAwait(false);
+            s += AdjustStoredCostUsdForDisplay(m, mu.Cost);
+        }
+
+        return (s, true);
+    }
+
+    private static IReadOnlyList<(string Key, string Provider)> BuildConfiguredLlmModelCatalog(IConfiguration configuration)
+    {
+        var list = new List<(string Key, string Provider)>();
+        var groqModel = configuration["Groq:Model"];
+        if (string.IsNullOrWhiteSpace(groqModel))
+            groqModel = "llama-3.3-70b-versatile";
+        list.Add((SanitizeSegment($"groq/{groqModel.Trim()}"), "Groq"));
+
+        var haiku = configuration["Anthropic:HaikuModel"];
+        if (string.IsNullOrWhiteSpace(haiku))
+            haiku = AgentModelSelector.DefaultHaikuModelId;
+        var haikuKey = SanitizeSegment(haiku.Trim());
+        list.Add((haikuKey, "Anthropic"));
+
+        var sonnet = configuration["Anthropic:Model"];
+        if (string.IsNullOrWhiteSpace(sonnet))
+            sonnet = AgentModelSelector.DefaultSonnetModelId;
+        var sonnetKey = SanitizeSegment(sonnet.Trim());
+        if (!string.Equals(sonnetKey, haikuKey, StringComparison.OrdinalIgnoreCase))
+            list.Add((sonnetKey, "Anthropic"));
+
+        return list;
+    }
+
+    private static Dictionary<string, ModelUsage> MergeWithConfiguredLlmPlaceholders(
+        Dictionary<string, ModelUsage> fromRedis,
+        IConfiguration configuration)
+    {
+        var catalog = BuildConfiguredLlmModelCatalog(configuration);
+        var merged = new Dictionary<string, ModelUsage>(StringComparer.Ordinal);
+        foreach (var (key, provider) in catalog)
+        {
+            if (fromRedis.TryGetValue(key, out var existing))
+                merged[key] = existing;
+            else
+            {
+                merged[key] = new ModelUsage
+                {
+                    Model = key,
+                    Provider = provider,
+                    Messages = 0,
+                    InputTokens = 0,
+                    OutputTokens = 0,
+                    CostUsd = 0,
+                };
+            }
+        }
+
+        foreach (var kv in fromRedis)
+        {
+            if (!merged.ContainsKey(kv.Key))
+                merged[kv.Key] = kv.Value;
+        }
+
+        return merged;
+    }
 
     private async Task PipelineAsync(object[][] commands, string operation)
     {

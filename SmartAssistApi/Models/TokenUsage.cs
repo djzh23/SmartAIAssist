@@ -67,6 +67,8 @@ public class AdminDashboardData
     public Dictionary<string, ModelUsage> ByModel { get; set; } = new();
     public Dictionary<string, ToolUsage> ByTool { get; set; } = new();
     public List<DailyUsage> Last30Days { get; set; } = new();
+    /// <summary>Shown on admin UI: how LLM rows are priced (Groq = 0 USD in-app).</summary>
+    public string LlmCostPolicyNote { get; set; } = "";
 }
 
 public class DailyUsage
