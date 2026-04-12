@@ -57,6 +57,7 @@ public class TranslationToolTests
 
         Assert.Contains("---ZIELSPRACHE---", result);
         Assert.Contains("---UEBERSETZUNG---", result);
+        Assert.Contains("---KONTEXT---", result);
         Assert.Contains("---END---", result);
     }
 

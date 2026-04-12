@@ -94,7 +94,7 @@ public class SystemPromptBuilderTests
         var request = new AgentRequest("Help", SessionId: "s1", ToolType: "jobanalyzer");
         var parts = _sut.BuildPromptParts("jobanalyzer", context, request);
 
-        Assert.Contains("Karriereberater", parts.CachedPrefix);
+        Assert.Contains("Stellenanalyse", parts.CachedPrefix);
         Assert.DoesNotContain("AKTIVE STELLE", parts.CachedPrefix);
         Assert.Contains("AKTIVE STELLE", parts.UncachedSystemBlock);
         Assert.Contains("Acme", parts.UncachedSystemBlock);

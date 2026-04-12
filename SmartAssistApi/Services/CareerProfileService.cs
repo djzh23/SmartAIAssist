@@ -27,7 +27,8 @@ public class CareerProfileService(
     /// <summary>~300 Tokens @ 4 Zeichen/Token</summary>
     private const int MaxProfileContextChars = 1200;
 
-    private const int CvRawTextInProfileMax = 2000;
+    /// <summary>Abgestimmt mit PDF-Extraktion / Token-Schutz (max. 3000 Zeichen Rohtext).</summary>
+    private const int CvRawTextInProfileMax = 3000;
     private const int CvRawSeparateKeyMax = 50_000;
     private const int TargetJobDescriptionMax = 2000;
 

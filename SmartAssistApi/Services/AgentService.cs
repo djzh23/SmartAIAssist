@@ -263,6 +263,55 @@ public class AgentService(
             result.CacheReadInputTokens);
     }
 
+    /// <summary>
+    /// Einmaliger KI-Aufruf ohne Streaming (z. B. CV-JSON-Extraktion). Groq zuerst, sonst Anthropic Haiku.
+    /// <paramref name="maxTokens"/> wird auf maximal 800 begrenzt.
+    /// </summary>
+    public async Task<string> SingleCompletion(string prompt, int maxTokens = 600)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+        var capped = Math.Min(int.Clamp(maxTokens, 1, 800), 800);
+
+        var groqMessages = new List<GroqChatMessage> { new() { Role = "user", Content = prompt } };
+        var sampling = new GroqSamplingOptions(Temperature: 0.1, FrequencyPenalty: 0.1, PresencePenalty: 0.05);
+
+        try
+        {
+            if (groqOptions.Value.UseAsPrimary && groqChat.IsConfigured)
+            {
+                var groqResult = await groqChat
+                    .CompleteAsync(string.Empty, groqMessages, capped, sampling)
+                    .ConfigureAwait(false);
+                if (groqResult.Success && !string.IsNullOrWhiteSpace(groqResult.Content))
+                    return groqResult.Content.Trim();
+
+                logger.LogWarning(
+                    "SingleCompletion: Groq failed or empty. Falling back to Anthropic. Error {Error}",
+                    groqResult.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "SingleCompletion: Groq threw; falling back to Anthropic.");
+        }
+
+        var parameters = new MessageParameters
+        {
+            Model = AgentModelSelector.ResolveModel("general", config),
+            MaxTokens = capped,
+            Temperature = 0.1m,
+            Messages = [new Message(RoleType.User, prompt)],
+            System =
+            [
+                new SystemMessage(
+                    "Antworte nur mit dem angeforderten Output (z. B. JSON), ohne Einleitung oder Schlussfloskeln."),
+            ],
+        };
+
+        var response = await _client.Messages.GetClaudeMessageAsync(parameters).ConfigureAwait(false);
+        return response.Message.ToString().Trim();
+    }
+
     private static List<Tool> BuildTools(string toolType, AgentRequest request) => toolType switch
     {
         "weather" =>

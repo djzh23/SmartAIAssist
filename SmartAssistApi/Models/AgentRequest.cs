@@ -18,6 +18,8 @@ public class LanguageLearningResponse
 {
     public string TargetLanguageText { get; set; } = "";
     public string NativeLanguageText { get; set; } = "";
+    public string? LearnContext { get; set; }
+    public string? LearnVariants { get; set; }
     public string? LearnTip { get; set; }
 }
 

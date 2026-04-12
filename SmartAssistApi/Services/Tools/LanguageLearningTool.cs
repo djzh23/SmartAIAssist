@@ -65,6 +65,10 @@ public static partial class LanguageLearningTool
         var targetText = targetMatch.Groups[1].Value.Trim();
         var translationMatch = UebersetzungRegex().Match(text);
         var translationText = translationMatch.Success ? translationMatch.Groups[1].Value.Trim() : "";
+        var kontextMatch = KontextRegex().Match(text);
+        var kontextText = kontextMatch.Success ? kontextMatch.Groups[1].Value.Trim() : null;
+        var variantenMatch = VariantenRegex().Match(text);
+        var variantenText = variantenMatch.Success ? variantenMatch.Groups[1].Value.Trim() : null;
         var tipMatch = TippRegex().Match(text);
         var tipText = tipMatch.Success ? tipMatch.Groups[1].Value.Trim() : null;
 
@@ -72,6 +76,8 @@ public static partial class LanguageLearningTool
         {
             TargetLanguageText = targetText,
             NativeLanguageText = translationText,
+            LearnContext = string.IsNullOrWhiteSpace(kontextText) ? null : kontextText,
+            LearnVariants = string.IsNullOrWhiteSpace(variantenText) ? null : variantenText,
             LearnTip = string.IsNullOrWhiteSpace(tipText) ? null : tipText
         };
     }
@@ -79,8 +85,14 @@ public static partial class LanguageLearningTool
     [GeneratedRegex(@"---ZIELSPRACHE---([\s\S]*?)---UEBERSETZUNG---", RegexOptions.IgnoreCase)]
     private static partial Regex ZielRegex();
 
-    [GeneratedRegex(@"---UEBERSETZUNG---([\s\S]*?)(?:---TIPP---|---END---)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"---UEBERSETZUNG---([\s\S]*?)(?=---KONTEXT---|---VARIANTEN---|---TIPP---|---END---)", RegexOptions.IgnoreCase)]
     private static partial Regex UebersetzungRegex();
+
+    [GeneratedRegex(@"---KONTEXT---([\s\S]*?)(?=---VARIANTEN---|---TIPP---|---END---)", RegexOptions.IgnoreCase)]
+    private static partial Regex KontextRegex();
+
+    [GeneratedRegex(@"---VARIANTEN---([\s\S]*?)(?=---TIPP---|---END---)", RegexOptions.IgnoreCase)]
+    private static partial Regex VariantenRegex();
 
     [GeneratedRegex(@"---TIPP---([\s\S]*?)---END---", RegexOptions.IgnoreCase)]
     private static partial Regex TippRegex();

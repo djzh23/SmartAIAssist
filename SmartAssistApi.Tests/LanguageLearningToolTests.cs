@@ -66,4 +66,31 @@ public class LanguageLearningToolTests
         Assert.Contains("---UEBERSETZUNG---", prompt);
         Assert.Contains("---END---", prompt);
     }
+
+    [Fact]
+    public void ParseResponse_StructuredWithKontextAndVarianten_ParsesAllSections()
+    {
+        var raw = """
+            ---ZIELSPRACHE---
+            Hola
+            ---UEBERSETZUNG---
+            Hallo
+            ---KONTEXT---
+            Meeting
+            ---VARIANTEN---
+            Formell: X
+            ---TIPP---
+            Tippzeile
+            ---END---
+            """;
+
+        var result = LanguageLearningTool.ParseResponse(raw);
+
+        Assert.NotNull(result);
+        Assert.Equal("Hola", result!.TargetLanguageText);
+        Assert.Equal("Hallo", result.NativeLanguageText);
+        Assert.Equal("Meeting", result.LearnContext);
+        Assert.Contains("Formell", result.LearnVariants ?? "");
+        Assert.Equal("Tippzeile", result.LearnTip);
+    }
 }

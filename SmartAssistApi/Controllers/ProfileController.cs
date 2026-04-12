@@ -9,6 +9,8 @@ namespace SmartAssistApi.Controllers;
 public class ProfileController(
     CareerProfileService profileService,
     ClerkAuthService clerkAuth,
+    AgentService agentService,
+    CvParsingService cvParsingService,
     ILogger<ProfileController> logger) : ControllerBase
 {
     private static void NormalizeProfileLists(CareerProfile profile)
@@ -87,6 +89,57 @@ public class ProfileController(
         return Ok(new { success = true, length = request.Text.Length });
     }
 
+    /// <summary>
+    /// PDF-CV hochladen: Text extrahieren, per KI strukturieren, Rohtext speichern — Vorschau-Daten ohne automatisches Profil-Merge.
+    /// </summary>
+    [HttpPost("cv/upload-pdf")]
+    public async Task<IActionResult> UploadCvPdf([FromBody] UploadCvPdfRequest request)
+    {
+        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        if (isAnonymous || string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        if (string.IsNullOrEmpty(request.Base64Pdf))
+            return BadRequest(new { error = "PDF-Daten fehlen." });
+
+        if (request.Base64Pdf.Length > 5_000_000)
+            return BadRequest(new { error = "PDF darf maximal 5MB groß sein." });
+
+        try
+        {
+            string rawText;
+            try
+            {
+                rawText = cvParsingService.ExtractTextFromPdf(request.Base64Pdf);
+            }
+            catch (FormatException)
+            {
+                return BadRequest(new { error = "Ungültige Base64-Daten." });
+            }
+
+            if (string.IsNullOrWhiteSpace(rawText) || rawText.Length < 50)
+                return BadRequest(new { error = "Konnte keinen Text aus der PDF extrahieren. Ist es ein Bild-PDF?" });
+
+            var parsed = await cvParsingService
+                .ParseCvWithAi(rawText, p => agentService.SingleCompletion(p, 800))
+                .ConfigureAwait(false);
+
+            await profileService.SetCvText(userId, rawText).ConfigureAwait(false);
+
+            return Ok(new
+            {
+                success = true,
+                rawTextLength = rawText.Length,
+                parsed,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "CV PDF upload failed for user {UserId}", userId);
+            return BadRequest(new { error = $"PDF-Verarbeitung fehlgeschlagen: {ex.Message}" });
+        }
+    }
+
     [HttpPost("target-jobs")]
     public async Task<IActionResult> AddTargetJob([FromBody] AddTargetJobRequest request)
     {
@@ -162,6 +215,11 @@ public class UpdateSkillsRequest
 public class UploadCvRequest
 {
     public string Text { get; set; } = string.Empty;
+}
+
+public class UploadCvPdfRequest
+{
+    public string Base64Pdf { get; set; } = string.Empty;
 }
 
 public class AddTargetJobRequest

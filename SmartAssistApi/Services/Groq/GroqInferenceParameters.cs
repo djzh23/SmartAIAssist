@@ -26,7 +26,7 @@ public static class GroqInferenceParameters
         return t switch
         {
             "jobanalyzer" => 0.3,
-            "interviewprep" => 0.4,
+            "interviewprep" => 0.2,
             "programming" => 0.2,
             "language" => 0.6,
             _ => 0.5,
