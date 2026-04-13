@@ -176,7 +176,8 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             });
         }
 
-        var top = await GetTopUsersAsync(today, 20, cancellationToken).ConfigureAwait(false);
+        var retentionStart = DateTime.UtcNow.Date.AddDays(-(KeyTtlSeconds / 86400 - 1));
+        var top = await GetTopUsersDateRangeAsync(retentionStart, DateTime.UtcNow.Date, 100, cancellationToken).ConfigureAwait(false);
         var rawByModel = await ReadModelAggregatesAsync(today, cancellationToken).ConfigureAwait(false);
         var byModel = MergeWithConfiguredLlmPlaceholders(rawByModel, config);
         var byTool = await ReadToolAggregatesAsync(today, cancellationToken).ConfigureAwait(false);
@@ -285,6 +286,142 @@ public class TokenTrackingService(IConfiguration config, HttpClient http, ILogge
             .ThenByDescending(r => r.TotalMessages)
             .Take(Math.Max(1, limit))
             .ToList();
+    }
+
+    /// <summary>
+    /// Aggregates per-user usage over inclusive UTC dates (e.g. full retention window in Redis).
+    /// </summary>
+    public async Task<List<UserUsageSummary>> GetTopUsersDateRangeAsync(
+        DateTime startUtc,
+        DateTime endUtc,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (endUtc < startUtc)
+            (startUtc, endUtc) = (endUtc, startUtc);
+
+        var startDate = startUtc.Date;
+        var endDate = endUtc.Date;
+        var byUser = new Dictionary<string, UserAgg>(StringComparer.Ordinal);
+
+        for (var d = startDate; d <= endDate; d = d.AddDays(1))
+        {
+            var ds = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var userIds = await RedisMembersAsync($"tokens:global:daily:{ds}:users", cancellationToken).ConfigureAwait(false);
+            foreach (var uid in userIds)
+            {
+                var map = await RedisHGetAllAsync($"tokens:daily:{uid}:{ds}", cancellationToken).ConfigureAwait(false);
+                var dayMessages = ParseInt(map, "messages");
+                var dayInput = ParseInt(map, "input_tokens");
+                var dayOutput = ParseInt(map, "output_tokens");
+                var dayCostHash = ParseDecimal(map, "cost_usd");
+
+                var models = await RedisMembersAsync($"tokens:daily:{uid}:{ds}:models", cancellationToken).ConfigureAwait(false);
+                decimal llmCost = 0;
+                var hadModelRows = models.Count > 0;
+                foreach (var m in models)
+                {
+                    var mu = await ReadHashMetricsAsync($"tokens:daily:{uid}:{ds}:model:{m}", cancellationToken).ConfigureAwait(false);
+                    llmCost += AdjustStoredCostUsdForDisplay(m, mu.Cost);
+                }
+
+                var displayCost = hadModelRows ? llmCost : dayCostHash;
+
+                if (!byUser.TryGetValue(uid, out var agg))
+                {
+                    agg = new UserAgg();
+                    byUser[uid] = agg;
+                }
+
+                agg.Messages += dayMessages;
+                agg.InputTokens += dayInput;
+                agg.OutputTokens += dayOutput;
+                agg.CostUsd += displayCost;
+                MergeTcCountsFromMap(agg.ToolMessageCounts, map);
+            }
+        }
+
+        var rows = new List<UserUsageSummary>();
+        foreach (var (uid, agg) in byUser)
+        {
+            if (agg.Messages == 0 && agg.CostUsd == 0)
+                continue;
+
+            var plan = await RedisGetAsync($"plan:{uid}", cancellationToken).ConfigureAwait(false) ?? "free";
+            rows.Add(new UserUsageSummary
+            {
+                UserId = uid,
+                Plan = plan,
+                TopTool = PickTopToolFromCounts(agg.ToolMessageCounts),
+                TotalMessages = agg.Messages,
+                TotalInputTokens = agg.InputTokens,
+                TotalOutputTokens = agg.OutputTokens,
+                TotalCostUsd = agg.CostUsd,
+            });
+        }
+
+        return rows
+            .OrderByDescending(r => r.TotalCostUsd)
+            .ThenByDescending(r => r.TotalMessages)
+            .Take(Math.Max(1, limit))
+            .ToList();
+    }
+
+    /// <summary>Parse yyyy-MM-dd and aggregate top users for that inclusive range (clamped to retention and today).</summary>
+    public async Task<List<UserUsageSummary>> GetTopUsersForDateRangeQueryAsync(
+        string startDate,
+        string endDate,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParseIsoDate(startDate, out var start) || !TryParseIsoDate(endDate, out var end))
+            throw new ArgumentException("Invalid date format; use yyyy-MM-dd.");
+
+        var maxSpanDays = KeyTtlSeconds / 86400;
+        var minAllowed = DateTime.UtcNow.Date.AddDays(-(maxSpanDays - 1));
+        if (start < minAllowed)
+            start = minAllowed;
+        if (end > DateTime.UtcNow.Date)
+            end = DateTime.UtcNow.Date;
+        if (end < start)
+            (start, end) = (end, start);
+
+        return await GetTopUsersDateRangeAsync(start, end, limit, cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed class UserAgg
+    {
+        public int Messages;
+        public int InputTokens;
+        public int OutputTokens;
+        public decimal CostUsd;
+        public Dictionary<string, int> ToolMessageCounts { get; } = new(StringComparer.Ordinal);
+    }
+
+    private static void MergeTcCountsFromMap(Dictionary<string, int> target, Dictionary<string, string> map)
+    {
+        const string prefix = "tc_";
+        foreach (var kv in map)
+        {
+            if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+            if (!int.TryParse(kv.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var c))
+                continue;
+            var toolName = kv.Key.Length > prefix.Length ? kv.Key[prefix.Length..] : "";
+            if (string.IsNullOrEmpty(toolName))
+                continue;
+            target[toolName] = target.GetValueOrDefault(toolName) + c;
+        }
+    }
+
+    private static string? PickTopToolFromCounts(Dictionary<string, int> counts)
+    {
+        if (counts.Count == 0)
+            return null;
+        return counts
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .First().Key;
     }
 
     public async Task<List<DailyUsage>> GetDailyStatsAsync(int days, CancellationToken cancellationToken = default)

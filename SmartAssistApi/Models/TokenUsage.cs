@@ -16,7 +16,7 @@ public class UserUsageSummary
     public string UserId { get; set; } = string.Empty;
     public string UserEmail { get; set; } = string.Empty;
     public string Plan { get; set; } = string.Empty;
-    /// <summary>Tool with the most messages today (from per-tool counters on the user daily hash).</summary>
+    /// <summary>Tool with the most messages for the period (from tc_* counters on user daily hashes).</summary>
     public string? TopTool { get; set; }
     public int TotalMessages { get; set; }
     public int TotalInputTokens { get; set; }

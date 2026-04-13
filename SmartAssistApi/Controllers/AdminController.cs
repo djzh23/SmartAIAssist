@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using SmartAssistApi.Services;
 
@@ -59,17 +60,32 @@ public class AdminController(
     }
 
     [HttpGet("top-users")]
-    public async Task<IActionResult> GetTopUsers([FromQuery] string? date, [FromQuery] int limit = 20, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetTopUsers(
+        [FromQuery] string? date,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
     {
         if (!IsAdmin())
             return Forbid();
 
-        var d = date ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
-
         try
         {
-            var data = await tracking.GetTopUsersAsync(d, limit, cancellationToken).ConfigureAwait(false);
-            return Ok(data);
+            if (!string.IsNullOrWhiteSpace(from) && !string.IsNullOrWhiteSpace(to))
+            {
+                var data = await tracking.GetTopUsersForDateRangeQueryAsync(from.Trim(), to.Trim(), limit, cancellationToken)
+                    .ConfigureAwait(false);
+                return Ok(data);
+            }
+
+            var d = date ?? DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var singleDay = await tracking.GetTopUsersAsync(d, limit, cancellationToken).ConfigureAwait(false);
+            return Ok(singleDay);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = "invalid_args", message = ex.Message });
         }
         catch (Exception ex)
         {
