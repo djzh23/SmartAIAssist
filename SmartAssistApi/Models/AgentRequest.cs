@@ -12,7 +12,9 @@ public record AgentRequest(
     string? LearningGoal = null,
     string? ToolType = null,
     ProfileContextToggles? ProfileToggles = null,
-    string? CareerProfileUserId = null);
+    string? CareerProfileUserId = null,
+    /// <summary>Clerk user id (or demo scope id). Set only by the API layer — never trust a client-sent value.</summary>
+    string? ConversationScopeUserId = null);
 
 public class LanguageLearningResponse
 {

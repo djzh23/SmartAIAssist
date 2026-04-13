@@ -33,6 +33,8 @@ public class PromptComposerTests
     [InlineData("interviewprep")]
     [InlineData("programming")]
     [InlineData("language")]
+    [InlineData("weather")]
+    [InlineData("jokes")]
     public void GroqInference_MaxTokens_AndTemperature_AreWithinBounds(string tool)
     {
         var max = GroqInferenceParameters.MaxTokensFor(tool);

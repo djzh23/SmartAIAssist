@@ -64,6 +64,7 @@ builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentServi
 builder.Services.AddHttpClient<ISpeechService, AzureSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddHttpClient<CareerProfileService>();
+builder.Services.AddHttpClient<LearningMemoryService>();
 builder.Services.AddHttpClient<TokenTrackingService>();
 builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();

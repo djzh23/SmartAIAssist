@@ -1,3 +1,5 @@
+using SmartAssistApi.Configuration;
+
 namespace SmartAssistApi.Services.Groq;
 
 /// <summary>Sampling- und Längen-Parameter pro Tool (Groq + konsistent für Anthropic-Temperature).</summary>
@@ -5,6 +7,10 @@ public static class GroqInferenceParameters
 {
     public static int MaxTokensFor(string? toolType)
     {
+        var skill = SkillRegistry.FindSkill(toolType);
+        if (skill is not null)
+            return int.Clamp(skill.MaxTokens, 50, 8000);
+
         var t = string.IsNullOrWhiteSpace(toolType) ? "general" : toolType.ToLowerInvariant();
         return t switch
         {
@@ -22,6 +28,10 @@ public static class GroqInferenceParameters
     /// <summary>0.2–0.6 je nach Tool; nie über 0.7.</summary>
     public static double TemperatureFor(string? toolType)
     {
+        var skill = SkillRegistry.FindSkill(toolType);
+        if (skill is not null)
+            return Math.Min(0.7, skill.Temperature);
+
         var t = string.IsNullOrWhiteSpace(toolType) ? "general" : toolType.ToLowerInvariant();
         return t switch
         {

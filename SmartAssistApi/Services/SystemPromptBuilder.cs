@@ -38,6 +38,9 @@ public class SystemPromptBuilder
             "language" => BuildLanguageToolParts(request, languageRule),
             "weather" => new SystemPromptParts(BuildWeatherPrompt(), string.Empty, languageRule),
             "jokes" => new SystemPromptParts(BuildJokesPrompt(), string.Empty, languageRule),
+            "cover_letter" => new SystemPromptParts(CoverLetterSkillPrompt, string.Empty, languageRule),
+            "salary_coach" => new SystemPromptParts(SalaryCoachSkillPrompt, string.Empty, languageRule),
+            "linkedin_optimizer" => new SystemPromptParts(LinkedInSkillPrompt, string.Empty, languageRule),
             _ => new SystemPromptParts(BuildGeneralPrompt(), string.Empty, languageRule),
         };
 
@@ -293,6 +296,53 @@ public class SystemPromptBuilder
             - For translation output, follow the target language requested by the user.
             """;
     }
+
+    private const string CoverLetterSkillPrompt = """
+        WERKZEUG: Anschreiben-Generator
+
+        Erstelle ein professionelles Anschreiben auf Deutsch. Nutze das Nutzerprofil und die Zielstelle.
+
+        Struktur:
+        1. Betreffzeile
+        2. Einleitung: Warum diese Stelle, warum dieses Unternehmen (2 Sätze, konkret, kein Standard)
+        3. Hauptteil: 2-3 Absätze die Skills mit Anforderungen matchen. Für JEDE Anforderung ein konkretes Beispiel aus dem Profil.
+        4. Schluss: Nächster Schritt, Verfügbarkeit
+        5. Grußformel
+
+        Regeln:
+        - Max 350 Wörter (eine DIN-A4-Seite)
+        - Keine Floskeln: 'hiermit bewerbe ich mich', 'mit großem Interesse', 'ich bin teamfähig' sind VERBOTEN
+        - Jeder Satz muss einen konkreten Mehrwert enthalten
+        - Lücken ehrlich aber positiv adressieren
+        - Ton: selbstbewusst, nicht unterwürfig
+        """;
+
+    private const string SalaryCoachSkillPrompt = """
+        WERKZEUG: Gehalts-Coach
+
+        Du bist Verhandlungsexperte. Bereite den User auf eine Gehaltsverhandlung vor.
+
+        1. Frage nach: Aktuelle Position, Zielgehalt, Region, Branche (falls nicht im Profil)
+        2. Gib eine realistische Gehaltsspanne basierend auf Branche, Region und Level
+        3. Liefere 3 konkrete Verhandlungsformulierungen als > Blockquotes
+        4. Nenne 3 typische Arbeitgeber-Argumente und die passende Gegenargumentation
+        5. Empfehle den besten Zeitpunkt und Kontext für die Verhandlung
+
+        Sei ehrlich wenn die Gehaltserwartung unrealistisch ist — aber konstruktiv.
+        """;
+
+    private const string LinkedInSkillPrompt = """
+        WERKZEUG: LinkedIn-Optimierung
+
+        Analysiere das LinkedIn-Profil (oder die Angaben des Users) und optimiere:
+
+        1. Headline: Max 120 Zeichen, keyword-optimiert für Recruiter-Suchen
+        2. Summary/About: 3 Absätze — Wer bist du, was machst du, was suchst du
+        3. Erfahrungseinträge: Bullet Points mit messbaren Ergebnissen
+        4. Skills-Reihenfolge: Wichtigste zuerst basierend auf Zielstelle
+
+        Gib EXAKTE Texte die der User kopieren und einfügen kann.
+        """;
 
     private static string BuildGeneralPrompt() =>
         """

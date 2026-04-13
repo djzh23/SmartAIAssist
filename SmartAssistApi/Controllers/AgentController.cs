@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using SmartAssistApi.Configuration;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -16,6 +17,51 @@ public class AgentController(
     ISpeechService speechService,
     ILogger<AgentController> logger) : ControllerBase
 {
+    private async Task<(ActionResult? Error, AgentRequest Normalized)> TryNormalizeAgentRequestAsync(
+        AgentRequest request,
+        string scopeUserId,
+        bool isAnonymous,
+        bool enforcePlan)
+    {
+        var resolved = AgentToolResolution.TryResolve(request.ToolType);
+        if (resolved is null)
+        {
+            return (BadRequest(new { error = "unknown_tool", message = "Unbekanntes Werkzeug." }), request);
+        }
+
+        var skill = resolved.Skill;
+        if (!skill.IsEnabled)
+        {
+            return (StatusCode(403, new
+            {
+                error = "coming_soon",
+                message = $"{skill.Name} ist bald verfügbar.",
+            }), request);
+        }
+
+        if (enforcePlan)
+        {
+            var plan = isAnonymous ? "anonymous" : await usageService.GetPlanAsync(scopeUserId);
+            if (!SkillRegistry.IsToolAccessible(plan, skill))
+            {
+                return (StatusCode(403, new
+                {
+                    error = "plan_required",
+                    message = "Für dieses Werkzeug ist ein höherer Tarif nötig.",
+                }), request);
+            }
+        }
+
+        var normalized = request with
+        {
+            ToolType = resolved.ApiToolType,
+            CareerProfileUserId = isAnonymous ? null : scopeUserId,
+            ConversationScopeUserId = scopeUserId,
+        };
+
+        return (null, normalized);
+    }
+
     [HttpPost("ask")]
     public async Task<ActionResult<AgentResponse>> Ask([FromBody] AgentRequest request)
     {
@@ -76,9 +122,12 @@ public class AgentController(
 
         try
         {
-            var agentRequest = request with { CareerProfileUserId = isAnonymous ? null : userId };
+            var (normErr, agentRequest) = await TryNormalizeAgentRequestAsync(request, userId, isAnonymous, true);
+            if (normErr != null)
+                return normErr;
+
             var result = await agentService.RunAsync(agentRequest);
-            FireTokenTracking(userId, request.ToolType, result);
+            FireTokenTracking(userId, agentRequest.ToolType, result);
             return Ok(result);
         }
         catch (Exception ex)
@@ -155,6 +204,24 @@ public class AgentController(
             return;
         }
 
+        var (normErr, agentRequest) = await TryNormalizeAgentRequestAsync(request, userId, isAnonymous, true);
+        if (normErr is not null)
+        {
+            var status = normErr switch
+            {
+                BadRequestObjectResult => 400,
+                StatusCodeResult scr => scr.StatusCode,
+                ObjectResult { StatusCode: { } c } => c,
+                _ => 400,
+            };
+            Response.StatusCode = status;
+            var payload = normErr is ObjectResult obr && obr.Value is not null
+                ? obr.Value
+                : new { error = "request_invalid" };
+            await Response.WriteAsync(JsonSerializer.Serialize(payload));
+            return;
+        }
+
         Response.ContentType = "text/event-stream; charset=utf-8";
         Response.Headers["Cache-Control"]    = "no-cache";
         Response.Headers["X-Accel-Buffering"] = "no";
@@ -164,7 +231,6 @@ public class AgentController(
 
         try
         {
-            var agentRequest = request with { CareerProfileUserId = isAnonymous ? null : userId };
             await foreach (var chunk in agentService.StreamAsync(agentRequest, HttpContext.RequestAborted))
             {
                 string json;
@@ -172,7 +238,7 @@ public class AgentController(
                 {
                     FireTokenTracking(
                         userId,
-                        request.ToolType,
+                        agentRequest.ToolType,
                         chunk.InputTokens,
                         chunk.OutputTokens,
                         chunk.Model,
@@ -307,9 +373,13 @@ public class AgentController(
 
         try
         {
+            var (normErr, normalizedDemo) = await TryNormalizeAgentRequestAsync(demoRequest, demoUserId, false, false);
+            if (normErr is not null)
+                return normErr;
+
             await usageService.IncrementUsageAsync(demoUserId);
-            var result = await agentService.RunAsync(demoRequest);
-            FireTokenTracking(demoUserId, request.ToolType, result);
+            var result = await agentService.RunAsync(normalizedDemo);
+            FireTokenTracking(demoUserId, normalizedDemo.ToolType, result);
             return Ok(result);
         }
         catch (Exception ex)
@@ -361,8 +431,8 @@ public class AgentController(
     [HttpPost("context")]
     public async Task<IActionResult> SetContext([FromBody] SetContextRequest request)
     {
-        var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous)
+        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized(new { error = "auth_required", message = "You must be signed in to set context." });
 
         if (string.IsNullOrWhiteSpace(request.SessionId))
@@ -377,6 +447,7 @@ public class AgentController(
             if (request.CVText is not null || request.JobTitle is not null || request.CompanyName is not null)
             {
                 await conversationService.UpdateContextAsync(
+                    userId,
                     request.SessionId,
                     toolType,
                     ctx =>
@@ -393,6 +464,7 @@ public class AgentController(
             if (request.ProgrammingLanguage is not null)
             {
                 await conversationService.UpdateContextAsync(
+                    userId,
                     request.SessionId,
                     toolType,
                     ctx => ctx.ProgrammingLanguage = request.ProgrammingLanguage);
@@ -413,8 +485,8 @@ public class AgentController(
         if (string.IsNullOrWhiteSpace(sessionId))
             return BadRequest(new { error = "SessionId required." });
 
-        var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous)
+        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized(new { error = "auth_required", message = "You must be signed in to read context." });
 
         var normalizedToolType = string.IsNullOrWhiteSpace(toolType)
@@ -423,7 +495,7 @@ public class AgentController(
 
         try
         {
-            var context = await conversationService.GetContextAsync(sessionId, normalizedToolType);
+            var context = await conversationService.GetContextAsync(userId, sessionId, normalizedToolType);
             return Ok(new
             {
                 sessionId = context.SessionId,

@@ -17,6 +17,7 @@ public class AgentService(
     PromptComposer promptComposer,
     JobContextExtractor jobExtractor,
     GroqChatCompletionService groqChat,
+    LearningMemoryService learningMemoryService,
     IOptions<GroqOptions> groqOptions,
     ILogger<AgentService> logger) : IAgentService
 {
@@ -27,52 +28,55 @@ public class AgentService(
     {
         var sessionId = request.SessionId
             ?? throw new ArgumentException("SessionId is required", nameof(request.SessionId));
+        var scopeUserId = string.IsNullOrWhiteSpace(request.ConversationScopeUserId)
+            ? throw new InvalidOperationException("ConversationScopeUserId must be set by the API layer.")
+            : request.ConversationScopeUserId;
         var toolType = string.IsNullOrWhiteSpace(request.ToolType)
             ? "general"
             : request.ToolType.ToLowerInvariant();
 
         var userMessage = UserInputCleaner.CleanUserInput(request.Message);
 
-        var context = await conversationService.GetContextAsync(sessionId, toolType);
+        var context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
 
         if (toolType == "jobanalyzer"
             && userMessage.Length > 150
             && (context.Job is null || !context.Job.IsAnalyzed))
         {
             var jobContext = await jobExtractor.ExtractAsync(userMessage);
-            await conversationService.UpdateContextAsync(sessionId, toolType, ctx => ctx.Job = jobContext);
-            context = await conversationService.GetContextAsync(sessionId, toolType);
+            await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.Job = jobContext);
+            context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
         }
 
         if (toolType == "interviewprep"
             && userMessage.Length > 200
             && context.UserCV is null)
         {
-            await conversationService.UpdateContextAsync(sessionId, toolType, ctx => ctx.UserCV = userMessage);
-            context = await conversationService.GetContextAsync(sessionId, toolType);
+            await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.UserCV = userMessage);
+            context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
         }
 
         if (toolType == "programming" && LooksLikeCode(userMessage))
         {
-            await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+            await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
             {
                 ctx.CurrentCodeContext = userMessage[..Math.Min(userMessage.Length, 3000)];
                 ctx.ProgrammingLanguage ??= InferProgrammingLanguage(userMessage);
             });
-            context = await conversationService.GetContextAsync(sessionId, toolType);
+            context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
         }
 
-        await UpdateConversationLanguageAsync(sessionId, toolType, userMessage, context);
-        context = await conversationService.GetContextAsync(sessionId, toolType);
+        await UpdateConversationLanguageAsync(scopeUserId, sessionId, toolType, userMessage, context);
+        context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
 
-        await ExtractUserFactsAsync(userMessage, sessionId, toolType);
-        context = await conversationService.GetContextAsync(sessionId, toolType);
+        await ExtractUserFactsAsync(userMessage, scopeUserId, sessionId, toolType);
+        context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
 
         var promptParts = await promptComposer.ComposePromptPartsAsync(request.CareerProfileUserId, request, context)
             .ConfigureAwait(false);
         LogCachedPrefixEffectiveness(toolType, request.SessionId, promptParts);
 
-        var history = await conversationService.GetHistoryAsync(sessionId, toolType);
+        var history = await conversationService.GetHistoryAsync(scopeUserId, sessionId, toolType);
         history.Add(new Message(RoleType.User, userMessage));
 
         var apiMessages = LlmHistoryTrimmer.Trim(history, toolType, context);
@@ -92,8 +96,9 @@ public class AgentService(
             {
                 var groqReply = groqResult.Content;
                 history.Add(new Message(RoleType.Assistant, groqReply));
-                await PostProcessInterviewPrepAsync(sessionId, toolType, groqReply);
-                await conversationService.SaveHistoryAsync(sessionId, toolType, history);
+                await PostProcessInterviewPrepAsync(scopeUserId, sessionId, toolType, groqReply);
+                await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
+                QueueInsightExtraction(scopeUserId, toolType, userMessage, groqReply);
                 var groqModelLabel = $"groq/{groqResult.Model}";
                 return new AgentResponse(
                     groqReply,
@@ -182,9 +187,11 @@ public class AgentService(
             history.Add(response.Message);
         }
 
-        await PostProcessInterviewPrepAsync(sessionId, toolType, finalReply);
+        await PostProcessInterviewPrepAsync(scopeUserId, sessionId, toolType, finalReply);
 
-        await conversationService.SaveHistoryAsync(sessionId, toolType, history);
+        await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
+
+        QueueInsightExtraction(scopeUserId, toolType, userMessage, finalReply);
 
         return new AgentResponse(
             finalReply,
@@ -195,6 +202,90 @@ public class AgentService(
             modelUsed,
             cacheCreationInputTokens,
             cacheReadInputTokens);
+    }
+
+    private void QueueInsightExtraction(string scopeUserId, string toolType, string userMessage, string fullResponse)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ExtractAndSaveInsightsAsync(scopeUserId, toolType, userMessage, fullResponse, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Insight extraction task failed for user {UserId}", scopeUserId);
+            }
+        });
+    }
+
+    private async Task ExtractAndSaveInsightsAsync(
+        string userId,
+        string toolType,
+        string userMessage,
+        string fullResponse,
+        CancellationToken cancellationToken)
+    {
+        if (toolType is not ("jobanalyzer" or "interviewprep"))
+            return;
+
+        var insights = new List<LearningInsight>();
+        var responseLower = fullResponse.ToLowerInvariant();
+
+        var gapPatterns = new[] { "✗", "fehlt", "fehlt komplett", "nicht vorhanden", "lücke", "mangel" };
+        foreach (var pattern in gapPatterns)
+        {
+            var index = responseLower.IndexOf(pattern, StringComparison.Ordinal);
+            if (index < 0)
+                continue;
+
+            var start = Math.Max(0, index - 50);
+            var end = Math.Min(fullResponse.Length, index + pattern.Length + 50);
+            var context = fullResponse[start..end].Trim();
+            context = Regex.Replace(context, @"[#*|✓✗\-]", "").Trim();
+
+            if (context.Length is > 10 and < 200)
+            {
+                insights.Add(new LearningInsight
+                {
+                    Category = "skill_gap",
+                    Content = context,
+                    SourceTool = toolType,
+                    SourceContext = userMessage.Length > 100 ? userMessage[..100] : userMessage,
+                });
+            }
+
+            break;
+        }
+
+        var actionPatterns = new[] { "nächster schritt:", "empfehlung:", "aktion:", "füge hinzu:", "ergänze:" };
+        foreach (var pattern in actionPatterns)
+        {
+            var index = responseLower.IndexOf(pattern, StringComparison.Ordinal);
+            if (index < 0)
+                continue;
+
+            var lineEnd = fullResponse.IndexOf('\n', index);
+            if (lineEnd < 0)
+                lineEnd = Math.Min(fullResponse.Length, index + 200);
+            var action = fullResponse[index..lineEnd].Trim();
+
+            if (action.Length is > 15 and < 200)
+            {
+                insights.Add(new LearningInsight
+                {
+                    Category = "action_item",
+                    Content = action,
+                    SourceTool = toolType,
+                });
+            }
+
+            break;
+        }
+
+        foreach (var insight in insights.Take(2))
+            await learningMemoryService.AddInsight(userId, insight, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -212,7 +303,7 @@ public class AgentService(
         return true;
     }
 
-    private async Task PostProcessInterviewPrepAsync(string sessionId, string toolType, string finalReply)
+    private async Task PostProcessInterviewPrepAsync(string scopeUserId, string sessionId, string toolType, string finalReply)
     {
         if (toolType != "interviewprep")
             return;
@@ -221,7 +312,7 @@ public class AgentService(
         if (string.IsNullOrWhiteSpace(askedQuestion))
             return;
 
-        await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+        await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
         {
             if (!ctx.PractisedQuestions.Contains(askedQuestion, StringComparer.OrdinalIgnoreCase))
                 ctx.PractisedQuestions.Add(askedQuestion);
@@ -376,6 +467,7 @@ public class AgentService(
     }
 
     private async Task UpdateConversationLanguageAsync(
+        string scopeUserId,
         string sessionId,
         string toolType,
         string message,
@@ -383,7 +475,7 @@ public class AgentService(
     {
         var detected = ConversationLanguageDetector.DetectLanguage(message);
 
-        await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+        await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
         {
             if (string.IsNullOrWhiteSpace(ctx.ConversationLanguage))
                 ctx.ConversationLanguage = "de";
@@ -404,7 +496,7 @@ public class AgentService(
         }
     }
 
-    private async Task ExtractUserFactsAsync(string message, string sessionId, string toolType)
+    private async Task ExtractUserFactsAsync(string message, string scopeUserId, string sessionId, string toolType)
     {
         var facts = new List<string>();
 
@@ -431,7 +523,7 @@ public class AgentService(
         if (facts.Count == 0)
             return;
 
-        await conversationService.UpdateContextAsync(sessionId, toolType, ctx =>
+        await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
         {
             foreach (var fact in facts)
             {

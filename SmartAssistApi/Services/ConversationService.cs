@@ -12,15 +12,16 @@ public class ConversationService
     private readonly Dictionary<string, SessionContext> _contexts = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
 
-    private static string HistoryKey(string sessionId, string toolType) =>
-        $"{toolType}:{sessionId}";
+    /// <summary>Scope id may contain ':' (e.g. demo keys) — use a non-printable separator.</summary>
+    private static string StorageKey(string scopeUserId, string sessionId, string toolType) =>
+        $"{scopeUserId}\u001f{toolType}\u001f{sessionId}";
 
-    public async Task<List<Message>> GetHistoryAsync(string sessionId, string toolType)
+    public async Task<List<Message>> GetHistoryAsync(string scopeUserId, string sessionId, string toolType)
     {
         await _lock.WaitAsync();
         try
         {
-            var key = HistoryKey(sessionId, toolType);
+            var key = StorageKey(scopeUserId, sessionId, toolType);
             if (!_histories.ContainsKey(key))
                 _histories[key] = new List<Message>();
 
@@ -32,12 +33,12 @@ public class ConversationService
         }
     }
 
-    public async Task SaveHistoryAsync(string sessionId, string toolType, List<Message> messages)
+    public async Task SaveHistoryAsync(string scopeUserId, string sessionId, string toolType, List<Message> messages)
     {
         await _lock.WaitAsync();
         try
         {
-            var key = HistoryKey(sessionId, toolType);
+            var key = StorageKey(scopeUserId, sessionId, toolType);
             _histories[key] = messages.TakeLast(MaxHistoryMessages).ToList();
         }
         finally
@@ -46,12 +47,12 @@ public class ConversationService
         }
     }
 
-    public async Task<SessionContext> GetContextAsync(string sessionId, string toolType)
+    public async Task<SessionContext> GetContextAsync(string scopeUserId, string sessionId, string toolType)
     {
         await _lock.WaitAsync();
         try
         {
-            var key = HistoryKey(sessionId, toolType);
+            var key = StorageKey(scopeUserId, sessionId, toolType);
             if (!_contexts.ContainsKey(key))
             {
                 _contexts[key] = new SessionContext
@@ -69,12 +70,12 @@ public class ConversationService
         }
     }
 
-    public async Task UpdateContextAsync(string sessionId, string toolType, Action<SessionContext> update)
+    public async Task UpdateContextAsync(string scopeUserId, string sessionId, string toolType, Action<SessionContext> update)
     {
         await _lock.WaitAsync();
         try
         {
-            var key = HistoryKey(sessionId, toolType);
+            var key = StorageKey(scopeUserId, sessionId, toolType);
             if (!_contexts.ContainsKey(key))
             {
                 _contexts[key] = new SessionContext
@@ -93,12 +94,12 @@ public class ConversationService
         }
     }
 
-    public async Task ClearSessionAsync(string sessionId, string toolType)
+    public async Task ClearSessionAsync(string scopeUserId, string sessionId, string toolType)
     {
         await _lock.WaitAsync();
         try
         {
-            var key = HistoryKey(sessionId, toolType);
+            var key = StorageKey(scopeUserId, sessionId, toolType);
             _histories.Remove(key);
             _contexts.Remove(key);
         }

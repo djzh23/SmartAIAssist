@@ -11,6 +11,7 @@ namespace SmartAssistApi.Services;
 public class PromptComposer(
     CareerProfileService careerProfileService,
     SystemPromptBuilder promptBuilder,
+    LearningMemoryService learningMemoryService,
     IMemoryCache memoryCache,
     ILogger<PromptComposer> logger)
 {
@@ -30,7 +31,36 @@ public class PromptComposer(
             baseParts.CachedPrefix,
             toolType,
             cancellationToken).ConfigureAwait(false);
-        return baseParts with { CachedPrefix = augmentedCached };
+        var withCache = baseParts with { CachedPrefix = augmentedCached };
+        return await AppendLearningInsightsAsync(request.ConversationScopeUserId, withCache, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<SystemPromptParts> AppendLearningInsightsAsync(
+        string? conversationScopeUserId,
+        SystemPromptParts parts,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(conversationScopeUserId))
+            return parts;
+
+        try
+        {
+            var memory = await learningMemoryService.GetMemory(conversationScopeUserId, cancellationToken)
+                .ConfigureAwait(false);
+            var block = learningMemoryService.BuildInsightsContext(memory);
+            if (string.IsNullOrWhiteSpace(block))
+                return parts;
+
+            var d = parts.DynamicToolSuffix ?? string.Empty;
+            var newDynamic = string.IsNullOrEmpty(d) ? block : $"{block}\n\n{d}";
+            return parts with { DynamicToolSuffix = newDynamic };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Learning insights block skipped for user {UserId}", conversationScopeUserId);
+            return parts;
+        }
     }
 
     private async Task<string> GetOrBuildAugmentedCachedPrefixAsync(
