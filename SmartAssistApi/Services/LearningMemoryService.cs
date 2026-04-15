@@ -117,10 +117,12 @@ public class LearningMemoryService(
             var memory = await GetMemory(userId, cancellationToken).ConfigureAwait(false);
             var isDuplicate = memory.Insights.Any(i =>
                 i.Category == insight.Category
-                && i.Content.Equals(insight.Content, StringComparison.OrdinalIgnoreCase));
+                && i.Content.Equals(insight.Content, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(i.JobApplicationId ?? string.Empty, insight.JobApplicationId ?? string.Empty, StringComparison.Ordinal));
             if (isDuplicate)
                 return;
 
+            insight.UpdatedAt = DateTime.UtcNow;
             memory.Insights.Add(insight);
 
             if (memory.Insights.Count > MaxInsights)
@@ -158,6 +160,7 @@ public class LearningMemoryService(
 
             insight.Resolved = true;
             insight.ResolvedAt = DateTime.UtcNow;
+            insight.UpdatedAt = DateTime.UtcNow;
             memory.UpdatedAt = DateTime.UtcNow;
             var payload = JsonSerializer.Serialize(memory, JsonOpts);
             await RedisSetRawBodyAsync(MemoryKey(userId), payload).ConfigureAwait(false);
@@ -168,12 +171,20 @@ public class LearningMemoryService(
         }
     }
 
-    public string BuildInsightsContext(UserLearningMemory memory)
+    public string BuildInsightsContext(UserLearningMemory memory, string? forJobApplicationId = null)
     {
-        var activeInsights = memory.Insights
-            .Where(i => !i.Resolved)
-            .OrderByDescending(i => i.CreatedAt)
-            .Take(5)
+        var q = memory.Insights.Where(i => !i.Resolved);
+        if (!string.IsNullOrWhiteSpace(forJobApplicationId))
+        {
+            q = q.Where(i =>
+                string.IsNullOrWhiteSpace(i.JobApplicationId)
+                || string.Equals(i.JobApplicationId, forJobApplicationId, StringComparison.Ordinal));
+        }
+
+        var activeInsights = q
+            .OrderBy(i => i.SortOrder)
+            .ThenByDescending(i => i.UpdatedAt == default ? i.CreatedAt : i.UpdatedAt)
+            .Take(8)
             .ToList();
 
         if (activeInsights.Count == 0)
@@ -191,13 +202,59 @@ public class LearningMemoryService(
                 "action_item" => "ToDo",
                 _ => "Notiz",
             };
-            lines.Add($"- {prefix}: {insight.Content}");
+            var label = string.IsNullOrWhiteSpace(insight.Title) ? insight.Content : $"{insight.Title}: {insight.Content}";
+            lines.Add($"- {prefix}: {label}");
         }
 
         lines.Add("[ENDE ERKENNTNISSE]");
         lines.Add("Beziehe dich natürlich auf diese Erkenntnisse wenn relevant. Frage nach Fortschritt bei Lücken und ToDos.");
 
         return string.Join("\n", lines);
+    }
+
+    public virtual async Task PatchInsight(
+        string userId,
+        string insightId,
+        string? title,
+        string? content,
+        bool? resolved,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(insightId))
+            return;
+
+        try
+        {
+            var memory = await GetMemory(userId, cancellationToken).ConfigureAwait(false);
+            var insight = memory.Insights.FirstOrDefault(i => i.Id == insightId);
+            if (insight is null)
+                return;
+
+            if (title is not null)
+                insight.Title = title;
+            if (content is not null)
+                insight.Content = content;
+            if (resolved is true)
+            {
+                insight.Resolved = true;
+                insight.ResolvedAt = DateTime.UtcNow;
+            }
+            else if (resolved is false)
+            {
+                insight.Resolved = false;
+                insight.ResolvedAt = null;
+            }
+
+            insight.UpdatedAt = DateTime.UtcNow;
+            memory.UpdatedAt = DateTime.UtcNow;
+            var payload = JsonSerializer.Serialize(memory, JsonOpts);
+            await RedisSetRawBodyAsync(MemoryKey(userId), payload).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Learning memory patch failed for user {UserId} insight {InsightId}", userId, insightId);
+        }
     }
 
     private sealed record UpstashResult(

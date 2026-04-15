@@ -21,7 +21,9 @@ public record AgentRequest(
     string? LearningGoal = null,
     string? ToolType = null,
     ProfileContextToggles? ProfileToggles = null,
-    string? CareerProfileUserId = null);
+    string? CareerProfileUserId = null,
+    /// <summary>Optional Bewerbungs-ID für serverseitigen Kontext (JSON property name camelCase).</summary>
+    string? JobApplicationId = null);
 
 public class LanguageLearningResponse
 {

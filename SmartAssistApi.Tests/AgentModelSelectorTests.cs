@@ -13,7 +13,6 @@ public class AgentModelSelectorTests
     [InlineData("jobanalyzer")]
     [InlineData("interviewprep")]
     [InlineData("programming")]
-    [InlineData("weather")]
     public void UsesHaikuModel_DefaultsToTrue(string tool)
     {
         Assert.True(AgentModelSelector.UsesHaikuModel(tool));

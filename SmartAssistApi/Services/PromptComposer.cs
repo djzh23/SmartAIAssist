@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Microsoft.Extensions.Caching.Memory;
 using SmartAssistApi.Models;
@@ -12,6 +13,7 @@ public class PromptComposer(
     CareerProfileService careerProfileService,
     SystemPromptBuilder promptBuilder,
     LearningMemoryService learningMemoryService,
+    ApplicationService applicationService,
     IMemoryCache memoryCache,
     ILogger<PromptComposer> logger)
 {
@@ -32,12 +34,17 @@ public class PromptComposer(
             toolType,
             cancellationToken).ConfigureAwait(false);
         var withCache = baseParts with { CachedPrefix = augmentedCached };
-        return await AppendLearningInsightsAsync(request.ConversationScopeUserId, withCache, cancellationToken)
+        return await AppendLearningInsightsAsync(
+                request.ConversationScopeUserId,
+                request.JobApplicationId,
+                withCache,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task<SystemPromptParts> AppendLearningInsightsAsync(
         string? conversationScopeUserId,
+        string? jobApplicationId,
         SystemPromptParts parts,
         CancellationToken cancellationToken)
     {
@@ -46,14 +53,32 @@ public class PromptComposer(
 
         try
         {
+            string? jobBlock = null;
+            try
+            {
+                jobBlock = await applicationService
+                    .BuildPromptContextAsync(conversationScopeUserId, jobApplicationId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Job application context skipped for user {UserId}", conversationScopeUserId);
+            }
+
             var memory = await learningMemoryService.GetMemory(conversationScopeUserId, cancellationToken)
                 .ConfigureAwait(false);
-            var block = learningMemoryService.BuildInsightsContext(memory);
-            if (string.IsNullOrWhiteSpace(block))
+            var block = learningMemoryService.BuildInsightsContext(memory, jobApplicationId);
+            var merged = new List<string>();
+            if (!string.IsNullOrWhiteSpace(jobBlock))
+                merged.Add(jobBlock);
+            if (!string.IsNullOrWhiteSpace(block))
+                merged.Add(block);
+            if (merged.Count == 0)
                 return parts;
 
+            var combined = string.Join("\n\n", merged);
             var d = parts.DynamicToolSuffix ?? string.Empty;
-            var newDynamic = string.IsNullOrEmpty(d) ? block : $"{block}\n\n{d}";
+            var newDynamic = string.IsNullOrEmpty(d) ? combined : $"{combined}\n\n{d}";
             return parts with { DynamicToolSuffix = newDynamic };
         }
         catch (Exception ex)

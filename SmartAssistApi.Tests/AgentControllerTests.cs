@@ -19,7 +19,7 @@ public class AgentControllerTests
     private readonly Mock<ISpeechService> _speechMock = new();
     private readonly Mock<TokenTrackingService> _tokenTrackingMock;
     private readonly ConversationService _conversationService = new();
-    private readonly MemoryRedisStringStore _redisMemory = new();
+    private readonly Mock<IRedisStringStore> _redisStoreMock = new();
     private readonly ChatSessionService _chatSessionService;
     private readonly IConfiguration _config;
 
@@ -46,7 +46,7 @@ public class AgentControllerTests
                 It.IsAny<int>()))
             .Returns(Task.CompletedTask);
 
-        _chatSessionService = new ChatSessionService(_redisMemory, _conversationService, NullLogger<ChatSessionService>.Instance);
+        _chatSessionService = new ChatSessionService(_redisStoreMock.Object, NullLogger<ChatSessionService>.Instance);
     }
 
     private AgentController CreateController()
@@ -115,7 +115,7 @@ public class AgentControllerTests
             });
 
         _agentServiceMock.Setup(s => s.RunAsync(It.IsAny<AgentRequest>()))
-            .ReturnsAsync(new AgentResponse("Test reply", "get_weather"));
+            .ReturnsAsync(new AgentResponse("Test reply", null));
 
         var controller = CreateController();
         var result = await controller.Ask(new AgentRequest("What is the weather?", SessionId: "sess-1"));
@@ -123,7 +123,7 @@ public class AgentControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<AgentResponse>(ok.Value);
         Assert.Equal("Test reply", response.Reply);
-        Assert.Equal("get_weather", response.ToolUsed);
+        Assert.Null(response.ToolUsed);
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public class AgentControllerTests
             });
 
         _agentServiceMock.Setup(s => s.RunAsync(It.IsAny<AgentRequest>()))
-            .ReturnsAsync(new AgentResponse("Berlin weather is sunny.", "get_weather"));
+            .ReturnsAsync(new AgentResponse("Berlin weather is sunny.", null));
 
         var controller = CreateController();
         var result = await controller.Ask(new AgentRequest("Wie ist das Wetter in Berlin?", SessionId: "demo-1", ToolType: "general"));
@@ -195,9 +195,6 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_MissingSessionId_Returns400()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("signed-in-test", false));
-
         var controller = CreateController();
 
         var result = await controller.SetContext(new SetContextRequest(
@@ -215,9 +212,6 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ThenGetContext_ReturnsStoredValues()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("signed-in-test", false));
-
         var controller = CreateController();
         var sessionId = "s-ctx-1";
 
@@ -244,9 +238,6 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ProgrammingLanguage_IsReturnedByGetContext()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("signed-in-test", false));
-
         var controller = CreateController();
         var sessionId = "s-ctx-2";
 

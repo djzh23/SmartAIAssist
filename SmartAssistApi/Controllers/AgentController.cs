@@ -58,6 +58,7 @@ public class AgentController(
             ToolType = resolved.ApiToolType,
             CareerProfileUserId = isAnonymous ? null : scopeUserId,
             ConversationScopeUserId = scopeUserId,
+            JobApplicationId = isAnonymous ? null : request.JobApplicationId,
         };
 
         return (null, normalized);

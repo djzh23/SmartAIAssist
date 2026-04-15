@@ -127,36 +127,6 @@ public static class SkillRegistry
         },
         new CareerSkill
         {
-            Id = "weather",
-            Name = "Wetter",
-            Description = "Aktuelles Wetter abfragen",
-            Icon = "cloud",
-            Category = "productivity",
-            Badge = "Demo",
-            BadgeColor = "gray",
-            MinPlan = "free",
-            ToolTypeAliases = ["weather"],
-            ApiToolType = "weather",
-            MaxTokens = 150,
-            Temperature = 0.5f,
-        },
-        new CareerSkill
-        {
-            Id = "jokes",
-            Name = "Witze",
-            Description = "Kurze Witze und Auflockerung",
-            Icon = "smile",
-            Category = "productivity",
-            Badge = "Fun",
-            BadgeColor = "gray",
-            MinPlan = "free",
-            ToolTypeAliases = ["jokes", "joke"],
-            ApiToolType = "jokes",
-            MaxTokens = 100,
-            Temperature = 0.5f,
-        },
-        new CareerSkill
-        {
             Id = "cover_letter",
             Name = "Anschreiben-Generator",
             Description = "Personalisiertes Anschreiben aus Profil und Stelle",

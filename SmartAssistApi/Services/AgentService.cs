@@ -98,7 +98,7 @@ public class AgentService(
                 history.Add(new Message(RoleType.Assistant, groqReply));
                 await PostProcessInterviewPrepAsync(scopeUserId, sessionId, toolType, groqReply);
                 await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
-                QueueInsightExtraction(scopeUserId, toolType, userMessage, groqReply);
+                QueueInsightExtraction(scopeUserId, toolType, userMessage, groqReply, request.JobApplicationId);
                 var groqModelLabel = $"groq/{groqResult.Model}";
                 return new AgentResponse(
                     groqReply,
@@ -191,7 +191,7 @@ public class AgentService(
 
         await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
 
-        QueueInsightExtraction(scopeUserId, toolType, userMessage, finalReply);
+        QueueInsightExtraction(scopeUserId, toolType, userMessage, finalReply, request.JobApplicationId);
 
         return new AgentResponse(
             finalReply,
@@ -204,13 +204,24 @@ public class AgentService(
             cacheReadInputTokens);
     }
 
-    private void QueueInsightExtraction(string scopeUserId, string toolType, string userMessage, string fullResponse)
+    private void QueueInsightExtraction(
+        string scopeUserId,
+        string toolType,
+        string userMessage,
+        string fullResponse,
+        string? jobApplicationId)
     {
         _ = Task.Run(async () =>
         {
             try
             {
-                await ExtractAndSaveInsightsAsync(scopeUserId, toolType, userMessage, fullResponse, CancellationToken.None)
+                await ExtractAndSaveInsightsAsync(
+                        scopeUserId,
+                        toolType,
+                        userMessage,
+                        fullResponse,
+                        jobApplicationId,
+                        CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -225,6 +236,7 @@ public class AgentService(
         string toolType,
         string userMessage,
         string fullResponse,
+        string? jobApplicationId,
         CancellationToken cancellationToken)
     {
         if (toolType is not ("jobanalyzer" or "interviewprep"))
@@ -253,6 +265,7 @@ public class AgentService(
                     Content = context,
                     SourceTool = toolType,
                     SourceContext = userMessage.Length > 100 ? userMessage[..100] : userMessage,
+                    JobApplicationId = jobApplicationId,
                 });
             }
 
@@ -278,6 +291,7 @@ public class AgentService(
                     Category = "action_item",
                     Content = action,
                     SourceTool = toolType,
+                    JobApplicationId = jobApplicationId,
                 });
             }
 
@@ -405,21 +419,6 @@ public class AgentService(
 
     private static List<Tool> BuildTools(string toolType, AgentRequest request) => toolType switch
     {
-        "weather" =>
-        [
-            Tool.FromFunc("get_weather",
-                ([FunctionParameter("City name", true)] string city) =>
-                    WeatherTool.GetWeatherAsync(city).Result)
-        ],
-        "jokes" =>
-        [
-            Tool.FromFunc("get_joke",
-                ([FunctionParameter("Topic optional", false)] string topic) =>
-                {
-                    _ = topic;
-                    return JokeTool.GetJokeAsync().Result;
-                })
-        ],
         // In structured learning mode (---ZIELSPRACHE--- format) Claude must respond
         // directly without calling external tools — the tool would break the format.
         "language" when request.LanguageLearningMode => [],

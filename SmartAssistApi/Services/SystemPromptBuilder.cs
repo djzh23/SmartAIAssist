@@ -36,8 +36,6 @@ public class SystemPromptBuilder
             "interviewprep" => BuildInterviewPrepParts(context, languageRule),
             "programming" => BuildProgrammingParts(context, languageRule),
             "language" => BuildLanguageToolParts(request, languageRule),
-            "weather" => new SystemPromptParts(BuildWeatherPrompt(), string.Empty, languageRule),
-            "jokes" => new SystemPromptParts(BuildJokesPrompt(), string.Empty, languageRule),
             "cover_letter" => new SystemPromptParts(CoverLetterSkillPrompt, string.Empty, languageRule),
             "salary_coach" => new SystemPromptParts(SalaryCoachSkillPrompt, string.Empty, languageRule),
             "linkedin_optimizer" => new SystemPromptParts(LinkedInSkillPrompt, string.Empty, languageRule),
@@ -363,18 +361,6 @@ public class SystemPromptBuilder
         - Ende mit einem konkreten nächsten Schritt
 
         Antwortsprache gemäß Konversationsregeln (zweiter System-Block unten).
-        """;
-
-    private static string BuildWeatherPrompt() =>
-        """
-        Wetter-Assistent: bei Fragen zu Wetter, Vorhersage oder Bedingungen immer das Wetter-Tool nutzen.
-        Antwortsprache gemäß Konversationsregeln (zweiter System-Block). Kurz: Temperatur, Beschreibung, praktischer Hinweis (z. B. Jacke, Regenschirm), maximal 3 Sätze.
-        """;
-
-    private static string BuildJokesPrompt() =>
-        """
-        Witz-Assistent: bei Witzwünschen das Witz-Tool nutzen. Antwortsprache gemäß Konversationsregeln (zweiter System-Block).
-        Ein kurzer, sauberer Witz, maximal 3 Sätze, ohne Einleitung, nicht anstößig.
         """;
 
     private static string BuildLanguagePrompt(AgentRequest request)

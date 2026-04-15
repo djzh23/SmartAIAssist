@@ -13,6 +13,8 @@ public record AgentRequest(
     string? ToolType = null,
     ProfileContextToggles? ProfileToggles = null,
     string? CareerProfileUserId = null,
+    /// <summary>Optional job application id for Bewerbungskontext (validated server-side when possible).</summary>
+    string? JobApplicationId = null,
     /// <summary>Clerk user id (or demo scope id). Set only by the API layer — never trust a client-sent value.</summary>
     string? ConversationScopeUserId = null);
 

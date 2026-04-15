@@ -205,12 +205,9 @@ public class StripeServiceTests
                 It.IsAny<int>()))
             .Returns(Task.CompletedTask);
 
-        var redisMem = new MemoryRedisStringStore();
         var chatSessions = new ChatSessionService(
-            redisMem,
-            new ConversationService(),
+            Mock.Of<IRedisStringStore>(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatSessionService>.Instance);
-
         var controller = new AgentController(
             agentServiceMock.Object,
             new ConversationService(),

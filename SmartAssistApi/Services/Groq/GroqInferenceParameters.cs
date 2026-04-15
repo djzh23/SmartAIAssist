@@ -19,8 +19,6 @@ public static class GroqInferenceParameters
             "jobanalyzer" => 900,
             "interviewprep" => 1000,
             "programming" => 1000,
-            "weather" => 150,
-            "jokes" => 100,
             _ => 600,
         };
     }

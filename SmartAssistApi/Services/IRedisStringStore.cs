@@ -1,9 +1,11 @@
 namespace SmartAssistApi.Services;
 
-/// <summary>Minimal string key/value over Upstash Redis REST (or in-memory for tests).</summary>
+/// <summary>Minimal string get/set for Upstash-backed features (sessions, applications).</summary>
 public interface IRedisStringStore
 {
-    Task<string?> GetAsync(string key, CancellationToken cancellationToken = default);
-    Task SetAsync(string key, string value, int? ttlSeconds, CancellationToken cancellationToken = default);
-    Task DeleteAsync(string key, CancellationToken cancellationToken = default);
+    Task<string?> StringGetAsync(string key, CancellationToken cancellationToken = default);
+
+    Task StringSetAsync(string key, string value, CancellationToken cancellationToken = default);
+
+    Task StringDeleteAsync(string key, CancellationToken cancellationToken = default);
 }

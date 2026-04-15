@@ -47,13 +47,13 @@ public class AgentApiServiceTests
     [Fact]
     public async Task AskAsync_ResponseWithToolUsed_ReturnsToolName()
     {
-        var expected = new AgentResponse("18°C in Berlin.", "get_weather");
+        var expected = new AgentResponse("Übersetzung fertig.", "translate_text");
         var http = BuildHttpClient(HttpStatusCode.OK, expected);
         var service = new AgentApiService(http);
 
-        var result = await service.AskAsync("Weather in Berlin?", "abc12345");
+        var result = await service.AskAsync("Hallo", "abc12345");
 
-        Assert.Equal("get_weather", result.ToolUsed);
+        Assert.Equal("translate_text", result.ToolUsed);
     }
 
     [Fact]
