@@ -213,7 +213,15 @@ public sealed class ChatSessionService(
 
     public async Task<string?> GetTranscriptJson(string userId, string sessionId, CancellationToken cancellationToken = default)
     {
-        return await redis.GetAsync(ConversationKey(userId, sessionId), cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await redis.GetAsync(ConversationKey(userId, sessionId), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Redis get failed for transcript {UserId}/{SessionId}", userId, sessionId);
+            return null;
+        }
     }
 
     public async Task SaveTranscriptJson(string userId, string sessionId, string json, CancellationToken cancellationToken = default)

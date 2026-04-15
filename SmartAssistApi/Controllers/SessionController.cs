@@ -104,6 +104,7 @@ public sealed class SessionController(
             return NotFound(new { error = "session_not_found" });
 
         var raw = await sessionService.GetTranscriptJson(userId!, sessionId, cancellationToken).ConfigureAwait(false);
+
         if (string.IsNullOrWhiteSpace(raw))
             return Ok(new { toolType = meta.ToolType, messages = Array.Empty<object>() });
 
@@ -115,7 +116,12 @@ public sealed class SessionController(
                 && root.TryGetProperty("messages", out var messagesEl)
                 && root.TryGetProperty("toolType", out var toolEl))
             {
-                return Ok(new { toolType = toolEl.GetString() ?? meta.ToolType, messages = messagesEl });
+                var toolTypeOut = ResolveToolTypeFromJson(toolEl, meta.ToolType);
+                // Avoid returning raw JsonElement inside anonymous objects (can fail during response serialization).
+                var messagesJson = messagesEl.GetRawText();
+                var toolJson = JsonSerializer.Serialize(toolTypeOut, JsonOpts);
+                var payload = $"{{\"toolType\":{toolJson},\"messages\":{messagesJson}}}";
+                return Content(payload, "application/json");
             }
         }
         catch (Exception ex)
@@ -124,6 +130,24 @@ public sealed class SessionController(
         }
 
         return Ok(new { toolType = meta.ToolType, messages = Array.Empty<object>() });
+    }
+
+    /// <summary>Stored transcripts may have toolType as string, number, or other JSON kinds — never throw.</summary>
+    private static string ResolveToolTypeFromJson(JsonElement toolEl, string fallback)
+    {
+        try
+        {
+            if (toolEl.ValueKind == JsonValueKind.String)
+                return toolEl.GetString() ?? fallback;
+            if (toolEl.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                return fallback;
+            // Non-string kinds (legacy / corrupt) — use session metadata, never throw.
+            return fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 
     [HttpPut("{sessionId}/transcript")]
