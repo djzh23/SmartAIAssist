@@ -67,6 +67,7 @@ builder.Services.AddHttpClient<CareerProfileService>();
 builder.Services.AddHttpClient<LearningMemoryService>();
 builder.Services.AddHttpClient<TokenTrackingService>();
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
+builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<UpstashRedisStringStore>());
 builder.Services.AddScoped<ChatSessionService>();
 builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddScoped<ClerkAuthService>();
