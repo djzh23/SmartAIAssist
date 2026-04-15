@@ -11,6 +11,7 @@ namespace SmartAssistApi.Controllers;
 public class AgentController(
     IAgentService agentService,
     ConversationService conversationService,
+    ChatSessionService chatSessionService,
     UsageService usageService,
     ClerkAuthService clerkAuthService,
     TokenTrackingService tokenTrackingService,
@@ -128,6 +129,15 @@ public class AgentController(
 
             var result = await agentService.RunAsync(agentRequest);
             FireTokenTracking(userId, agentRequest.ToolType, result);
+            if (!isAnonymous)
+            {
+                _ = NotifySessionAfterMessageSafeAsync(
+                    userId!,
+                    request.SessionId!,
+                    request.Message ?? "",
+                    HttpContext.RequestAborted);
+            }
+
             return Ok(result);
         }
         catch (Exception ex)
@@ -244,6 +254,15 @@ public class AgentController(
                         chunk.Model,
                         chunk.CacheCreationInputTokens,
                         chunk.CacheReadInputTokens);
+                    if (!isAnonymous)
+                    {
+                        _ = NotifySessionAfterMessageSafeAsync(
+                            userId!,
+                            request.SessionId!,
+                            request.Message ?? "",
+                            HttpContext.RequestAborted);
+                    }
+
                     json = JsonSerializer.Serialize(new
                     {
                         type = "done",
@@ -519,6 +538,24 @@ public class AgentController(
         {
             logger.LogError(ex, "Failed to read agent context. SessionId {SessionId} ToolType {ToolType}", sessionId, normalizedToolType);
             return StatusCode(500, new { error = "context_read_failed" });
+        }
+    }
+
+    private async Task NotifySessionAfterMessageSafeAsync(
+        string userId,
+        string sessionId,
+        string userMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await chatSessionService
+                .NotifyAfterAgentMessageAsync(userId, sessionId, userMessage, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Chat session metadata update failed. UserId {UserId} SessionId {SessionId}", userId, sessionId);
         }
     }
 

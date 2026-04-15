@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SmartAssistApi.Controllers;
 using SmartAssistApi.Models;
@@ -18,6 +19,8 @@ public class AgentControllerTests
     private readonly Mock<ISpeechService> _speechMock = new();
     private readonly Mock<TokenTrackingService> _tokenTrackingMock;
     private readonly ConversationService _conversationService = new();
+    private readonly MemoryRedisStringStore _redisMemory = new();
+    private readonly ChatSessionService _chatSessionService;
     private readonly IConfiguration _config;
 
     public AgentControllerTests()
@@ -42,6 +45,8 @@ public class AgentControllerTests
                 It.IsAny<int>(),
                 It.IsAny<int>()))
             .Returns(Task.CompletedTask);
+
+        _chatSessionService = new ChatSessionService(_redisMemory, _conversationService, NullLogger<ChatSessionService>.Instance);
     }
 
     private AgentController CreateController()
@@ -49,6 +54,7 @@ public class AgentControllerTests
         var controller = new AgentController(
             _agentServiceMock.Object,
             _conversationService,
+            _chatSessionService,
             _usageMock.Object,
             _clerkMock.Object,
             _tokenTrackingMock.Object,
@@ -189,6 +195,9 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_MissingSessionId_Returns400()
     {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("signed-in-test", false));
+
         var controller = CreateController();
 
         var result = await controller.SetContext(new SetContextRequest(
@@ -206,6 +215,9 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ThenGetContext_ReturnsStoredValues()
     {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("signed-in-test", false));
+
         var controller = CreateController();
         var sessionId = "s-ctx-1";
 
@@ -232,6 +244,9 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ProgrammingLanguage_IsReturnedByGetContext()
     {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
+            .Returns(("signed-in-test", false));
+
         var controller = CreateController();
         var sessionId = "s-ctx-2";
 

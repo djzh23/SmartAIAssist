@@ -93,9 +93,9 @@ public class ConversationServiceTests
     {
         var sut = new ConversationService();
 
-        await sut.UpdateContextAsync("user_a", "s1", "general", ctx => ctx.ConversationLanguage = "de");
+        await sut.UpdateContextAsync("user_a", "s1", "general", ctx => ctx.ConversationLanguage = "fr");
         var ctxB = await sut.GetContextAsync("user_b", "s1", "general");
 
-        Assert.NotEqual("de", ctxB.ConversationLanguage);
+        Assert.NotEqual("fr", ctxB.ConversationLanguage);
     }
 }
