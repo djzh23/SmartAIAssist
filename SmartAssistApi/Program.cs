@@ -54,7 +54,8 @@ builder.Services.Configure<GroqOptions>(builder.Configuration.GetSection(GroqOpt
 builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
 {
     client.BaseAddress = new Uri("https://api.groq.com/openai/v1/");
-    client.Timeout = TimeSpan.FromMinutes(2);
+    // LLM calls: avoid holding sockets for two minutes on stalled responses (was 120s).
+    client.Timeout = TimeSpan.FromSeconds(90);
 });
 builder.Services.AddSingleton<ConversationService>();
 builder.Services.AddSingleton<SystemPromptBuilder>();

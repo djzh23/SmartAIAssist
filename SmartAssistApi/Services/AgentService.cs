@@ -77,10 +77,10 @@ public class AgentService(
             context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
         }
 
-        context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
-
-        await ExtractUserFactsAsync(primaryUserMessage, scopeUserId, sessionId, toolType);
-        context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
+        var factsMerged = await ExtractUserFactsAsync(primaryUserMessage, scopeUserId, sessionId, toolType)
+            .ConfigureAwait(false);
+        if (factsMerged)
+            context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
 
         var userTurnMessage = CareerTurnAssembler.ComposeEffectiveUserMessage(request, toolType, primaryUserMessage);
 
@@ -676,7 +676,8 @@ public class AgentService(
         }
     }
 
-    private async Task ExtractUserFactsAsync(string message, string scopeUserId, string sessionId, string toolType)
+    /// <returns>True if context was updated (caller should refresh cached <see cref="SessionContext"/>).</returns>
+    private async Task<bool> ExtractUserFactsAsync(string message, string scopeUserId, string sessionId, string toolType)
     {
         var facts = new List<string>();
 
@@ -701,7 +702,7 @@ public class AgentService(
         }
 
         if (facts.Count == 0)
-            return;
+            return false;
 
         await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
         {
@@ -714,6 +715,7 @@ public class AgentService(
             if (ctx.UserFacts.Count > 30)
                 ctx.UserFacts = ctx.UserFacts.TakeLast(30).ToList();
         });
+        return true;
     }
 
     private static bool LooksLikeCode(string text) =>
