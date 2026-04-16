@@ -61,6 +61,7 @@ builder.Services.AddScoped<JobContextExtractor>();
 builder.Services.AddScoped<CvParsingService>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());
+builder.Services.AddScoped<ILlmSingleCompletionService, AgentLlmSingleCompletionService>();
 builder.Services.AddHttpClient<ISpeechService, AzureSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddHttpClient<CareerProfileService>();

@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 public class ProfileController(
     CareerProfileService profileService,
     ClerkAuthService clerkAuth,
-    AgentService agentService,
+    ILlmSingleCompletionService llmSingleCompletion,
     CvParsingService cvParsingService,
     ILogger<ProfileController> logger) : ControllerBase
 {
@@ -121,7 +121,7 @@ public class ProfileController(
                 return BadRequest(new { error = "Konnte keinen Text aus der PDF extrahieren. Ist es ein Bild-PDF?" });
 
             var parsed = await cvParsingService
-                .ParseCvWithAi(rawText, p => agentService.SingleCompletion(p, 800))
+                .ParseCvWithAi(rawText, p => llmSingleCompletion.CompleteAsync(p, 800, HttpContext.RequestAborted))
                 .ConfigureAwait(false);
 
             await profileService.SetCvText(userId, rawText).ConfigureAwait(false);
