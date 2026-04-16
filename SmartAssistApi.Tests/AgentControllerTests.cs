@@ -204,13 +204,15 @@ public class AgentControllerTests
         SetupSignedInClerk();
         var controller = CreateController();
 
-        var result = await controller.SetContext(new SetContextRequest(
-            SessionId: null,
-            ToolType: "interviewprep",
-            CVText: "my cv",
-            JobTitle: "Software Engineer",
-            CompanyName: "SmartAssist",
-            ProgrammingLanguage: null));
+        var result = await controller.SetContext(new SetContextRequest
+        {
+            SessionId = null,
+            ToolType = "interviewprep",
+            CVText = "my cv",
+            JobTitle = "Software Engineer",
+            CompanyName = "SmartAssist",
+            ProgrammingLanguage = null,
+        });
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal(400, badRequest.StatusCode);
@@ -223,13 +225,15 @@ public class AgentControllerTests
         var controller = CreateController();
         var sessionId = "s-ctx-1";
 
-        var setResult = await controller.SetContext(new SetContextRequest(
-            SessionId: sessionId,
-            ToolType: "interviewprep",
-            CVText: "CV data here",
-            JobTitle: "Backend Developer",
-            CompanyName: "Acme",
-            ProgrammingLanguage: null));
+        var setResult = await controller.SetContext(new SetContextRequest
+        {
+            SessionId = sessionId,
+            ToolType = "interviewprep",
+            CVText = "CV data here",
+            JobTitle = "Backend Developer",
+            CompanyName = "Acme",
+            ProgrammingLanguage = null,
+        });
 
         Assert.IsType<OkObjectResult>(setResult);
 
@@ -250,13 +254,15 @@ public class AgentControllerTests
         var controller = CreateController();
         var sessionId = "s-ctx-2";
 
-        var setResult = await controller.SetContext(new SetContextRequest(
-            SessionId: sessionId,
-            ToolType: "programming",
-            CVText: null,
-            JobTitle: null,
-            CompanyName: null,
-            ProgrammingLanguage: "csharp"));
+        var setResult = await controller.SetContext(new SetContextRequest
+        {
+            SessionId = sessionId,
+            ToolType = "programming",
+            CVText = null,
+            JobTitle = null,
+            CompanyName = null,
+            ProgrammingLanguage = "csharp",
+        });
 
         Assert.IsType<OkObjectResult>(setResult);
 

@@ -1,3 +1,4 @@
+using SmartAssistApi.Configuration;
 using SmartAssistApi.Services;
 using SmartAssistApi.Services.Groq;
 
@@ -47,6 +48,7 @@ var allowedOrigins = localOrigins
     .ToArray();
 
 builder.Services.AddControllers();
+builder.Services.AddSmartAssistRateLimiter();
 builder.Services.AddMemoryCache();
 builder.Services.Configure<GroqOptions>(builder.Configuration.GetSection(GroqOptions.SectionName));
 builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
@@ -81,8 +83,13 @@ builder.Services.AddCors(options =>
     options.AddPolicy("BlazorClient", policy =>
     {
         policy.WithOrigins(allowedOrigins)
-            .AllowAnyHeader()
-            .AllowAnyMethod()
+            .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+            .WithHeaders(
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "Stripe-Signature",
+                "X-Requested-With")
             .WithExposedHeaders("X-Usage-Today", "X-Usage-Limit", "X-Usage-Plan");
     });
 });
@@ -107,5 +114,10 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.UseRateLimiter();
+app.UseSmartAssistApiSecurityHeaders();
+
 app.MapControllers();
 app.Run();
+
+public partial class Program;

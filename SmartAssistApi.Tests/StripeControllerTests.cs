@@ -65,7 +65,12 @@ public class StripeControllerTests
             .Returns(("ip:127.0.0.1", true));
         var controller = CreateController();
 
-        var result = await controller.CreateCheckout(new CheckoutRequest("premium", "test@example.com", null));
+        var result = await controller.CreateCheckout(new CheckoutRequest
+        {
+            Plan = "premium",
+            Email = "test@example.com",
+            UserId = null,
+        });
 
         var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal(401, unauthorized.StatusCode);
@@ -79,7 +84,12 @@ public class StripeControllerTests
             .Returns(("user_123", false));
         var controller = CreateController();
 
-        var result = await controller.CreateCheckout(new CheckoutRequest("enterprise", "test@example.com", null));
+        var result = await controller.CreateCheckout(new CheckoutRequest
+        {
+            Plan = "enterprise",
+            Email = "test@example.com",
+            UserId = null,
+        });
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal(400, badRequest.StatusCode);
@@ -93,7 +103,12 @@ public class StripeControllerTests
             .Returns(("user_123", false));
         var controller = CreateController();
 
-        var result = await controller.CreateCheckout(new CheckoutRequest("premium", "test@example.com", "user_other"));
+        var result = await controller.CreateCheckout(new CheckoutRequest
+        {
+            Plan = "premium",
+            Email = "test@example.com",
+            UserId = "user_other",
+        });
 
         var forbidden = Assert.IsType<ObjectResult>(result);
         Assert.Equal(403, forbidden.StatusCode);

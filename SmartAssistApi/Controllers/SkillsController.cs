@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Configuration;
 using SmartAssistApi.Services;
 
@@ -6,6 +7,7 @@ namespace SmartAssistApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("agent_read")]
 public class SkillsController(ClerkAuthService clerkAuth, UsageService usageService) : ControllerBase
 {
     [HttpGet]

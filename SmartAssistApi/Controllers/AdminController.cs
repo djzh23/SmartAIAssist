@@ -1,11 +1,13 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Services;
 
 namespace SmartAssistApi.Controllers;
 
 [ApiController]
 [Route("api/admin")]
+[EnableRateLimiting("admin")]
 public class AdminController(
     TokenTrackingService tracking,
     ClerkAuthService clerkAuth,

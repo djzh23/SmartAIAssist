@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Configuration;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
@@ -80,6 +81,7 @@ public class AgentController(
     }
 
     [HttpPost("ask")]
+    [EnableRateLimiting("agent_chat")]
     public async Task<ActionResult<AgentResponse>> Ask([FromBody] AgentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Message))
@@ -175,6 +177,7 @@ public class AgentController(
     }
 
     [HttpPost("stream")]
+    [EnableRateLimiting("agent_chat")]
     public async Task AskStream([FromBody] AgentRequest request)
     {
         var streamProbe = request with { CareerToolSetup = AgentPayloadLimits.TruncateCareerSetup(request.CareerToolSetup) };
@@ -328,6 +331,7 @@ public class AgentController(
     }
 
     [HttpGet("usage")]
+    [EnableRateLimiting("agent_read")]
     public async Task<IActionResult> GetUsage()
     {
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
@@ -381,6 +385,7 @@ public class AgentController(
     /// Limit: 5 requests per IP per day.
     /// </summary>
     [HttpPost("demo")]
+    [EnableRateLimiting("agent_chat")]
     public async Task<ActionResult<AgentResponse>> Demo([FromBody] AgentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Message))
@@ -441,6 +446,7 @@ public class AgentController(
 
     /// <summary>ElevenLabs TTS via same contract as <c>/api/speech/tts</c>; path alias for agent clients.</summary>
     [HttpPost("speak")]
+    [EnableRateLimiting("agent_chat")]
     public async Task<IActionResult> Speak([FromBody] SpeechRequest request, CancellationToken cancellationToken)
     {
         var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
@@ -479,6 +485,7 @@ public class AgentController(
     }
 
     [HttpPost("context")]
+    [EnableRateLimiting("agent_chat")]
     public async Task<IActionResult> SetContext([FromBody] SetContextRequest request)
     {
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
@@ -530,6 +537,7 @@ public class AgentController(
     }
 
     [HttpGet("context/{sessionId}/{toolType}")]
+    [EnableRateLimiting("agent_read")]
     public async Task<IActionResult> GetContext(string sessionId, string toolType)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -625,11 +633,3 @@ public class AgentController(
         _ = tokenTrackingService.TrackUsageAsync(userId, tool, model ?? "unknown", i, o, cc, cr);
     }
 }
-
-public record SetContextRequest(
-    string? SessionId,
-    string? ToolType,
-    string? CVText,
-    string? JobTitle,
-    string? CompanyName,
-    string? ProgrammingLanguage);

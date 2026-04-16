@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -13,6 +14,7 @@ public class SpeechController(
     ILogger<SpeechController> logger) : ControllerBase
 {
     [HttpPost("tts")]
+    [EnableRateLimiting("agent_chat")]
     public async Task<IActionResult> TextToSpeech([FromBody] SpeechRequest request, CancellationToken cancellationToken)
     {
         var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
@@ -56,6 +58,7 @@ public class SpeechController(
     /// Text capped at 500 characters. Used exclusively by the landing-page live demo.
     /// </summary>
     [HttpPost("demo-tts")]
+    [EnableRateLimiting("agent_chat")]
     public async Task<IActionResult> DemoTextToSpeech([FromBody] SpeechRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Text))

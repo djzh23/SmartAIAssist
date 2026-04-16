@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Services;
 
 namespace SmartAssistApi.Controllers;
@@ -13,6 +15,7 @@ public class StripeController(
     ILogger<StripeController> logger) : ControllerBase
 {
     [HttpPost("checkout")]
+    [EnableRateLimiting("stripe_write")]
     public async Task<IActionResult> CreateCheckout([FromBody] CheckoutRequest request)
     {
         var (canonicalUserId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
@@ -59,6 +62,7 @@ public class StripeController(
     }
 
     [HttpPost("portal")]
+    [EnableRateLimiting("stripe_write")]
     public async Task<IActionResult> CreatePortal()
     {
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
@@ -89,6 +93,7 @@ public class StripeController(
     }
 
     [HttpGet("confirm-plan")]
+    [EnableRateLimiting("agent_read")]
     public async Task<IActionResult> ConfirmPlan([FromQuery] string sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -121,6 +126,7 @@ public class StripeController(
     /// located even when the customer-ID mapping was never written to Redis (webhook missed).
     /// </summary>
     [HttpPost("sync-plan")]
+    [EnableRateLimiting("stripe_write")]
     public async Task<IActionResult> SyncPlan([FromBody] SyncPlanRequest? body = null)
     {
         var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
@@ -140,6 +146,7 @@ public class StripeController(
     }
 
     [HttpPost("webhook")]
+    [DisableRateLimiting]
     public async Task<IActionResult> Webhook()
     {
         var payload = await new StreamReader(Request.Body).ReadToEndAsync();
@@ -170,6 +177,7 @@ public class StripeController(
     }
 
     [HttpGet("plans")]
+    [EnableRateLimiting("agent_read")]
     public IActionResult GetPlans([FromServices] IConfiguration appConfig)
     {
         return Ok(new
@@ -192,6 +200,7 @@ public class StripeController(
     }
 
     [HttpGet("debug/me")]
+    [EnableRateLimiting("agent_read")]
     public async Task<IActionResult> DebugMe()
     {
         if (!config.GetValue("Stripe:EnableDebugEndpoint", false))
@@ -225,5 +234,23 @@ public class StripeController(
     }
 }
 
-public record CheckoutRequest(string Plan, string? Email, string? UserId);
-public record SyncPlanRequest(string? Email);
+public class CheckoutRequest
+{
+    [Required]
+    [StringLength(20, MinimumLength = 3)]
+    public string Plan { get; set; } = "";
+
+    [StringLength(320)]
+    [EmailAddress]
+    public string? Email { get; set; }
+
+    [StringLength(128)]
+    public string? UserId { get; set; }
+}
+
+public class SyncPlanRequest
+{
+    [StringLength(320)]
+    [EmailAddress]
+    public string? Email { get; set; }
+}

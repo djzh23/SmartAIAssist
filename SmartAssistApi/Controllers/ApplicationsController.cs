@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -6,6 +8,7 @@ namespace SmartAssistApi.Controllers;
 
 [ApiController]
 [Route("api/applications")]
+[EnableRateLimiting("applications")]
 public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationService applications) : ControllerBase
 {
     private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
@@ -25,7 +28,11 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         return Ok(rows);
     }
 
-    public sealed record CreateApplicationBody(string JobTitle, string Company, string? JobUrl, string? JobDescription);
+    public sealed record CreateApplicationBody(
+        [property: Required, StringLength(300, MinimumLength = 1)] string JobTitle,
+        [property: Required, StringLength(300, MinimumLength = 1)] string Company,
+        [property: StringLength(2000)] string? JobUrl,
+        [property: StringLength(24_000)] string? JobDescription);
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateApplicationBody body, CancellationToken cancellationToken)
@@ -33,9 +40,6 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         var auth = clerkAuth.ExtractUserId(Request);
         if (!RequireSignedIn(auth, out var userId))
             return Unauthorized();
-
-        if (string.IsNullOrWhiteSpace(body.JobTitle) || string.IsNullOrWhiteSpace(body.Company))
-            return BadRequest(new { error = "validation", message = "jobTitle and company are required." });
 
         var list = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
         var now = DateTime.UtcNow;
@@ -72,7 +76,9 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         return doc is null ? NotFound() : Ok(doc);
     }
 
-    public sealed record StatusBody(string Status, string? Note);
+    public sealed record StatusBody(
+        [property: Required, StringLength(80, MinimumLength = 1)] string Status,
+        [property: StringLength(4000)] string? Note);
 
     [HttpPut("{id}/status")]
     public async Task<IActionResult> UpdateStatus(string id, [FromBody] StatusBody body, CancellationToken cancellationToken)
@@ -100,7 +106,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         return Ok(doc);
     }
 
-    public sealed record TextBody(string Text);
+    public sealed record TextBody([property: StringLength(200_000)] string? Text);
 
     [HttpPut("{id}/cover-letter")]
     public async Task<IActionResult> SaveCoverLetter(string id, [FromBody] TextBody body, CancellationToken cancellationToken)
@@ -138,7 +144,9 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         return Ok(new { success = true });
     }
 
-    public sealed record LinkSessionBody(string SessionType, string SessionId);
+    public sealed record LinkSessionBody(
+        [property: Required, StringLength(40, MinimumLength = 1)] string SessionType,
+        [property: Required, StringLength(80, MinimumLength = 1)] string SessionId);
 
     [HttpPut("{id}/link-session")]
     public async Task<IActionResult> LinkSession(string id, [FromBody] LinkSessionBody body, CancellationToken cancellationToken)

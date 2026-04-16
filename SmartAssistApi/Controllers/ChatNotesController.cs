@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -6,6 +8,7 @@ namespace SmartAssistApi.Controllers;
 
 [ApiController]
 [Route("api/chat-notes")]
+[EnableRateLimiting("sessions")]
 public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService chatNotes) : ControllerBase
 {
     private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
@@ -36,9 +39,16 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
         return note is null ? NotFound() : Ok(note);
     }
 
-    public sealed record ChatNoteSourceDto(string ToolType, string SessionId, string MessageId);
+    public sealed record ChatNoteSourceDto(
+        [property: StringLength(40)] string ToolType,
+        [property: StringLength(80)] string SessionId,
+        [property: StringLength(80)] string MessageId);
 
-    public sealed record CreateChatNoteBody(string Title, string Body, List<string>? Tags, ChatNoteSourceDto? Source);
+    public sealed record CreateChatNoteBody(
+        [property: Required, StringLength(200, MinimumLength = 1)] string Title,
+        [property: Required, StringLength(50_000, MinimumLength = 1)] string Body,
+        [property: MaxLength(40)] List<string>? Tags,
+        ChatNoteSourceDto? Source);
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateChatNoteBody body, CancellationToken cancellationToken)

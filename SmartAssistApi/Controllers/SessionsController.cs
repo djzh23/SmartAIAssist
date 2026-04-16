@@ -1,5 +1,7 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -7,6 +9,7 @@ namespace SmartAssistApi.Controllers;
 
 [ApiController]
 [Route("api/sessions")]
+[EnableRateLimiting("sessions")]
 public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService chatSessions) : ControllerBase
 {
     private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
@@ -26,7 +29,9 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         return Ok(rows);
     }
 
-    public sealed record CreateSessionBody(string ToolType, string? Title);
+    public sealed record CreateSessionBody(
+        [property: StringLength(40)] string ToolType,
+        [property: StringLength(120)] string? Title);
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSessionBody body, CancellationToken cancellationToken)
@@ -55,7 +60,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         return Ok(row);
     }
 
-    public sealed record OrderBody(List<string> OrderedSessionIds);
+    public sealed record OrderBody([property: MaxLength(200)] List<string> OrderedSessionIds);
 
     [HttpPut("order")]
     public async Task<IActionResult> SaveOrder([FromBody] OrderBody body, CancellationToken cancellationToken)
@@ -108,7 +113,9 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         return Ok(new { toolType = t.Value.ToolType, messages });
     }
 
-    public sealed record TranscriptPutBody(string ToolType, object Messages);
+    public sealed record TranscriptPutBody(
+        [property: StringLength(40)] string ToolType,
+        object Messages);
 
     [HttpPut("{sessionId}/transcript")]
     public async Task<IActionResult> PutTranscript(string sessionId, [FromBody] TranscriptPutBody body, CancellationToken cancellationToken)
@@ -123,7 +130,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         return Ok(new { success = true });
     }
 
-    public sealed record PatchSessionTitleBody(string Title);
+    public sealed record PatchSessionTitleBody([property: StringLength(120)] string? Title);
 
     /// <summary>Rename a chat tab (session list title in Redis index).</summary>
     [HttpPatch("{sessionId}")]

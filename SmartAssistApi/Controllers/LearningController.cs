@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -6,6 +8,7 @@ namespace SmartAssistApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("agent_read")]
 public class LearningController(LearningMemoryService learningMemory, ClerkAuthService clerkAuth) : ControllerBase
 {
     [HttpGet("insights")]
@@ -35,7 +38,10 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
         return Ok(rows);
     }
 
-    public sealed record PatchInsightBody(string? Title, string? Content, bool? Resolved);
+    public sealed record PatchInsightBody(
+        [property: StringLength(200)] string? Title,
+        [property: StringLength(8000)] string? Content,
+        bool? Resolved);
 
     [HttpPatch("insights/{insightId}")]
     public async Task<IActionResult> PatchInsight(string insightId, [FromBody] PatchInsightBody body, CancellationToken cancellationToken)
