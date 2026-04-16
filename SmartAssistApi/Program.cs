@@ -157,6 +157,15 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 startupLogger.LogInformation("CORS allowed origins: {Origins}", string.Join(", ", allowedOrigins));
+if (databaseFeaturesPreview.PostgresEnabled
+    && string.Equals(databaseFeaturesPreview.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(supabaseConnectionString))
+{
+    startupLogger.LogWarning(
+        "DatabaseFeatures: ChatNotesStorage=postgres but no valid Supabase connection was resolved "
+        + "(set ConnectionStrings:Supabase, DATABASE_URL, or SUPABASE__CONNECTIONSTRING). "
+        + "Chat notes will use Redis until a valid Postgres connection is available.");
+}
 var azureSpeechKey = app.Configuration["AZURE_SPEECH_KEY"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
 if (string.IsNullOrWhiteSpace(azureSpeechKey))
 {

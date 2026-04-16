@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 
 namespace SmartAssistApi.Data;
 
-public sealed class DatabaseFeatureOptionsValidator(IConfiguration configuration) : IValidateOptions<DatabaseFeatureOptions>
+public sealed class DatabaseFeatureOptionsValidator : IValidateOptions<DatabaseFeatureOptions>
 {
     public ValidateOptionsResult Validate(string? name, DatabaseFeatureOptions options)
     {
@@ -13,20 +13,16 @@ public sealed class DatabaseFeatureOptionsValidator(IConfiguration configuration
                 "DatabaseFeatures:ChatNotesStorage must be \"redis\" or \"postgres\".");
         }
 
-        if (string.Equals(options.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(options.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+            && !options.PostgresEnabled)
         {
-            if (!options.PostgresEnabled)
-                return ValidateOptionsResult.Fail(
-                    "DatabaseFeatures:ChatNotesStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
-
-            var conn = configuration.GetConnectionString("Supabase");
-            if (string.IsNullOrWhiteSpace(conn))
-            {
-                return ValidateOptionsResult.Fail(
-                    "DatabaseFeatures:ChatNotesStorage=postgres requires ConnectionStrings:Supabase.");
-            }
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:ChatNotesStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
         }
 
+        // Do not require ConnectionStrings:Supabase here: it may be supplied only via DATABASE_URL /
+        // SUPABASE__CONNECTIONSTRING after normalization, or missing until secrets are fixed.
+        // ChatNotesService uses Redis when ChatNotesPostgresService is not registered.
         return ValidateOptionsResult.Success;
     }
 }
