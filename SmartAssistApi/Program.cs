@@ -1,8 +1,16 @@
+using Serilog;
 using SmartAssistApi.Configuration;
 using SmartAssistApi.Services;
 using SmartAssistApi.Services.Groq;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext();
+});
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
 // Map alternative env var names used on Render to the config keys the app expects.
@@ -48,6 +56,7 @@ var allowedOrigins = localOrigins
     .ToArray();
 
 builder.Services.AddControllers();
+builder.Services.AddSmartAssistHealthChecks();
 builder.Services.AddSmartAssistRateLimiter();
 builder.Services.AddMemoryCache();
 builder.Services.Configure<GroqOptions>(builder.Configuration.GetSection(GroqOptions.SectionName));
@@ -91,7 +100,7 @@ builder.Services.AddCors(options =>
                 "Accept",
                 "Stripe-Signature",
                 "X-Requested-With")
-            .WithExposedHeaders("X-Usage-Today", "X-Usage-Limit", "X-Usage-Plan");
+            .WithExposedHeaders("X-Usage-Today", "X-Usage-Limit", "X-Usage-Plan", "X-Request-Id");
     });
 });
 
@@ -107,6 +116,9 @@ if (string.IsNullOrWhiteSpace(azureSpeechKey))
 
 app.UseCors("BlazorClient");
 
+app.UseRequestId();
+app.UseSerilogRequestLogging();
+
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api/stripe/webhook"))
@@ -118,7 +130,16 @@ app.Use(async (context, next) =>
 app.UseRateLimiter();
 app.UseSmartAssistApiSecurityHeaders();
 
+app.MapHealthChecks("/api/health");
 app.MapControllers();
-app.Run();
+
+try
+{
+    app.Run();
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 public partial class Program;
