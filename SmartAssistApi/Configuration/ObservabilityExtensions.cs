@@ -1,16 +1,21 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog.Context;
+using SmartAssistApi.Data;
 using SmartAssistApi.Health;
 
 namespace SmartAssistApi.Configuration;
 
 public static class ObservabilityExtensions
 {
-    public static IServiceCollection AddSmartAssistHealthChecks(this IServiceCollection services)
+    /// <param name="registerPostgresCheck">When true, adds <see cref="SmartAssistDbContext"/> connectivity check (requires DbContext registration and <c>DatabaseFeatures:PostgresEnabled</c>).</param>
+    public static IServiceCollection AddSmartAssistHealthChecks(this IServiceCollection services, bool registerPostgresCheck = false)
     {
-        services.AddHealthChecks()
+        var checks = services.AddHealthChecks()
             .AddCheck<UpstashRedisHealthCheck>("upstash");
+        if (registerPostgresCheck)
+            checks.AddDbContextCheck<SmartAssistDbContext>("postgres");
         return services;
     }
 

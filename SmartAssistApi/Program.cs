@@ -1,5 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 using SmartAssistApi.Configuration;
+using SmartAssistApi.Data;
 using SmartAssistApi.Services;
 using SmartAssistApi.Services.Groq;
 
@@ -22,6 +24,11 @@ var upstashToken = Environment.GetEnvironmentVariable("UPSTASH_REDIS_REST_TOKEN"
     ?? Environment.GetEnvironmentVariable("UPSTASH__RESTTOKEN");
 if (upstashUrl   is not null) builder.Configuration["Upstash:RestUrl"]   = upstashUrl;
 if (upstashToken is not null) builder.Configuration["Upstash:RestToken"] = upstashToken;
+
+var supabaseConnFromEnv = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? Environment.GetEnvironmentVariable("SUPABASE__CONNECTIONSTRING");
+if (!string.IsNullOrWhiteSpace(supabaseConnFromEnv))
+    builder.Configuration["ConnectionStrings:Supabase"] = supabaseConnFromEnv;
 
 var groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
 if (!string.IsNullOrWhiteSpace(groqKey)) builder.Configuration["Groq:ApiKey"] = groqKey;
@@ -74,7 +81,23 @@ var allowedOrigins = localOrigins
     .ToArray();
 
 builder.Services.AddControllers();
-builder.Services.AddSmartAssistHealthChecks();
+
+builder.Services.Configure<DatabaseFeatureOptions>(builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName));
+builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<DatabaseFeatureOptions>, DatabaseFeatureOptionsValidator>();
+
+var supabaseConnectionString = builder.Configuration.GetConnectionString("Supabase");
+var registerPostgres = !string.IsNullOrWhiteSpace(supabaseConnectionString);
+if (registerPostgres)
+{
+    builder.Services.AddDbContext<SmartAssistDbContext>(options =>
+        options.UseNpgsql(supabaseConnectionString));
+    builder.Services.AddScoped<ChatNotesPostgresService>();
+}
+
+var databaseFeaturesPreview = builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName)
+    .Get<DatabaseFeatureOptions>() ?? new DatabaseFeatureOptions();
+var registerPostgresHealth = registerPostgres && databaseFeaturesPreview.PostgresEnabled;
+builder.Services.AddSmartAssistHealthChecks(registerPostgresCheck: registerPostgresHealth);
 builder.Services.AddSmartAssistRateLimiter();
 builder.Services.AddMemoryCache();
 builder.Services.Configure<GroqOptions>(builder.Configuration.GetSection(GroqOptions.SectionName));
@@ -100,6 +123,7 @@ builder.Services.AddHttpClient<TokenTrackingService>();
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
 builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<UpstashRedisStringStore>());
 builder.Services.AddScoped<ChatSessionService>();
+builder.Services.AddScoped<ChatNotesRedisService>();
 builder.Services.AddScoped<ChatNotesService>();
 builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddScoped<ClerkAuthService>();
