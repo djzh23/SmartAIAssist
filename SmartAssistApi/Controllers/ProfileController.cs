@@ -33,8 +33,20 @@ public class ProfileController(
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
-        var profile = await profileService.GetProfile(userId);
-        return Ok(profile ?? new CareerProfile { UserId = userId });
+        try
+        {
+            var profile = await profileService.GetProfile(userId);
+            return Ok(profile ?? new CareerProfile { UserId = userId });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GET /api/profile failed for user {UserId}", userId);
+            return StatusCode(503, new
+            {
+                error = "profile_read_failed",
+                message = "Could not load profile from storage. Please retry.",
+            });
+        }
     }
 
     [HttpPost("onboarding")]
