@@ -35,49 +35,64 @@ public class AgentService(
             ? "general"
             : request.ToolType.ToLowerInvariant();
 
-        var userMessage = UserInputCleaner.CleanUserInput(request.Message);
+        var primaryUserMessage = UserInputCleaner.CleanUserInput(request.Message);
 
         var context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
 
-        if (toolType == "jobanalyzer"
-            && userMessage.Length > 150
-            && (context.Job is null || !context.Job.IsAnalyzed))
+        await UpdateConversationLanguageAsync(scopeUserId, sessionId, toolType, primaryUserMessage, context);
+        await ApplyCareerToolSetupFromRequestAsync(scopeUserId, sessionId, toolType, request).ConfigureAwait(false);
+        context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
+
+        var legacyJobExtract = toolType == "jobanalyzer"
+                                 && !CareerTurnAssembler.HasStructuredSetup(request)
+                                 && primaryUserMessage.Length > 150
+                                 && (context.Job is null || !context.Job.IsAnalyzed);
+        if (legacyJobExtract)
         {
-            var jobContext = await jobExtractor.ExtractAsync(userMessage);
-            await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.Job = jobContext);
+            var jobContext = await jobExtractor.ExtractAsync(primaryUserMessage).ConfigureAwait(false);
+            await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.Job = jobContext)
+                .ConfigureAwait(false);
             context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
         }
 
-        if (toolType == "interviewprep"
-            && userMessage.Length > 200
-            && context.UserCV is null)
+        var legacyInterviewCv = toolType == "interviewprep"
+                                && !CareerTurnAssembler.HasStructuredSetup(request)
+                                && primaryUserMessage.Length > 200
+                                && context.UserCV is null;
+        if (legacyInterviewCv)
         {
-            await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.UserCV = userMessage);
+            await conversationService
+                .UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.UserCV = primaryUserMessage)
+                .ConfigureAwait(false);
             context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
         }
 
-        if (toolType == "programming" && LooksLikeCode(userMessage))
+        if (toolType == "programming" && LooksLikeCode(primaryUserMessage))
         {
             await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
             {
-                ctx.CurrentCodeContext = userMessage[..Math.Min(userMessage.Length, 3000)];
-                ctx.ProgrammingLanguage ??= InferProgrammingLanguage(userMessage);
+                ctx.CurrentCodeContext = primaryUserMessage[..Math.Min(primaryUserMessage.Length, 3000)];
+                ctx.ProgrammingLanguage ??= InferProgrammingLanguage(primaryUserMessage);
             });
             context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
         }
 
-        await UpdateConversationLanguageAsync(scopeUserId, sessionId, toolType, userMessage, context);
         context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
 
-        await ExtractUserFactsAsync(userMessage, scopeUserId, sessionId, toolType);
+        await ExtractUserFactsAsync(primaryUserMessage, scopeUserId, sessionId, toolType);
         context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
+
+        var userTurnMessage = CareerTurnAssembler.ComposeEffectiveUserMessage(request, toolType, primaryUserMessage);
 
         var promptParts = await promptComposer.ComposePromptPartsAsync(request.CareerProfileUserId, request, context)
             .ConfigureAwait(false);
-        LogCachedPrefixEffectiveness(toolType, request.SessionId, promptParts);
+        var promptWithSummary = string.IsNullOrWhiteSpace(context.ConversationSummary)
+            ? promptParts
+            : promptParts.WithConversationSummary(context.ConversationSummary);
+        LogCachedPrefixEffectiveness(toolType, request.SessionId, promptWithSummary);
 
         var history = await conversationService.GetHistoryAsync(scopeUserId, sessionId, toolType);
-        history.Add(new Message(RoleType.User, userMessage));
+        history.Add(new Message(RoleType.User, userTurnMessage));
 
         var apiMessages = LlmHistoryTrimmer.Trim(history, toolType, context);
 
@@ -87,35 +102,48 @@ public class AgentService(
         if (ShouldTryGroqFirst(toolType, tools)
             && AnthropicMessagesForGroqMapper.TryMap(apiMessages, out var groqMessages))
         {
-            var systemCombined = promptParts.ToCombinedPrompt();
+            var systemCombined = promptWithSummary.ToCombinedPrompt();
             var sampling = GroqInferenceParameters.SamplingFor(toolType);
             var groqResult = await groqChat
                 .CompleteAsync(systemCombined, groqMessages, maxTokens, sampling)
                 .ConfigureAwait(false);
             if (groqResult.Success)
             {
-                var groqReply = groqResult.Content;
-                history.Add(new Message(RoleType.Assistant, groqReply));
-                await PostProcessInterviewPrepAsync(scopeUserId, sessionId, toolType, groqReply);
-                await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
-                QueueInsightExtraction(scopeUserId, toolType, userMessage, groqReply, request.JobApplicationId);
-                var groqModelLabel = $"groq/{groqResult.Model}";
-                return new AgentResponse(
-                    groqReply,
-                    null,
-                    null,
-                    groqResult.InputTokens,
-                    groqResult.OutputTokens,
-                    groqModelLabel,
-                    0,
-                    0);
-            }
+                var groqReply = groqResult.Content ?? string.Empty;
+                groqReply = await TryRepairGroqReplyIfNeededAsync(groqReply, toolType).ConfigureAwait(false);
+                if (!ShouldRejectGroqReply(groqReply, toolType))
+                {
+                    history.Add(new Message(RoleType.Assistant, groqReply));
+                    await PostProcessInterviewPrepAsync(scopeUserId, sessionId, toolType, groqReply);
+                    await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
+                    await AppendConversationSummaryAsync(scopeUserId, sessionId, toolType, primaryUserMessage, groqReply)
+                        .ConfigureAwait(false);
+                    QueueInsightExtraction(scopeUserId, toolType, primaryUserMessage, groqReply, request.JobApplicationId);
+                    var groqModelLabel = $"groq/{groqResult.Model}";
+                    return new AgentResponse(
+                        groqReply,
+                        null,
+                        null,
+                        groqResult.InputTokens,
+                        groqResult.OutputTokens,
+                        groqModelLabel,
+                        0,
+                        0);
+                }
 
-            logger.LogWarning(
-                "Groq completion failed or empty; falling back to Anthropic. SessionId {SessionId} ToolType {ToolType} Error {Error}",
-                sessionId,
-                toolType,
-                groqResult.Error);
+                logger.LogWarning(
+                    "Groq reply rejected by quality gate; falling back to Anthropic. SessionId {SessionId} ToolType {ToolType}",
+                    sessionId,
+                    toolType);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Groq completion failed or empty; falling back to Anthropic. SessionId {SessionId} ToolType {ToolType} Error {Error}",
+                    sessionId,
+                    toolType,
+                    groqResult.Error);
+            }
         }
 
         var parameters = new MessageParameters
@@ -125,7 +153,7 @@ public class AgentService(
             Temperature = GroqInferenceParameters.AnthropicTemperatureFor(toolType),
             Messages = apiMessages,
             Tools = tools,
-            System = BuildAnthropicSystemMessages(promptParts),
+            System = BuildAnthropicSystemMessages(promptWithSummary),
             PromptCaching = PromptCacheType.FineGrained,
         };
 
@@ -191,7 +219,10 @@ public class AgentService(
 
         await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
 
-        QueueInsightExtraction(scopeUserId, toolType, userMessage, finalReply, request.JobApplicationId);
+        await AppendConversationSummaryAsync(scopeUserId, sessionId, toolType, primaryUserMessage, finalReply)
+            .ConfigureAwait(false);
+
+        QueueInsightExtraction(scopeUserId, toolType, primaryUserMessage, finalReply, request.JobApplicationId);
 
         return new AgentResponse(
             finalReply,
@@ -463,6 +494,156 @@ public class AgentService(
             SystemPromptBuilder.MinRecommendedCachedPrefixTokens,
             sessionId,
             toolType);
+    }
+
+    private async Task ApplyCareerToolSetupFromRequestAsync(
+        string scopeUserId,
+        string sessionId,
+        string toolType,
+        AgentRequest request)
+    {
+        var setup = request.CareerToolSetup;
+        if (setup is null)
+            return;
+
+        if (toolType == "jobanalyzer")
+        {
+            var jobSource = !string.IsNullOrWhiteSpace(setup.JobUrl)
+                ? setup.JobUrl.Trim()
+                : setup.JobText?.Trim();
+            if (!string.IsNullOrWhiteSpace(jobSource) && jobSource.Length >= 100)
+            {
+                try
+                {
+                    var jc = await jobExtractor.ExtractAsync(jobSource).ConfigureAwait(false);
+                    await conversationService
+                        .UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.Job = jc)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "CareerToolSetup job extract failed. SessionId {SessionId}", sessionId);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(setup.CvText))
+            {
+                var cv = setup.CvText.Trim();
+                if (cv.Length > 3000)
+                    cv = cv[..3000];
+                await conversationService
+                    .UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.UserCV = cv)
+                    .ConfigureAwait(false);
+            }
+        }
+        else if (toolType == "interviewprep")
+        {
+            if (!string.IsNullOrWhiteSpace(setup.CvText))
+            {
+                var cv = setup.CvText.Trim();
+                if (cv.Length > 3000)
+                    cv = cv[..3000];
+                await conversationService
+                    .UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.UserCV = cv)
+                    .ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrWhiteSpace(setup.JobTitle) || !string.IsNullOrWhiteSpace(setup.CompanyName))
+            {
+                await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
+                {
+                    if (!string.IsNullOrWhiteSpace(setup.JobTitle))
+                    {
+                        var t = setup.JobTitle.Trim();
+                        ctx.InterviewJobTitle = t.Length > 200 ? t[..200] : t;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(setup.CompanyName))
+                    {
+                        var c = setup.CompanyName.Trim();
+                        ctx.InterviewCompany = c.Length > 200 ? c[..200] : c;
+                    }
+                }).ConfigureAwait(false);
+            }
+
+            var langCode = setup.InterviewLanguageCode?.Trim();
+            if (!string.IsNullOrWhiteSpace(langCode))
+            {
+                var norm = langCode.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "en" : "de";
+                await conversationService
+                    .UpdateContextAsync(scopeUserId, sessionId, toolType, ctx => ctx.ConversationLanguage = norm)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task AppendConversationSummaryAsync(
+        string scopeUserId,
+        string sessionId,
+        string toolType,
+        string primaryUserQuestion,
+        string assistantReply)
+    {
+        if (toolType is not ("jobanalyzer" or "interviewprep"))
+            return;
+
+        await conversationService.UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
+        {
+            ctx.ConversationSummary = ConversationSummaryUpdater.MergeAfterTurn(
+                ctx.ConversationSummary,
+                primaryUserQuestion,
+                assistantReply);
+        }).ConfigureAwait(false);
+    }
+
+    private static bool ShouldRejectGroqReply(string reply, string toolType)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return true;
+        if (toolType is not ("jobanalyzer" or "interviewprep"))
+            return false;
+        if (reply.Trim().Length < 72)
+            return true;
+        return HasHeavyDuplication(reply);
+    }
+
+    private static bool HasHeavyDuplication(string reply)
+    {
+        var sentences = Regex.Split(reply, @"(?<=[.!?])\s+")
+            .Where(s => s.Trim().Length > 40)
+            .Select(s => s.Trim().ToLowerInvariant())
+            .ToList();
+        if (sentences.Count < 4)
+            return false;
+        var groups = sentences.GroupBy(s => s).Where(g => g.Count() >= 3).ToList();
+        return groups.Count > 0;
+    }
+
+    private async Task<string> TryRepairGroqReplyIfNeededAsync(string reply, string toolType)
+    {
+        if (toolType is not ("jobanalyzer" or "interviewprep") || !HasHeavyDuplication(reply))
+            return reply;
+
+        try
+        {
+            var body = reply.Length > 6000 ? reply[..6000] : reply;
+            var prompt = $"""
+                Überarbeite die folgende Assistenten-Antwort. Gleiche Sprache beibehalten.
+                Regeln: Wiederholungen entfernen, knapper formulieren, inhaltlich gleiche Aussagen, Markdown-##-Struktur beibehalten wenn vorhanden.
+
+                TEXT:
+                {body}
+                """;
+            var repaired = await SingleCompletion(prompt, 700).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(repaired) || repaired.Trim().Length < 60)
+                return reply;
+            return repaired.Trim();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Groq repair completion skipped");
+            return reply;
+        }
     }
 
     private async Task UpdateConversationLanguageAsync(

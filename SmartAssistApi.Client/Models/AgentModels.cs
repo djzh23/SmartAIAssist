@@ -1,5 +1,15 @@
 namespace SmartAssistApi.Client.Models;
 
+public record CareerToolSetup(
+    string? CvText = null,
+    string? JobText = null,
+    string? JobUrl = null,
+    string? JobTitle = null,
+    string? CompanyName = null,
+    string? InterviewLanguageCode = null,
+    bool JobAnalyzerFollowUp = false,
+    string? InterviewAlias = null);
+
 public class ProfileContextToggles
 {
     public bool IncludeBasicProfile { get; set; } = true;
@@ -23,7 +33,8 @@ public record AgentRequest(
     ProfileContextToggles? ProfileToggles = null,
     string? CareerProfileUserId = null,
     /// <summary>Optional Bewerbungs-ID für serverseitigen Kontext (JSON property name camelCase).</summary>
-    string? JobApplicationId = null);
+    string? JobApplicationId = null,
+    CareerToolSetup? CareerToolSetup = null);
 
 public class LanguageLearningResponse
 {

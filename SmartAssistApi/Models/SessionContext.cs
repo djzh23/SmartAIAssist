@@ -17,6 +17,9 @@ public class SessionContext
     public string? InterviewCompany { get; set; }
     public List<string> PractisedQuestions { get; set; } = new();
 
+    /// <summary>Kompakte Anti-Wiederholungs-Notizen aus früheren Turns (nicht prompt-gecacht).</summary>
+    public string? ConversationSummary { get; set; }
+
     // Programming context
     public string? ProgrammingLanguage { get; set; }
     public string? CurrentCodeContext { get; set; }

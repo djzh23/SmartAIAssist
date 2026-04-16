@@ -24,8 +24,15 @@ public class CareerProfileService(
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    /// <summary>~300 Tokens @ 4 Zeichen/Token</summary>
-    private const int MaxProfileContextChars = 1200;
+    /// <summary>Kompakter Profil-Kontext für LLM (~250–280 Tokens).</summary>
+    private const int MaxProfileContextChars = 1100;
+
+    private const int MaxSkillsInContext = 8;
+    private const int MaxCvRawExcerptChars = 280;
+    private const int MaxCvSummaryChars = 360;
+    private const int MaxTargetJobDescriptionChars = 420;
+    private const int MaxExperienceLines = 3;
+    private const int MaxExperienceLineChars = 130;
 
     /// <summary>Abgestimmt mit PDF-Extraktion / Token-Schutz (max. 3000 Zeichen Rohtext).</summary>
     private const int CvRawTextInProfileMax = 3000;
@@ -287,42 +294,59 @@ public class CareerProfileService(
 
     public string BuildProfileContext(CareerProfile profile, ProfileContextToggles toggles)
     {
-        var parts = new List<string> { "[NUTZERPROFIL]" };
+        var body = new List<string>();
 
         if (toggles.IncludeBasicProfile)
         {
             if (!string.IsNullOrEmpty(profile.FieldLabel))
-                parts.Add($"Berufsfeld: {profile.FieldLabel}");
+                body.Add($"Berufsfeld: {TruncateOneLine(profile.FieldLabel, 72)}");
             if (!string.IsNullOrEmpty(profile.LevelLabel))
-                parts.Add($"Erfahrung: {profile.LevelLabel}");
+                body.Add($"Seniorität: {TruncateOneLine(profile.LevelLabel, 72)}");
             if (!string.IsNullOrEmpty(profile.CurrentRole))
-                parts.Add($"Aktuelle Rolle: {profile.CurrentRole}");
+                body.Add($"Aktuelle Rolle: {TruncateOneLine(profile.CurrentRole, 90)}");
             if (profile.Goals.Count > 0)
-                parts.Add($"Ziel: {string.Join(", ", profile.Goals)}");
+            {
+                var goals = string.Join(", ", profile.Goals.Take(4));
+                body.Add($"Ziele: {TruncateOneLine(goals, 100)}");
+            }
         }
 
         if (toggles.IncludeSkills && profile.Skills.Count > 0)
-            parts.Add($"Skills: {string.Join(", ", profile.Skills)}");
+        {
+            var slice = profile.Skills.Where(s => !string.IsNullOrWhiteSpace(s)).Take(MaxSkillsInContext).ToList();
+            var line = $"Kernskills ({slice.Count}): {string.Join(", ", slice)}";
+            if (profile.Skills.Count > MaxSkillsInContext)
+                line += $" (+{profile.Skills.Count - MaxSkillsInContext} weitere im Profil, hier weglassen)";
+            body.Add(TruncateOneLine(line, 220));
+        }
 
         if (toggles.IncludeExperience && profile.Experience.Count > 0)
         {
-            foreach (var exp in profile.Experience.Take(3))
+            body.Add("Relevante Erfahrung:");
+            foreach (var exp in profile.Experience.Take(MaxExperienceLines))
             {
-                var line = $"Erfahrung: {exp.Title}";
-                if (!string.IsNullOrEmpty(exp.Company)) line += $" bei {exp.Company}";
+                var line = $"• {exp.Title}".TrimEnd();
+                if (!string.IsNullOrEmpty(exp.Company)) line += $" @ {exp.Company}";
                 if (!string.IsNullOrEmpty(exp.Duration)) line += $" ({exp.Duration})";
-                parts.Add(line);
+                if (!string.IsNullOrEmpty(exp.Summary))
+                {
+                    var s = TruncateOneLine(exp.Summary.Replace('\n', ' '), 80);
+                    line += $" — {s}";
+                }
+
+                body.Add(TruncateOneLine(line, MaxExperienceLineChars));
             }
         }
 
         if (toggles.IncludeCv)
         {
             if (!string.IsNullOrEmpty(profile.CvSummary))
-                parts.Add($"CV-Zusammenfassung: {profile.CvSummary}");
+                body.Add($"CV (Kurz): {TruncateOneLine(profile.CvSummary, MaxCvSummaryChars)}");
             else if (!string.IsNullOrEmpty(profile.CvRawText))
             {
-                var n = Math.Min(500, profile.CvRawText.Length);
-                parts.Add($"CV-Auszug: {profile.CvRawText[..n]}");
+                var raw = profile.CvRawText.Replace('\n', ' ').Trim();
+                var n = Math.Min(MaxCvRawExcerptChars, raw.Length);
+                body.Add($"CV (Auszug, gekürzt): {raw[..n]}");
             }
         }
 
@@ -331,27 +355,79 @@ public class CareerProfileService(
             var targetJob = profile.TargetJobs.FirstOrDefault(j => j.Id == toggles.ActiveTargetJobId);
             if (targetJob is not null)
             {
-                var line = $"Zielstelle: {targetJob.Title}";
+                var line = $"Aktive Zielstelle: {targetJob.Title}";
                 if (!string.IsNullOrEmpty(targetJob.Company)) line += $" bei {targetJob.Company}";
-                parts.Add(line);
+                body.Add(TruncateOneLine(line, 120));
                 if (!string.IsNullOrEmpty(targetJob.Description))
                 {
-                    var n = Math.Min(500, targetJob.Description.Length);
-                    parts.Add($"Stellenanforderungen: {targetJob.Description[..n]}");
+                    var d = targetJob.Description.Replace('\n', ' ').Trim();
+                    var n = Math.Min(MaxTargetJobDescriptionChars, d.Length);
+                    body.Add($"Stellenkontext: {d[..n]}");
                 }
             }
         }
 
-        parts.Add("[ENDE NUTZERPROFIL]");
-
-        if (parts.Count <= 2)
+        if (body.Count == 0)
             return string.Empty;
+
+        var parts = new List<string> { "[NUTZERPROFIL]" };
+        parts.AddRange(body);
+
+        var limits = BuildProfileLimitsBlock(profile);
+        if (!string.IsNullOrEmpty(limits))
+        {
+            parts.Add("[GRENZEN]");
+            parts.Add(limits);
+            parts.Add("[ENDE GRENZEN]");
+        }
+
+        parts.Add("[ENDE NUTZERPROFIL]");
 
         var text = string.Join("\n", parts);
         if (text.Length > MaxProfileContextChars)
             text = text[..MaxProfileContextChars] + "\n[…]";
 
         return text;
+    }
+
+    private static string TruncateOneLine(string s, int max)
+    {
+        var t = s.Trim().Replace('\r', ' ').Replace('\n', ' ');
+        while (t.Contains("  ", StringComparison.Ordinal))
+            t = t.Replace("  ", " ", StringComparison.Ordinal);
+        return t.Length <= max ? t : t[..(max - 1)] + "…";
+    }
+
+    /// <summary>Reduziert Halluzinationen: klare Leitplanken aus Level/Rolle.</summary>
+    private static string? BuildProfileLimitsBlock(CareerProfile profile)
+    {
+        var level = (profile.Level ?? string.Empty).Trim().ToLowerInvariant();
+        var label = (profile.LevelLabel ?? string.Empty).ToLowerInvariant();
+        var juniorish = level is "junior" or "entry" or "student" or "intern" or "werkstudent"
+                        || label.Contains("junior", StringComparison.Ordinal)
+                        || label.Contains("einsteiger", StringComparison.Ordinal)
+                        || label.Contains("berufseinsteiger", StringComparison.Ordinal)
+                        || label.Contains("werkstudent", StringComparison.Ordinal)
+                        || label.Contains("praktikum", StringComparison.Ordinal);
+
+        var lines = new List<string>();
+        if (juniorish)
+        {
+            lines.Add("Einstieg/Junior-Level erkennbar — keine Senior- oder Lead-Behauptungen; Produktions-Ownership nur wenn belegt.");
+        }
+        else if (level.Contains("senior", StringComparison.Ordinal) || label.Contains("senior", StringComparison.Ordinal))
+        {
+            lines.Add("Senior-Level erkennbar — trotzdem keine erfundenen Metriken oder Teamgrößen.");
+        }
+        else
+        {
+            lines.Add("Nur aus den gelieferten Profilzeilen argumentieren — nichts hinzudichten.");
+        }
+
+        if (string.IsNullOrEmpty(profile.CvSummary) && string.IsNullOrEmpty(profile.CvRawText) && profile.Experience.Count == 0)
+            lines.Add("Wenig strukturierte Werdegang-Daten — vorsichtige Formulierungen, Lücken offen nennen.");
+
+        return lines.Count == 0 ? null : string.Join(" ", lines);
     }
 
     private static string? Truncate(string? s, int max)

@@ -124,6 +124,6 @@ public class CareerProfileServiceTests
         var result = service.BuildProfileContext(profile, toggles);
 
         Assert.True(result.Length < 700, $"Expected bounded context length, got {result.Length}");
-        Assert.Contains("CV-Auszug:", result);
+        Assert.Contains("CV (Auszug", result);
     }
 }

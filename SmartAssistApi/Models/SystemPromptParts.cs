@@ -41,4 +41,23 @@ public sealed record SystemPromptParts(string CachedPrefix, string DynamicToolSu
         var newDynamic = string.IsNullOrEmpty(d) ? head : $"{head}\n\n{d}";
         return this with { DynamicToolSuffix = newDynamic };
     }
+
+    /// <summary>Prepends compact turn summary for anti-repetition (uncached; not in Redis profile cache).</summary>
+    public SystemPromptParts WithConversationSummary(string? conversationSummary)
+    {
+        if (string.IsNullOrWhiteSpace(conversationSummary))
+            return this;
+
+        var block = $"""
+            [BISHER_BEHANDELTE_THEMEN]
+            {conversationSummary.Trim()}
+            [ENDE_BISHER_BEHANDELTE_THEMEN]
+
+            Regel: Diese Punkte nicht erneut ausführlich behandeln, außer der User verlangt Wiederholung oder Klärung.
+
+            """;
+        var d = DynamicToolSuffix ?? string.Empty;
+        var newDynamic = string.IsNullOrEmpty(d) ? block.TrimEnd() : $"{block}{d}";
+        return this with { DynamicToolSuffix = newDynamic };
+    }
 }

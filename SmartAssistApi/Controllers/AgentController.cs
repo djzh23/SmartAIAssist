@@ -53,12 +53,27 @@ public class AgentController(
             }
         }
 
+        var truncatedSetup = AgentPayloadLimits.TruncateCareerSetup(request.CareerToolSetup);
+        var probe = request with { CareerToolSetup = truncatedSetup };
+        var payloadErr = AgentPayloadLimits.ValidateTotalPayload(probe);
+        if (payloadErr is not null)
+        {
+            return (BadRequest(new
+            {
+                error = payloadErr,
+                message = payloadErr == "payload_too_large"
+                    ? "Gesamtgröße von Nachricht und Setup-Feldern zu groß."
+                    : "Nachricht zu lang.",
+            }), request);
+        }
+
         var normalized = request with
         {
             ToolType = resolved.ApiToolType,
             CareerProfileUserId = isAnonymous ? null : scopeUserId,
             ConversationScopeUserId = scopeUserId,
             JobApplicationId = isAnonymous ? null : request.JobApplicationId,
+            CareerToolSetup = truncatedSetup,
         };
 
         return (null, normalized);
@@ -70,8 +85,17 @@ public class AgentController(
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest(new { error = "message_empty", message = "Message must not be empty." });
 
-        if (request.Message.Length > 4000)
-            return BadRequest(new { error = "message_too_long", message = $"Message must not exceed 4000 characters (received {request.Message.Length})." });
+        var askPayloadProbe = request with { CareerToolSetup = AgentPayloadLimits.TruncateCareerSetup(request.CareerToolSetup) };
+        if (AgentPayloadLimits.ValidateTotalPayload(askPayloadProbe) is { } askPayloadErr)
+        {
+            return BadRequest(new
+            {
+                error = askPayloadErr,
+                message = askPayloadErr == "payload_too_large"
+                    ? "Gesamtgröße von Nachricht und Setup-Feldern zu groß."
+                    : $"Message must not exceed {AgentPayloadLimits.MaxMessageChars} characters.",
+            });
+        }
 
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return BadRequest(new { error = "session_id_required", message = "SessionId must not be empty." });
@@ -153,10 +177,16 @@ public class AgentController(
     [HttpPost("stream")]
     public async Task AskStream([FromBody] AgentRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 4000)
+        var streamProbe = request with { CareerToolSetup = AgentPayloadLimits.TruncateCareerSetup(request.CareerToolSetup) };
+        if (string.IsNullOrWhiteSpace(request.Message)
+            || AgentPayloadLimits.ValidateTotalPayload(streamProbe) is not null)
         {
             Response.StatusCode = 400;
-            await Response.WriteAsync(JsonSerializer.Serialize(new { error = "message_invalid", message = "Message must not be empty and must not exceed 4000 characters." }));
+            await Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                error = "message_invalid",
+                message = "Message must not be empty; total payload (message + career setup) must be within limits.",
+            }));
             return;
         }
 

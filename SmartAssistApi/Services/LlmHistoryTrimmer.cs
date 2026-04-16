@@ -22,16 +22,17 @@ public static class LlmHistoryTrimmer
         var richInterview = string.Equals(t, "interviewprep", StringComparison.OrdinalIgnoreCase)
                             && (!string.IsNullOrEmpty(context.InterviewJobTitle)
                                 || !string.IsNullOrEmpty(context.UserCV));
+        var hasSummary = !string.IsNullOrWhiteSpace(context.ConversationSummary);
 
         var maxPairs = t switch
         {
-            var x when x == "jobanalyzer" || x == "interviewprep" => 4,
+            var x when x == "jobanalyzer" || x == "interviewprep" => hasSummary ? 3 : 4,
             "programming" => 4,
             _ => 3,
         };
 
         if (richJob || richInterview)
-            maxPairs = Math.Max(maxPairs, 4);
+            maxPairs = Math.Max(maxPairs, hasSummary ? 3 : 4);
 
         return maxPairs * 2;
     }

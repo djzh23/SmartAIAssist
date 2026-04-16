@@ -66,4 +66,15 @@ public class SystemPromptPartsTests
         Assert.Same(parts, parts.WithProfilePrefix(""));
         Assert.Same(parts, parts.WithProfilePrefix("   "));
     }
+
+    [Fact]
+    public void WithConversationSummary_PrependsToUncachedBlock()
+    {
+        var parts = new SystemPromptParts("cached", "dynamic", "lang");
+        var next = parts.WithConversationSummary("- Thema A\n- Thema B");
+        Assert.Contains("[BISHER_BEHANDELTE_THEMEN]", next.UncachedSystemBlock);
+        Assert.Contains("- Thema A", next.UncachedSystemBlock);
+        Assert.Contains("dynamic", next.UncachedSystemBlock);
+        Assert.Contains("lang", next.UncachedSystemBlock);
+    }
 }

@@ -16,8 +16,8 @@ public static class GroqInferenceParameters
         {
             "general" => 600,
             "language" => 400,
-            "jobanalyzer" => 900,
-            "interviewprep" => 1000,
+            "jobanalyzer" => 800,
+            "interviewprep" => 880,
             "programming" => 1000,
             _ => 600,
         };
@@ -33,8 +33,8 @@ public static class GroqInferenceParameters
         var t = string.IsNullOrWhiteSpace(toolType) ? "general" : toolType.ToLowerInvariant();
         return t switch
         {
-            "jobanalyzer" => 0.3,
-            "interviewprep" => 0.2,
+            "jobanalyzer" => 0.18,
+            "interviewprep" => 0.28,
             "programming" => 0.2,
             "language" => 0.6,
             _ => 0.5,
