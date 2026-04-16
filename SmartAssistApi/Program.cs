@@ -25,11 +25,6 @@ var upstashToken = Environment.GetEnvironmentVariable("UPSTASH_REDIS_REST_TOKEN"
 if (upstashUrl   is not null) builder.Configuration["Upstash:RestUrl"]   = upstashUrl;
 if (upstashToken is not null) builder.Configuration["Upstash:RestToken"] = upstashToken;
 
-var supabaseConnFromEnv = Environment.GetEnvironmentVariable("DATABASE_URL")
-    ?? Environment.GetEnvironmentVariable("SUPABASE__CONNECTIONSTRING");
-if (!string.IsNullOrWhiteSpace(supabaseConnFromEnv))
-    builder.Configuration["ConnectionStrings:Supabase"] = supabaseConnFromEnv;
-
 var groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
 if (!string.IsNullOrWhiteSpace(groqKey)) builder.Configuration["Groq:ApiKey"] = groqKey;
 var groqModel = Environment.GetEnvironmentVariable("GROQ_MODEL");
@@ -85,7 +80,13 @@ builder.Services.AddControllers();
 builder.Services.Configure<DatabaseFeatureOptions>(builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName));
 builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<DatabaseFeatureOptions>, DatabaseFeatureOptionsValidator>();
 
-var supabaseConnectionString = builder.Configuration.GetConnectionString("Supabase");
+// Last-wins in-memory value so a valid URI from DATABASE_URL / SUPABASE__CONNECTIONSTRING overrides empty JSON / bad placeholders.
+var supabaseConnectionString = SupabaseConnectionString.TryResolve(builder.Configuration, out var supabaseRejectReason);
+if (supabaseConnectionString is not null)
+    builder.Configuration.AddInMemoryCollection([new KeyValuePair<string, string?>("ConnectionStrings:Supabase", supabaseConnectionString)]);
+else if (supabaseRejectReason is not null)
+    Console.WriteLine("[Startup] " + supabaseRejectReason);
+
 var registerPostgres = !string.IsNullOrWhiteSpace(supabaseConnectionString);
 if (registerPostgres)
 {
