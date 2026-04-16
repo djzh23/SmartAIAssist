@@ -11,6 +11,19 @@ namespace SmartAssistApi.Controllers;
 [EnableRateLimiting("sessions")]
 public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService chatNotes) : ControllerBase
 {
+    private void SetChatNotesStorageHeaders()
+    {
+        var info = chatNotes.GetBackendInfo();
+        Response.Headers["X-Chat-Notes-Effective-Storage"] = info.EffectiveStorage;
+        Response.Headers["X-Chat-Notes-Configured-Storage"] = info.ConfiguredChatNotesStorage;
+        if (info.Degraded)
+        {
+            Response.Headers["X-Chat-Notes-Degraded"] = "true";
+            if (!string.IsNullOrEmpty(info.DegradedReason))
+                Response.Headers["X-Chat-Notes-Degraded-Reason"] = info.DegradedReason;
+        }
+    }
+
     private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
     {
         userId = auth.userId ?? string.Empty;
@@ -25,6 +38,7 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
             return Unauthorized();
 
         var list = await chatNotes.ListAsync(userId, cancellationToken).ConfigureAwait(false);
+        SetChatNotesStorageHeaders();
         return Ok(list);
     }
 
@@ -36,7 +50,10 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
             return Unauthorized();
 
         var note = await chatNotes.GetByIdAsync(userId, noteId, cancellationToken).ConfigureAwait(false);
-        return note is null ? NotFound() : Ok(note);
+        if (note is null)
+            return NotFound();
+        SetChatNotesStorageHeaders();
+        return Ok(note);
     }
 
     public sealed record ChatNoteSourceDto(
@@ -76,6 +93,7 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
         var created = await chatNotes
             .CreateAsync(userId, body.Title, body.Body, body.Tags ?? [], source, cancellationToken)
             .ConfigureAwait(false);
+        SetChatNotesStorageHeaders();
         return Ok(created);
     }
 
@@ -96,7 +114,10 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
         var updated = await chatNotes
             .UpdateAsync(userId, noteId, body.Title, body.Body, body.Tags, cancellationToken)
             .ConfigureAwait(false);
-        return updated is null ? NotFound() : Ok(updated);
+        if (updated is null)
+            return NotFound();
+        SetChatNotesStorageHeaders();
+        return Ok(updated);
     }
 
     [HttpDelete("{noteId}")]
@@ -107,6 +128,9 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
             return Unauthorized();
 
         var ok = await chatNotes.DeleteAsync(userId, noteId, cancellationToken).ConfigureAwait(false);
-        return ok ? NoContent() : NotFound();
+        if (!ok)
+            return NotFound();
+        SetChatNotesStorageHeaders();
+        return NoContent();
     }
 }

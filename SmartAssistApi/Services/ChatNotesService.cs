@@ -4,6 +4,13 @@ using SmartAssistApi.Models;
 
 namespace SmartAssistApi.Services;
 
+/// <summary>Where chat notes are actually stored vs what was configured.</summary>
+public readonly record struct ChatNotesBackendInfo(
+    string EffectiveStorage,
+    string ConfiguredChatNotesStorage,
+    bool Degraded,
+    string? DegradedReason);
+
 /// <summary>
 /// Routes chat-notes persistence to Redis or PostgreSQL based on <see cref="DatabaseFeatureOptions"/>.
 /// </summary>
@@ -21,6 +28,23 @@ public sealed class ChatNotesService(
         _opts.PostgresEnabled
         && string.Equals(_opts.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase)
         && Postgres is not null;
+
+    /// <summary>Used for response headers and client-visible degraded-mode disclosure.</summary>
+    public ChatNotesBackendInfo GetBackendInfo()
+    {
+        var configured = string.IsNullOrWhiteSpace(_opts.ChatNotesStorage)
+            ? "redis"
+            : _opts.ChatNotesStorage.Trim();
+        var wantsPostgres = _opts.PostgresEnabled
+            && string.Equals(configured, "postgres", StringComparison.OrdinalIgnoreCase);
+        var effective = UsePostgres ? "postgres" : "redis";
+        var degraded = wantsPostgres && !UsePostgres;
+        string? reason = null;
+        if (degraded)
+            reason = Postgres is null ? "no_valid_supabase_connection" : "postgres_unavailable";
+
+        return new ChatNotesBackendInfo(effective, configured, degraded, reason);
+    }
 
     public Task<IReadOnlyList<ChatNoteRecord>> ListAsync(string userId, CancellationToken cancellationToken = default) =>
         UsePostgres

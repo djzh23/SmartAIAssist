@@ -150,7 +150,15 @@ builder.Services.AddCors(options =>
                 "Stripe-Signature",
                 "X-Requested-With",
                 "X-Request-Id")
-            .WithExposedHeaders("X-Usage-Today", "X-Usage-Limit", "X-Usage-Plan", "X-Request-Id");
+            .WithExposedHeaders(
+                "X-Usage-Today",
+                "X-Usage-Limit",
+                "X-Usage-Plan",
+                "X-Request-Id",
+                "X-Chat-Notes-Effective-Storage",
+                "X-Chat-Notes-Configured-Storage",
+                "X-Chat-Notes-Degraded",
+                "X-Chat-Notes-Degraded-Reason");
     });
 });
 
