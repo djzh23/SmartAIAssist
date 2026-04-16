@@ -123,6 +123,32 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         return Ok(new { success = true });
     }
 
+    public sealed record PatchSessionTitleBody(string Title);
+
+    /// <summary>Rename a chat tab (session list title in Redis index).</summary>
+    [HttpPatch("{sessionId}")]
+    public async Task<IActionResult> PatchTitle(string sessionId, [FromBody] PatchSessionTitleBody body, CancellationToken cancellationToken)
+    {
+        var auth = clerkAuth.ExtractUserId(Request);
+        if (!RequireSignedIn(auth, out var userId))
+            return Unauthorized();
+
+        var trimmed = (body.Title ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return BadRequest(new { error = "title_required" });
+        if (trimmed.Length > 120)
+            trimmed = trimmed[..120];
+
+        var list = await chatSessions.LoadIndexAsync(userId, cancellationToken).ConfigureAwait(false);
+        var row = list.FirstOrDefault(r => string.Equals(r.Id, sessionId, StringComparison.Ordinal));
+        if (row is null)
+            return NotFound(new { error = "not_found" });
+
+        row.Title = trimmed;
+        await chatSessions.SaveIndexAsync(userId, list, cancellationToken).ConfigureAwait(false);
+        return Ok(row);
+    }
+
     [HttpDelete("{sessionId}")]
     public async Task<IActionResult> Delete(string sessionId, CancellationToken cancellationToken)
     {
