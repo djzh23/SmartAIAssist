@@ -25,6 +25,12 @@ var upstashToken = Environment.GetEnvironmentVariable("UPSTASH_REDIS_REST_TOKEN"
 if (upstashUrl   is not null) builder.Configuration["Upstash:RestUrl"]   = upstashUrl;
 if (upstashToken is not null) builder.Configuration["Upstash:RestToken"] = upstashToken;
 
+// Hosting env (e.g. Render): FRONTEND__BASEURL must override appsettings.json's localhost default;
+// do not use "config ?? env" or a non-empty localhost from JSON blocks FRONTEND__BASEURL entirely.
+var frontendFromEnv = Environment.GetEnvironmentVariable("FRONTEND__BASEURL")?.Trim();
+if (!string.IsNullOrWhiteSpace(frontendFromEnv))
+    builder.Configuration["Frontend:BaseUrl"] = frontendFromEnv;
+
 var groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
 if (!string.IsNullOrWhiteSpace(groqKey)) builder.Configuration["Groq:ApiKey"] = groqKey;
 var groqModel = Environment.GetEnvironmentVariable("GROQ_MODEL");
@@ -51,9 +57,8 @@ var localOrigins = new[]
 var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 var envOrigins = (Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS") ?? string.Empty)
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-// Production: allow the same origin as FRONTEND__BASEURL / Frontend:BaseUrl so CORS cannot drift from deploy URL (www vs apex still needs CORS_ALLOWED_ORIGINS if both are used).
-var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"]?.Trim()
-    ?? Environment.GetEnvironmentVariable("FRONTEND__BASEURL")?.Trim();
+// Production: allow the same origin as FRONTEND__BASEURL / Frontend:BaseUrl (env injected above when set).
+var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"]?.Trim();
 var frontendOrigin = Array.Empty<string>();
 if (!string.IsNullOrWhiteSpace(frontendBaseUrl))
 {
@@ -72,6 +77,7 @@ var allowedOrigins = localOrigins
     .Concat(configuredOrigins)
     .Concat(envOrigins)
     .Concat(frontendOrigin)
+    .Where(static o => !string.IsNullOrWhiteSpace(o))
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
 
@@ -158,6 +164,7 @@ if (string.IsNullOrWhiteSpace(azureSpeechKey))
         "Azure Speech API key is not configured. TTS will fail. Set AZURE_SPEECH_KEY as an environment variable.");
 }
 
+app.UseRouting();
 app.UseCors("BlazorClient");
 
 app.UseRequestId();
