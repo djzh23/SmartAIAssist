@@ -49,9 +49,27 @@ var localOrigins = new[]
 var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 var envOrigins = (Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS") ?? string.Empty)
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+// Production: allow the same origin as FRONTEND__BASEURL / Frontend:BaseUrl so CORS cannot drift from deploy URL (www vs apex still needs CORS_ALLOWED_ORIGINS if both are used).
+var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"]?.Trim()
+    ?? Environment.GetEnvironmentVariable("FRONTEND__BASEURL")?.Trim();
+var frontendOrigin = Array.Empty<string>();
+if (!string.IsNullOrWhiteSpace(frontendBaseUrl))
+{
+    try
+    {
+        var u = new Uri(frontendBaseUrl, UriKind.Absolute);
+        frontendOrigin = [u.GetLeftPart(UriPartial.Authority)];
+    }
+    catch
+    {
+        // invalid URL — skip; startup log still lists explicit CORS origins
+    }
+}
+
 var allowedOrigins = localOrigins
     .Concat(configuredOrigins)
     .Concat(envOrigins)
+    .Concat(frontendOrigin)
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
 
@@ -99,7 +117,8 @@ builder.Services.AddCors(options =>
                 "Content-Type",
                 "Accept",
                 "Stripe-Signature",
-                "X-Requested-With")
+                "X-Requested-With",
+                "X-Request-Id")
             .WithExposedHeaders("X-Usage-Today", "X-Usage-Limit", "X-Usage-Plan", "X-Request-Id");
     });
 });
