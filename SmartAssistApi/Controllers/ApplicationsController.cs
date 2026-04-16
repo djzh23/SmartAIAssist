@@ -29,10 +29,10 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
     }
 
     public sealed record CreateApplicationBody(
-        [property: Required, StringLength(300, MinimumLength = 1)] string JobTitle,
-        [property: Required, StringLength(300, MinimumLength = 1)] string Company,
-        [property: StringLength(2000)] string? JobUrl,
-        [property: StringLength(24_000)] string? JobDescription);
+        [Required, StringLength(300, MinimumLength = 1)] string JobTitle,
+        [Required, StringLength(300, MinimumLength = 1)] string Company,
+        [StringLength(2000)] string? JobUrl,
+        [StringLength(24_000)] string? JobDescription);
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateApplicationBody body, CancellationToken cancellationToken)
@@ -77,8 +77,8 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
     }
 
     public sealed record StatusBody(
-        [property: Required, StringLength(80, MinimumLength = 1)] string Status,
-        [property: StringLength(4000)] string? Note);
+        [Required, StringLength(80, MinimumLength = 1)] string Status,
+        [StringLength(4000)] string? Note);
 
     [HttpPut("{id}/status")]
     public async Task<IActionResult> UpdateStatus(string id, [FromBody] StatusBody body, CancellationToken cancellationToken)
@@ -106,7 +106,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         return Ok(doc);
     }
 
-    public sealed record TextBody([property: StringLength(200_000)] string? Text);
+    public sealed record TextBody([StringLength(200_000)] string? Text);
 
     [HttpPut("{id}/cover-letter")]
     public async Task<IActionResult> SaveCoverLetter(string id, [FromBody] TextBody body, CancellationToken cancellationToken)
@@ -145,8 +145,8 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
     }
 
     public sealed record LinkSessionBody(
-        [property: Required, StringLength(40, MinimumLength = 1)] string SessionType,
-        [property: Required, StringLength(80, MinimumLength = 1)] string SessionId);
+        [Required, StringLength(40, MinimumLength = 1)] string SessionType,
+        [Required, StringLength(80, MinimumLength = 1)] string SessionId);
 
     [HttpPut("{id}/link-session")]
     public async Task<IActionResult> LinkSession(string id, [FromBody] LinkSessionBody body, CancellationToken cancellationToken)

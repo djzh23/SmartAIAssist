@@ -39,8 +39,8 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
     }
 
     public sealed record PatchInsightBody(
-        [property: StringLength(200)] string? Title,
-        [property: StringLength(8000)] string? Content,
+        [StringLength(200)] string? Title,
+        [StringLength(8000)] string? Content,
         bool? Resolved);
 
     [HttpPatch("insights/{insightId}")]

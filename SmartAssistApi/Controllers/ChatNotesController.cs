@@ -40,14 +40,14 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
     }
 
     public sealed record ChatNoteSourceDto(
-        [property: StringLength(40)] string ToolType,
-        [property: StringLength(80)] string SessionId,
-        [property: StringLength(80)] string MessageId);
+        [StringLength(40)] string ToolType,
+        [StringLength(80)] string SessionId,
+        [StringLength(80)] string MessageId);
 
     public sealed record CreateChatNoteBody(
-        [property: Required, StringLength(200, MinimumLength = 1)] string Title,
-        [property: Required, StringLength(50_000, MinimumLength = 1)] string Body,
-        [property: MaxLength(40)] List<string>? Tags,
+        [Required, StringLength(200, MinimumLength = 1)] string Title,
+        [Required, StringLength(50_000, MinimumLength = 1)] string Body,
+        [MaxLength(40)] List<string>? Tags,
         ChatNoteSourceDto? Source);
 
     [HttpPost]
