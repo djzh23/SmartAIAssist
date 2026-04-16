@@ -69,6 +69,12 @@ public class AgentControllerTests
         return controller;
     }
 
+    /// <summary>SetContext/GetContext require a signed-in user (not anonymous).</summary>
+    private void SetupSignedInClerk(string userId = "user_agent_controller_tests")
+    {
+        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns((userId, false));
+    }
+
     [Fact]
     public async Task Ask_EmptyMessage_Returns400()
     {
@@ -195,6 +201,7 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_MissingSessionId_Returns400()
     {
+        SetupSignedInClerk();
         var controller = CreateController();
 
         var result = await controller.SetContext(new SetContextRequest(
@@ -212,6 +219,7 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ThenGetContext_ReturnsStoredValues()
     {
+        SetupSignedInClerk();
         var controller = CreateController();
         var sessionId = "s-ctx-1";
 
@@ -238,6 +246,7 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ProgrammingLanguage_IsReturnedByGetContext()
     {
+        SetupSignedInClerk();
         var controller = CreateController();
         var sessionId = "s-ctx-2";
 
