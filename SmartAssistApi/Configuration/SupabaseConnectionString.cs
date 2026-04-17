@@ -9,7 +9,8 @@ namespace SmartAssistApi.Configuration;
 public static class SupabaseConnectionString
 {
     /// <summary>
-    /// Priority: <c>DATABASE_URL</c>, <c>SUPABASE__CONNECTIONSTRING</c>, then <c>ConnectionStrings:Supabase</c> (includes <c>ConnectionStrings__Supabase</c> env).
+    /// Priority: <c>DATABASE_URL</c>, <c>SUPABASE__CONNECTIONSTRING</c>, <c>SUPABASE_CONNECTIONSTRING</c> (single underscore, common on hosts),
+    /// then <c>ConnectionStrings:Supabase</c> (includes <c>ConnectionStrings__Supabase</c> env).
     /// </summary>
     public static string? TryResolve(IConfiguration configuration, out string? rejectReason)
     {
@@ -17,6 +18,7 @@ public static class SupabaseConnectionString
         var raw =
             Environment.GetEnvironmentVariable("DATABASE_URL")
             ?? Environment.GetEnvironmentVariable("SUPABASE__CONNECTIONSTRING")
+            ?? Environment.GetEnvironmentVariable("SUPABASE_CONNECTIONSTRING")
             ?? configuration.GetConnectionString("Supabase");
 
         if (string.IsNullOrWhiteSpace(raw))
