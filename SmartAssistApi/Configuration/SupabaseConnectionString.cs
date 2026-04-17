@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using Npgsql;
@@ -40,8 +41,8 @@ public static class SupabaseConnectionString
             try
             {
                 var builder = new NpgsqlConnectionStringBuilder(normalized);
+                PrepareHostAndSsl(builder);
                 SanitizeConnectionTimeouts(builder);
-                TryRewriteSupabaseHostToIpv4(builder);
                 return new SupabaseConnectionResolution(builder.ConnectionString, key, null);
             }
             catch (ArgumentException ex)
@@ -87,9 +88,11 @@ public static class SupabaseConnectionString
     /// </summary>
     private static void SanitizeConnectionTimeouts(NpgsqlConnectionStringBuilder builder)
     {
-        if (builder.Timeout < 1)
-            builder.Timeout = 15;
-        else if (builder.Timeout > 600)
+        // NpgsqlConnector splits the remaining connect timeout across resolved endpoints; keep Timeout in a
+        // finite, reasonable range so per-endpoint TimeSpan math cannot overflow.
+        if (builder.Timeout < 1 || builder.Timeout > 600)
+            builder.Timeout = 30;
+        else if (builder.Timeout > 300)
             builder.Timeout = 300;
 
         // Command Timeout: leave 0 (driver default); clamp only absurd positive values.
@@ -98,35 +101,46 @@ public static class SupabaseConnectionString
     }
 
     /// <summary>
-    /// Hosts like <c>db.*.supabase.co</c> often resolve to IPv6 first; many PaaS egress paths (e.g. Render) cannot
-    /// reach that AAAA route (<c>Network is unreachable</c>). Prefer the IPv4 A record for the same hostname.
-    /// TLS certs are issued for the hostname, not the literal IP. If the string used <see cref="SslMode.VerifyFull"/> /
-    /// <see cref="SslMode.VerifyCA"/>, downgrade to <see cref="SslMode.Require"/> for this path (still encrypted; see Npgsql security docs).
+    /// Resolves the host once: rejects DNS that returns no addresses (Npgsql 9 would otherwise divide by zero
+    /// endpoint count and throw <see cref="OverflowException"/> in connect). For <c>*.supabase.co</c>, prefer the
+    /// IPv4 A record when present (many PaaS egress paths cannot use IPv6). If we connect by IP, downgrade
+    /// <see cref="SslMode.VerifyFull"/> / <see cref="SslMode.VerifyCA"/> to <see cref="SslMode.Require"/>.
     /// </summary>
-    private static void TryRewriteSupabaseHostToIpv4(NpgsqlConnectionStringBuilder builder)
+    private static void PrepareHostAndSsl(NpgsqlConnectionStringBuilder builder)
     {
         var host = builder.Host?.Trim() ?? string.Empty;
         if (host.Length == 0 || host.Contains(',', StringComparison.Ordinal))
             return;
-        if (!host.EndsWith(".supabase.co", StringComparison.OrdinalIgnoreCase))
+
+        // Npgsql uses Unix-domain sockets when Host looks like a filesystem path; do not DNS those.
+        if (host.StartsWith("/", StringComparison.Ordinal) || host.StartsWith("\\", StringComparison.Ordinal))
             return;
+
         if (IPAddress.TryParse(host, out _))
             return;
 
+        IPAddress[] addresses;
         try
         {
-            var addresses = Dns.GetHostAddresses(host);
-            var ipv4 = addresses.FirstOrDefault(static a => a.AddressFamily == AddressFamily.InterNetwork);
-            if (ipv4 is null)
-                return;
-
-            builder.Host = ipv4.ToString();
-            if (builder.SslMode is SslMode.VerifyFull or SslMode.VerifyCA)
-                builder.SslMode = SslMode.Require;
+            addresses = Dns.GetHostAddresses(host);
         }
-        catch
+        catch (Exception ex)
         {
-            // Leave original host; connection may still work over IPv6 or after DNS changes.
+            throw new ArgumentException($"DNS resolution failed for host '{host}'.", ex);
         }
+
+        if (addresses.Length == 0)
+            throw new ArgumentException($"DNS returned no IP addresses for host '{host}'.");
+
+        if (!host.EndsWith(".supabase.co", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var ipv4 = addresses.FirstOrDefault(static a => a.AddressFamily == AddressFamily.InterNetwork);
+        if (ipv4 is null)
+            return;
+
+        builder.Host = ipv4.ToString();
+        if (builder.SslMode is SslMode.VerifyFull or SslMode.VerifyCA)
+            builder.SslMode = SslMode.Require;
     }
 }
