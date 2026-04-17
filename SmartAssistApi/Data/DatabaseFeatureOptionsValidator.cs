@@ -30,6 +30,12 @@ public sealed class DatabaseFeatureOptionsValidator : IValidateOptions<DatabaseF
                 "DatabaseFeatures:ChatSessionStorage must be \"redis\" or \"postgres\".");
         }
 
+        if (!IsRedisOrPostgres(options.LearningMemoryStorage))
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:LearningMemoryStorage must be \"redis\" or \"postgres\".");
+        }
+
         if (string.Equals(options.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase)
             && !options.PostgresEnabled)
         {
@@ -56,6 +62,13 @@ public sealed class DatabaseFeatureOptionsValidator : IValidateOptions<DatabaseF
         {
             return ValidateOptionsResult.Fail(
                 "DatabaseFeatures:ChatSessionStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
+        }
+
+        if (string.Equals(options.LearningMemoryStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+            && !options.PostgresEnabled)
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:LearningMemoryStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
         }
 
         // Do not require ConnectionStrings:Supabase here: it may be supplied only via DATABASE_URL /

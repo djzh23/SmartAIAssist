@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace SmartAssistApi.Services;
 
-/// <summary>Thin Upstash REST string store (same host/token as LearningMemoryService).</summary>
+/// <summary>Thin Upstash REST string store (same host/token as LearningMemoryRedisService).</summary>
 public class UpstashRedisStringStore(
     IConfiguration config,
     HttpClient http) : IRedisStringStore

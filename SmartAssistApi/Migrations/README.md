@@ -1,6 +1,6 @@
 # Database migrations (Supabase / PostgreSQL)
 
-Run SQL files **in order** (`001` → `005`) in the Supabase SQL Editor (or your CI migration step) against the project database.
+Run SQL files **in order** (`001` → `006`) in the Supabase SQL Editor (or your CI migration step) against the project database.
 
 | File | Purpose |
 |------|---------|
@@ -9,6 +9,7 @@ Run SQL files **in order** (`001` → `005`) in the Supabase SQL Editor (or your
 | `003_job_applications.sql` | `job_applications` + FK to `app_users` |
 | `004_career_profiles.sql` | `career_profiles` + FK to `app_users` |
 | `005_chat_sessions.sql` | `chat_sessions` + `chat_transcripts` + FK to `app_users` |
+| `006_learning_memory.sql` | `learning_memories` + FK to `app_users` |
 
 ## Backfill chat notes from Redis (manual)
 
@@ -43,6 +44,13 @@ When `DatabaseFeatures:ChatSessionStorage` is `postgres`, the API stores the ses
 
 1. Ensure `005_chat_sessions.sql` is applied and `app_users` contains the Clerk user id (same FK requirement as other tables).
 2. Optional: `POST /api/admin/migrations/backfill-chat-sessions/{userId}` (admin-only) copies the Redis index + transcripts for one user into Postgres. Test on staging first.
+
+## Learning memory: Postgres vs Redis
+
+When `DatabaseFeatures:LearningMemoryStorage` is `postgres`, insights are stored in `learning_memories` (instead of the Upstash key `learning:{userId}`).
+
+1. Ensure `006_learning_memory.sql` is applied.
+2. Optional: `POST /api/admin/migrations/backfill-learning-memory/{userId}` (admin-only) copies Redis JSON into Postgres for one user. Test on staging first.
 
 ## Troubleshooting: empty tables but Redis works
 

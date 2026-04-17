@@ -11,6 +11,19 @@ namespace SmartAssistApi.Controllers;
 [EnableRateLimiting("agent_read")]
 public class LearningController(LearningMemoryService learningMemory, ClerkAuthService clerkAuth) : ControllerBase
 {
+    private void SetLearningMemoryStorageHeaders()
+    {
+        var info = learningMemory.GetBackendInfo();
+        Response.Headers["X-Learning-Memory-Effective-Storage"] = info.EffectiveStorage;
+        Response.Headers["X-Learning-Memory-Configured-Storage"] = info.ConfiguredLearningMemoryStorage;
+        if (info.Degraded)
+        {
+            Response.Headers["X-Learning-Memory-Degraded"] = "true";
+            if (!string.IsNullOrEmpty(info.DegradedReason))
+                Response.Headers["X-Learning-Memory-Degraded-Reason"] = info.DegradedReason;
+        }
+    }
+
     [HttpGet("insights")]
     public async Task<IActionResult> GetInsights(
         [FromQuery] string? applicationId,
@@ -35,6 +48,7 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
             .OrderBy(i => i.SortOrder)
             .ThenByDescending(i => i.UpdatedAt == default ? i.CreatedAt : i.UpdatedAt)
             .ToList();
+        SetLearningMemoryStorageHeaders();
         return Ok(rows);
     }
 
@@ -53,6 +67,7 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
         await learningMemory
             .PatchInsight(userId, insightId, body.Title, body.Content, body.Resolved, cancellationToken)
             .ConfigureAwait(false);
+        SetLearningMemoryStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -64,6 +79,7 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
             return Unauthorized();
 
         await learningMemory.ResolveInsight(userId, insightId, cancellationToken).ConfigureAwait(false);
+        SetLearningMemoryStorageHeaders();
         return Ok(new { success = true });
     }
 }

@@ -102,6 +102,7 @@ if (registerPostgres)
     builder.Services.AddScoped<ApplicationsPostgresService>();
     builder.Services.AddScoped<CareerProfilePostgresService>();
     builder.Services.AddScoped<ChatSessionPostgresService>();
+    builder.Services.AddScoped<LearningMemoryPostgresService>();
 }
 
 var databaseFeaturesPreview = builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName)
@@ -129,12 +130,13 @@ builder.Services.AddHttpClient<ISpeechService, AzureSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
 builder.Services.AddHttpClient<CareerProfileRedisService>();
 builder.Services.AddScoped<CareerProfileRedisService>();
-builder.Services.AddHttpClient<LearningMemoryService>();
 builder.Services.AddHttpClient<TokenTrackingService>();
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
 builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<UpstashRedisStringStore>());
+builder.Services.AddScoped<LearningMemoryRedisService>();
 builder.Services.AddScoped<ChatSessionRedisService>();
 builder.Services.AddScoped<ChatSessionService>();
+builder.Services.AddScoped<LearningMemoryService>();
 builder.Services.AddScoped<ChatNotesRedisService>();
 builder.Services.AddScoped<ChatNotesService>();
 builder.Services.AddScoped<ApplicationsRedisService>();
@@ -179,7 +181,11 @@ builder.Services.AddCors(options =>
                 "X-Chat-Sessions-Effective-Storage",
                 "X-Chat-Sessions-Configured-Storage",
                 "X-Chat-Sessions-Degraded",
-                "X-Chat-Sessions-Degraded-Reason");
+                "X-Chat-Sessions-Degraded-Reason",
+                "X-Learning-Memory-Effective-Storage",
+                "X-Learning-Memory-Configured-Storage",
+                "X-Learning-Memory-Degraded",
+                "X-Learning-Memory-Degraded-Reason");
     });
 });
 
@@ -249,6 +255,15 @@ if (databaseFeaturesPreview.PostgresEnabled
     startupLogger.LogWarning(
         "DatabaseFeatures: ChatSessionStorage=postgres but no valid Supabase connection was resolved. "
         + "Chat sessions will use Redis until a valid Postgres connection is available.");
+}
+
+if (databaseFeaturesPreview.PostgresEnabled
+    && string.Equals(databaseFeaturesPreview.LearningMemoryStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(supabaseConnectionString))
+{
+    startupLogger.LogWarning(
+        "DatabaseFeatures: LearningMemoryStorage=postgres but no valid Supabase connection was resolved. "
+        + "Learning memory will use Redis until a valid Postgres connection is available.");
 }
 var azureSpeechKey = app.Configuration["AZURE_SPEECH_KEY"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
 if (string.IsNullOrWhiteSpace(azureSpeechKey))

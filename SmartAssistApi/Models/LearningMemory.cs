@@ -1,7 +1,7 @@
 namespace SmartAssistApi.Models;
 
 /// <summary>
-/// An insight the model can reuse in later chats (stored per user in Redis).
+/// An insight the model can reuse in later chats (stored per user; Redis or Postgres per deployment).
 /// </summary>
 public class LearningInsight
 {

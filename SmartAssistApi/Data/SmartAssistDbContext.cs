@@ -17,6 +17,8 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<ChatTranscriptEntity> ChatTranscripts => Set<ChatTranscriptEntity>();
 
+    public DbSet<LearningMemoryEntity> LearningMemories => Set<LearningMemoryEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppUserEntity>(e =>
@@ -58,6 +60,12 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
         {
             e.ToTable("chat_transcripts");
             e.HasKey(x => new { x.ClerkUserId, x.SessionId });
+        });
+
+        modelBuilder.Entity<LearningMemoryEntity>(e =>
+        {
+            e.ToTable("learning_memories");
+            e.HasKey(x => x.ClerkUserId);
         });
     }
 }
