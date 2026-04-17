@@ -101,9 +101,10 @@ public static class SupabaseConnectionString
     }
 
     /// <summary>
-    /// Resolves the host once: rejects DNS that returns no addresses (Npgsql 9 would otherwise divide by zero
-    /// endpoint count and throw <see cref="OverflowException"/> in connect). For <c>*.supabase.co</c>, prefer the
-    /// IPv4 A record when present (many PaaS egress paths cannot use IPv6). If we connect by IP, downgrade
+    /// For <c>*.supabase.co</c> hosts, attempts to prefer the IPv4 A record so that PaaS environments
+    /// without IPv6 egress (e.g. Render) can reach Supabase. DNS is resolved once at startup as a
+    /// best-effort optimisation only — if DNS fails or returns no addresses the original host name is
+    /// kept and Npgsql resolves it again at actual connection time. If we connect by IP, downgrade
     /// <see cref="SslMode.VerifyFull"/> / <see cref="SslMode.VerifyCA"/> to <see cref="SslMode.Require"/>.
     /// </summary>
     private static void PrepareHostAndSsl(NpgsqlConnectionStringBuilder builder)
@@ -119,21 +120,27 @@ public static class SupabaseConnectionString
         if (IPAddress.TryParse(host, out _))
             return;
 
+        // Only attempt IPv4 substitution for Supabase direct-DB hosts.
+        if (!host.EndsWith(".supabase.co", StringComparison.OrdinalIgnoreCase))
+            return;
+
         IPAddress[] addresses;
         try
         {
             addresses = Dns.GetHostAddresses(host);
         }
-        catch (Exception ex)
+        catch
         {
-            throw new ArgumentException($"DNS resolution failed for host '{host}'.", ex);
+            // DNS unavailable at startup (e.g. Render network not yet ready). Keep the hostname and
+            // let Npgsql resolve it at connect time.
+            return;
         }
 
         if (addresses.Length == 0)
-            throw new ArgumentException($"DNS returned no IP addresses for host '{host}'.");
-
-        if (!host.EndsWith(".supabase.co", StringComparison.OrdinalIgnoreCase))
+        {
+            // DNS returned nothing at startup — keep the hostname; Npgsql retries at connect time.
             return;
+        }
 
         var ipv4 = addresses.FirstOrDefault(static a => a.AddressFamily == AddressFamily.InterNetwork);
         if (ipv4 is null)
