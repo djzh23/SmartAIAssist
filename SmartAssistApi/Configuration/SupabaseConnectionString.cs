@@ -14,7 +14,7 @@ public sealed record SupabaseConnectionResolution(
 
 /// <summary>
 /// Resolves and normalizes the Supabase / Postgres connection string so Npgsql never receives garbage
-/// (BOM, quotes, blank env overrides). Returns <see cref="SupabaseConnectionResolution.ConnectionString"/> null
+/// (BOM, quotes, blank env overrides, postgresql:// URIs). Returns <see cref="SupabaseConnectionResolution.ConnectionString"/> null
 /// if unset or invalid — callers skip EF registration.
 /// </summary>
 public static class SupabaseConnectionString
@@ -22,6 +22,7 @@ public static class SupabaseConnectionString
     /// <summary>
     /// Priority: <c>DATABASE_URL</c>, <c>SUPABASE__CONNECTIONSTRING</c>, <c>SUPABASE_CONNECTIONSTRING</c> (single underscore),
     /// then <c>ConnectionStrings:Supabase</c> (includes <c>ConnectionStrings__Supabase</c> env).
+    /// Accepts both postgresql:// URI format and Npgsql key=value format.
     /// </summary>
     public static SupabaseConnectionResolution Resolve(IConfiguration configuration)
     {
@@ -40,7 +41,10 @@ public static class SupabaseConnectionString
 
             try
             {
-                var builder = new NpgsqlConnectionStringBuilder(normalized);
+                var builder = IsUri(normalized)
+                    ? BuilderFromUri(normalized)
+                    : new NpgsqlConnectionStringBuilder(normalized);
+
                 PrepareHostAndSsl(builder);
                 SanitizeConnectionTimeouts(builder);
                 return new SupabaseConnectionResolution(builder.ConnectionString, key, null);
@@ -48,6 +52,10 @@ public static class SupabaseConnectionString
             catch (ArgumentException ex)
             {
                 return new SupabaseConnectionResolution(null, key, ex.Message);
+            }
+            catch (UriFormatException ex)
+            {
+                return new SupabaseConnectionResolution(null, key, $"Invalid URI format: {ex.Message}");
             }
         }
 
@@ -73,6 +81,56 @@ public static class SupabaseConnectionString
         yield return ("ConnectionStrings:Supabase", configuration.GetConnectionString("Supabase"));
     }
 
+    private static bool IsUri(string s) =>
+        s.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+        s.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Converts a <c>postgresql://user:pass@host:port/db?key=value</c> URI into an
+    /// <see cref="NpgsqlConnectionStringBuilder"/>. <c>NpgsqlConnectionStringBuilder</c> only understands
+    /// the key=value wire format; passing a URI to its constructor throws <see cref="ArgumentException"/>.
+    /// </summary>
+    private static NpgsqlConnectionStringBuilder BuilderFromUri(string uri)
+    {
+        var u = new Uri(uri);
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host     = u.Host,
+            Port     = u.Port > 0 ? u.Port : 5432,
+            Database = u.AbsolutePath.TrimStart('/'),
+        };
+
+        if (!string.IsNullOrEmpty(u.UserInfo))
+        {
+            var idx = u.UserInfo.IndexOf(':');
+            if (idx < 0)
+            {
+                builder.Username = Uri.UnescapeDataString(u.UserInfo);
+            }
+            else
+            {
+                builder.Username = Uri.UnescapeDataString(u.UserInfo[..idx]);
+                builder.Password = Uri.UnescapeDataString(u.UserInfo[(idx + 1)..]);
+            }
+        }
+
+        // Forward any query-string parameters (e.g. ?sslmode=require) to the builder.
+        var query = u.Query.TrimStart('?');
+        if (!string.IsNullOrEmpty(query))
+        {
+            foreach (var param in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = param.IndexOf('=');
+                if (eq <= 0) continue;
+                var k = Uri.UnescapeDataString(param[..eq]);
+                var v = Uri.UnescapeDataString(param[(eq + 1)..]);
+                try { builder[k] = v; } catch { /* ignore unknown keys */ }
+            }
+        }
+
+        return builder;
+    }
+
     private static string Normalize(string raw)
     {
         var s = raw.Trim().TrimStart('\ufeff');
@@ -88,14 +146,11 @@ public static class SupabaseConnectionString
     /// </summary>
     private static void SanitizeConnectionTimeouts(NpgsqlConnectionStringBuilder builder)
     {
-        // NpgsqlConnector splits the remaining connect timeout across resolved endpoints; keep Timeout in a
-        // finite, reasonable range so per-endpoint TimeSpan math cannot overflow.
         if (builder.Timeout < 1 || builder.Timeout > 600)
             builder.Timeout = 30;
         else if (builder.Timeout > 300)
             builder.Timeout = 300;
 
-        // Command Timeout: leave 0 (driver default); clamp only absurd positive values.
         if (builder.CommandTimeout > 0 && builder.CommandTimeout > 600)
             builder.CommandTimeout = 300;
     }
@@ -113,7 +168,6 @@ public static class SupabaseConnectionString
         if (host.Length == 0 || host.Contains(',', StringComparison.Ordinal))
             return;
 
-        // Npgsql uses Unix-domain sockets when Host looks like a filesystem path; do not DNS those.
         if (host.StartsWith("/", StringComparison.Ordinal) || host.StartsWith("\\", StringComparison.Ordinal))
             return;
 
@@ -131,16 +185,11 @@ public static class SupabaseConnectionString
         }
         catch
         {
-            // DNS unavailable at startup (e.g. Render network not yet ready). Keep the hostname and
-            // let Npgsql resolve it at connect time.
             return;
         }
 
         if (addresses.Length == 0)
-        {
-            // DNS returned nothing at startup — keep the hostname; Npgsql retries at connect time.
             return;
-        }
 
         var ipv4 = addresses.FirstOrDefault(static a => a.AddressFamily == AddressFamily.InterNetwork);
         if (ipv4 is null)
