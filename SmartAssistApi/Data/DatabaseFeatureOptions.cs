@@ -22,4 +22,10 @@ public sealed class DatabaseFeatureOptions
 
     /// <summary><c>redis</c> (default) or <c>postgres</c> for learning memory (<c>/api/learning</c>).</summary>
     public string LearningMemoryStorage { get; set; } = "redis";
+
+    /// <summary><c>redis</c> (default) or <c>postgres</c> for token usage metrics (dashboard, admin).</summary>
+    public string TokenUsageStorage { get; set; } = "redis";
+
+    /// <summary><c>redis</c> (default) or <c>postgres</c> for daily request limits + plan rows (Stripe metadata stays in Redis).</summary>
+    public string UsageStorage { get; set; } = "redis";
 }

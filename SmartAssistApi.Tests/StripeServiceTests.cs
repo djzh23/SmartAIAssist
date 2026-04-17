@@ -35,7 +35,9 @@ public class StripeServiceTests
     public async Task CreateCheckoutSessionAsync_ValidInput_WritesExpectedMetadata()
     {
         var config = BuildConfig();
-        var usageMock = new Mock<UsageService>(config, new HttpClient());
+        var usageOpts = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        usageOpts.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, UsageStorage = "redis", TokenUsageStorage = "redis" });
+        var usageMock = new Mock<UsageService>(usageOpts.Object, new UsageRedisService(config, new HttpClient()), new ServiceCollection().BuildServiceProvider());
         var apiMock = new Mock<IStripeApiClient>();
         var loggerMock = new Mock<ILogger<StripeService>>();
 
@@ -62,7 +64,9 @@ public class StripeServiceTests
     public async Task HandleStripeEventAsync_CheckoutCompleted_UpgradesPlanAndRecordsAudit()
     {
         var config = BuildConfig();
-        var usageMock = new Mock<UsageService>(config, new HttpClient());
+        var usageOpts = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        usageOpts.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, UsageStorage = "redis", TokenUsageStorage = "redis" });
+        var usageMock = new Mock<UsageService>(usageOpts.Object, new UsageRedisService(config, new HttpClient()), new ServiceCollection().BuildServiceProvider());
         var apiMock = new Mock<IStripeApiClient>();
         var loggerMock = new Mock<ILogger<StripeService>>();
 
@@ -119,7 +123,9 @@ public class StripeServiceTests
     public async Task HandleStripeEventAsync_DuplicateEvent_DoesNotProcessTwice()
     {
         var config = BuildConfig();
-        var usageMock = new Mock<UsageService>(config, new HttpClient());
+        var usageOpts = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        usageOpts.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, UsageStorage = "redis", TokenUsageStorage = "redis" });
+        var usageMock = new Mock<UsageService>(usageOpts.Object, new UsageRedisService(config, new HttpClient()), new ServiceCollection().BuildServiceProvider());
         var apiMock = new Mock<IStripeApiClient>();
         var loggerMock = new Mock<ILogger<StripeService>>();
 
@@ -196,7 +202,12 @@ public class StripeServiceTests
                 ["Upstash:RestToken"] = "fake-token",
             })
             .Build();
-        var tokenTrackingMock = new Mock<TokenTrackingService>(tokenCfg, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
+        var tokenOpts = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        tokenOpts.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, TokenUsageStorage = "redis" });
+        var tokenTrackingMock = new Mock<TokenTrackingService>(
+            tokenOpts.Object,
+            new TokenTrackingRedisService(tokenCfg, new HttpClient(), Mock.Of<ILogger<TokenTrackingRedisService>>()),
+            new ServiceCollection().BuildServiceProvider());
         tokenTrackingMock
             .Setup(t => t.TrackUsageAsync(
                 It.IsAny<string>(),
@@ -209,7 +220,13 @@ public class StripeServiceTests
             .Returns(Task.CompletedTask);
 
         var optMock = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
-        optMock.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, ChatSessionStorage = "redis" });
+        optMock.Setup(o => o.Value).Returns(new DatabaseFeatureOptions
+        {
+            PostgresEnabled = false,
+            ChatSessionStorage = "redis",
+            TokenUsageStorage = "redis",
+            UsageStorage = "redis",
+        });
         var chatSessions = new ChatSessionService(
             optMock.Object,
             new ChatSessionRedisService(
@@ -248,8 +265,18 @@ public class StripeServiceTests
         private readonly Dictionary<string, StripeDebugInfo> _debug = new();
 
         public InMemoryUsageService(IConfiguration config)
-            : base(config, new HttpClient())
+            : base(
+                CreateOpts().Object,
+                new UsageRedisService(config, new HttpClient()),
+                new ServiceCollection().BuildServiceProvider())
         {
+        }
+
+        private static Mock<IOptionsSnapshot<DatabaseFeatureOptions>> CreateOpts()
+        {
+            var m = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+            m.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, UsageStorage = "redis", TokenUsageStorage = "redis" });
+            return m;
         }
 
         public override Task<string> GetPlanAsync(string userId)

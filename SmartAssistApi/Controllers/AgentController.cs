@@ -80,6 +80,29 @@ public class AgentController(
         return (null, normalized);
     }
 
+    private void AppendDailyUsageAndTokenTrackingHeaders()
+    {
+        var u = usageService.GetBackendInfo();
+        Response.Headers["X-Daily-Usage-Effective-Storage"] = u.EffectiveStorage;
+        Response.Headers["X-Daily-Usage-Configured-Storage"] = u.ConfiguredUsageStorage;
+        if (u.Degraded)
+        {
+            Response.Headers["X-Daily-Usage-Degraded"] = "true";
+            if (!string.IsNullOrEmpty(u.DegradedReason))
+                Response.Headers["X-Daily-Usage-Degraded-Reason"] = u.DegradedReason;
+        }
+
+        var t = tokenTrackingService.GetBackendInfo();
+        Response.Headers["X-Token-Usage-Effective-Storage"] = t.EffectiveStorage;
+        Response.Headers["X-Token-Usage-Configured-Storage"] = t.ConfiguredTokenUsageStorage;
+        if (t.Degraded)
+        {
+            Response.Headers["X-Token-Usage-Degraded"] = "true";
+            if (!string.IsNullOrEmpty(t.DegradedReason))
+                Response.Headers["X-Token-Usage-Degraded-Reason"] = t.DegradedReason;
+        }
+    }
+
     [HttpPost("ask")]
     [EnableRateLimiting("agent_chat")]
     public async Task<ActionResult<AgentResponse>> Ask([FromBody] AgentRequest request)
@@ -147,6 +170,7 @@ public class AgentController(
         Response.Headers.Append("X-Usage-Today",  usageCheck.UsageToday.ToString());
         Response.Headers.Append("X-Usage-Limit",  usageCheck.DailyLimit == int.MaxValue ? "unlimited" : usageCheck.DailyLimit.ToString());
         Response.Headers.Append("X-Usage-Plan",   usageCheck.Plan);
+        AppendDailyUsageAndTokenTrackingHeaders();
 
         try
         {
@@ -272,6 +296,7 @@ public class AgentController(
         Response.Headers.Append("X-Usage-Today", usageCheck.UsageToday.ToString());
         Response.Headers.Append("X-Usage-Limit", usageCheck.DailyLimit == int.MaxValue ? "unlimited" : usageCheck.DailyLimit.ToString());
         Response.Headers.Append("X-Usage-Plan",  usageCheck.Plan);
+        AppendDailyUsageAndTokenTrackingHeaders();
 
         try
         {

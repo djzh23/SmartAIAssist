@@ -1,6 +1,6 @@
 # Database migrations (Supabase / PostgreSQL)
 
-Run SQL files **in order** (`001` → `006`) in the Supabase SQL Editor (or your CI migration step) against the project database.
+Run SQL files **in order** (`001` → `008`) in the Supabase SQL Editor (or your CI migration step) against the project database.
 
 | File | Purpose |
 |------|---------|
@@ -10,6 +10,8 @@ Run SQL files **in order** (`001` → `006`) in the Supabase SQL Editor (or your
 | `004_career_profiles.sql` | `career_profiles` + FK to `app_users` |
 | `005_chat_sessions.sql` | `chat_sessions` + `chat_transcripts` + FK to `app_users` |
 | `006_learning_memory.sql` | `learning_memories` + FK to `app_users` |
+| `007_token_usage.sql` | Token usage aggregates (`token_usage_*`) + registered users |
+| `008_user_usage_plan.sql` | `user_usage_daily` + `user_plan` (daily limits + plan rows) |
 
 ## Backfill chat notes from Redis (manual)
 
@@ -51,6 +53,14 @@ When `DatabaseFeatures:LearningMemoryStorage` is `postgres`, insights are stored
 
 1. Ensure `006_learning_memory.sql` is applied.
 2. Optional: `POST /api/admin/migrations/backfill-learning-memory/{userId}` (admin-only) copies Redis JSON into Postgres for one user. Test on staging first.
+
+## Token usage + daily usage limits: Postgres vs Redis
+
+1. Apply **`007_token_usage.sql`** then **`008_user_usage_plan.sql`** after earlier migrations (order matters).
+2. Set `DatabaseFeatures:PostgresEnabled=true` and, when ready to cut over:
+   - `DatabaseFeatures:TokenUsageStorage=postgres` — LLM token metrics (dashboard, admin) read/write in `token_usage_*` tables instead of Redis hashes.
+   - `DatabaseFeatures:UsageStorage=postgres` — per-day request counts and `user_plan` in Postgres; Stripe customer/webhook keys remain in Redis.
+3. **Backfill**: historical token data lives in Redis until migrated. Compare Redis vs Postgres metrics on staging before enabling production flags. A dedicated admin backfill endpoint may be added later (`Redis → Postgres` for a user/date range).
 
 ## Troubleshooting: empty tables but Redis works
 

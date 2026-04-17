@@ -36,6 +36,18 @@ public sealed class DatabaseFeatureOptionsValidator : IValidateOptions<DatabaseF
                 "DatabaseFeatures:LearningMemoryStorage must be \"redis\" or \"postgres\".");
         }
 
+        if (!IsRedisOrPostgres(options.TokenUsageStorage))
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:TokenUsageStorage must be \"redis\" or \"postgres\".");
+        }
+
+        if (!IsRedisOrPostgres(options.UsageStorage))
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:UsageStorage must be \"redis\" or \"postgres\".");
+        }
+
         if (string.Equals(options.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase)
             && !options.PostgresEnabled)
         {
@@ -69,6 +81,20 @@ public sealed class DatabaseFeatureOptionsValidator : IValidateOptions<DatabaseF
         {
             return ValidateOptionsResult.Fail(
                 "DatabaseFeatures:LearningMemoryStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
+        }
+
+        if (string.Equals(options.TokenUsageStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+            && !options.PostgresEnabled)
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:TokenUsageStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
+        }
+
+        if (string.Equals(options.UsageStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+            && !options.PostgresEnabled)
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:UsageStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
         }
 
         // Do not require ConnectionStrings:Supabase here: it may be supplied only via DATABASE_URL /

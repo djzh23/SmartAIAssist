@@ -1,14 +1,24 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
+using SmartAssistApi.Data;
 using SmartAssistApi.Services;
 
 namespace SmartAssistApi.Tests;
 
 public class UsageServiceTests
 {
+    private static UsageService CreateRedisUsageService(IConfiguration config, HttpClient http)
+    {
+        var opt = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        opt.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, UsageStorage = "redis", TokenUsageStorage = "redis" });
+        return new UsageService(opt.Object, new UsageRedisService(config, http), new ServiceCollection().BuildServiceProvider());
+    }
+
     private static IConfiguration BuildConfig() =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -49,7 +59,7 @@ public class UsageServiceTests
     public async Task GetUsageTodayAsync_NewUser_ReturnsZero()
     {
         var http    = BuildHttpClient((string.Empty, new { result = (object?)null }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var usage = await service.GetUsageTodayAsync("user_new");
 
@@ -60,7 +70,7 @@ public class UsageServiceTests
     public async Task GetUsageTodayAsync_ExistingUser_ReturnsStoredCount()
     {
         var http    = BuildHttpClient((string.Empty, new { result = "5" }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var usage = await service.GetUsageTodayAsync("user_existing");
 
@@ -76,7 +86,7 @@ public class UsageServiceTests
         var http    = BuildHttpClient(
             (string.Empty, new { result = 1L }),
             (string.Empty, new { result = 1L }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var count = await service.IncrementUsageAsync("user_new");
 
@@ -88,7 +98,7 @@ public class UsageServiceTests
     {
         // INCR returns 3 (existing key, no expire)
         var http    = BuildHttpClient((string.Empty, new { result = 3L }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var count = await service.IncrementUsageAsync("user_existing");
 
@@ -125,7 +135,7 @@ public class UsageServiceTests
     {
         // GET returns 2 (already at limit of 2)
         var http    = BuildHttpClient((string.Empty, new { result = "2" }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var result = await service.CheckAndIncrementAsync("ip:1.2.3.4", isAnonymous: true);
 
@@ -144,7 +154,7 @@ public class UsageServiceTests
             (string.Empty, new { result = "0" }),
             (string.Empty, new { result = 1L }),
             (string.Empty, new { result = 1L }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var result = await service.CheckAndIncrementAsync("ip:1.2.3.4", isAnonymous: true);
 
@@ -163,7 +173,7 @@ public class UsageServiceTests
         var http = BuildHttpClient(
             (string.Empty, new { result = "free" }),
             (string.Empty, new { result = "20" }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var result = await service.CheckAndIncrementAsync("user_abc", isAnonymous: false);
 
@@ -183,7 +193,7 @@ public class UsageServiceTests
             (string.Empty, new { result = "5" }),
             (string.Empty, new { result = 6L }),
             (string.Empty, new { result = 1L }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var result = await service.CheckAndIncrementAsync("user_abc", isAnonymous: false);
 
@@ -201,7 +211,7 @@ public class UsageServiceTests
             (string.Empty, new { result = "pro" }),
             (string.Empty, new { result = "999" }),
             (string.Empty, new { result = 1000L }));
-        var service = new UsageService(BuildConfig(), http);
+        var service = CreateRedisUsageService(BuildConfig(), http);
 
         var result = await service.CheckAndIncrementAsync("user_pro", isAnonymous: false);
 

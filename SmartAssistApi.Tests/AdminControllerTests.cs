@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using SmartAssistApi.Controllers;
+using SmartAssistApi.Data;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -11,6 +14,16 @@ namespace SmartAssistApi.Tests;
 
 public class AdminControllerTests
 {
+    private static Mock<TokenTrackingService> CreateTrackingMock(IConfiguration config)
+    {
+        var opt = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        opt.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, TokenUsageStorage = "redis" });
+        return new Mock<TokenTrackingService>(
+            opt.Object,
+            new TokenTrackingRedisService(config, new HttpClient(), Mock.Of<ILogger<TokenTrackingRedisService>>()),
+            new ServiceCollection().BuildServiceProvider());
+    }
+
     private static Dictionary<string, string?> BaseConfig(string adminCsv) => new()
     {
         ["Admin:UserIds"] = adminCsv,
@@ -28,7 +41,7 @@ public class AdminControllerTests
         var clerk = new Mock<ClerkAuthService>();
         clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("normal-user", false));
 
-        var tracking = new Mock<TokenTrackingService>(config, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
+        var tracking = CreateTrackingMock(config);
         var controller = new AdminController(tracking.Object, clerk.Object, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -47,7 +60,7 @@ public class AdminControllerTests
         var clerk = new Mock<ClerkAuthService>();
         clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("normal-user", false));
 
-        var tracking = new Mock<TokenTrackingService>(config, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
+        var tracking = CreateTrackingMock(config);
         tracking
             .Setup(t => t.GetDashboardDataAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AdminDashboardData());
@@ -71,7 +84,7 @@ public class AdminControllerTests
         var clerk = new Mock<ClerkAuthService>();
         clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("any-user", false));
 
-        var tracking = new Mock<TokenTrackingService>(config, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
+        var tracking = CreateTrackingMock(config);
         var controller = new AdminController(tracking.Object, clerk.Object, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },

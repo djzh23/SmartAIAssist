@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using SmartAssistApi.Controllers;
+using SmartAssistApi.Data;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -25,7 +28,9 @@ public class SpeechControllerTests
                 ["Upstash:RestToken"] = "fake-token",
             })
             .Build();
-        _usageMock = new Mock<UsageService>(config, new HttpClient());
+        var usageOpts = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        usageOpts.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, UsageStorage = "redis", TokenUsageStorage = "redis" });
+        _usageMock = new Mock<UsageService>(usageOpts.Object, new UsageRedisService(config, new HttpClient()), new ServiceCollection().BuildServiceProvider());
     }
 
     private SpeechController CreateController() =>

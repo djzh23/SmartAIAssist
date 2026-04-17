@@ -2,9 +2,12 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using SmartAssistApi.Controllers;
+using SmartAssistApi.Data;
 using SmartAssistApi.Services;
 
 namespace SmartAssistApi.Tests;
@@ -33,7 +36,9 @@ public class StripeControllerTests
             })
             .Build();
 
-        _usageServiceMock = new Mock<UsageService>(_config, new HttpClient());
+        var usageOpts = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        usageOpts.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, UsageStorage = "redis", TokenUsageStorage = "redis" });
+        _usageServiceMock = new Mock<UsageService>(usageOpts.Object, new UsageRedisService(_config, new HttpClient()), new ServiceCollection().BuildServiceProvider());
 
         var stripeApiMock = new Mock<IStripeApiClient>();
         var stripeLoggerMock = new Mock<ILogger<StripeService>>();

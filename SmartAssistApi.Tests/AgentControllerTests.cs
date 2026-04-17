@@ -36,8 +36,20 @@ public class AgentControllerTests
             })
             .Build();
 
-        _usageMock = new Mock<UsageService>(_config, new HttpClient());
-        _tokenTrackingMock = new Mock<TokenTrackingService>(_config, new HttpClient(), Mock.Of<ILogger<TokenTrackingService>>());
+        var optMock = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        optMock.Setup(o => o.Value).Returns(new DatabaseFeatureOptions
+        {
+            PostgresEnabled = false,
+            ChatSessionStorage = "redis",
+            TokenUsageStorage = "redis",
+            UsageStorage = "redis",
+        });
+        var sp = new ServiceCollection().BuildServiceProvider();
+        _usageMock = new Mock<UsageService>(optMock.Object, new UsageRedisService(_config, new HttpClient()), sp);
+        _tokenTrackingMock = new Mock<TokenTrackingService>(
+            optMock.Object,
+            new TokenTrackingRedisService(_config, new HttpClient(), Mock.Of<ILogger<TokenTrackingRedisService>>()),
+            sp);
         _tokenTrackingMock
             .Setup(t => t.TrackUsageAsync(
                 It.IsAny<string>(),
@@ -48,11 +60,11 @@ public class AgentControllerTests
                 It.IsAny<int>(),
                 It.IsAny<int>()))
             .Returns(Task.CompletedTask);
+        _usageMock.Setup(u => u.GetBackendInfo()).Returns(new UsageBackendInfo("redis", "redis", false, null));
+        _tokenTrackingMock.Setup(t => t.GetBackendInfo()).Returns(new TokenTrackingBackendInfo("redis", "redis", false, null));
 
-        var optMock = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
-        optMock.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, ChatSessionStorage = "redis" });
         var redis = new ChatSessionRedisService(_redisStoreMock.Object, NullLogger<ChatSessionRedisService>.Instance);
-        _chatSessionService = new ChatSessionService(optMock.Object, redis, new ServiceCollection().BuildServiceProvider());
+        _chatSessionService = new ChatSessionService(optMock.Object, redis, sp);
     }
 
     private AgentController CreateController()

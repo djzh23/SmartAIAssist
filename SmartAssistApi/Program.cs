@@ -103,6 +103,8 @@ if (registerPostgres)
     builder.Services.AddScoped<CareerProfilePostgresService>();
     builder.Services.AddScoped<ChatSessionPostgresService>();
     builder.Services.AddScoped<LearningMemoryPostgresService>();
+    builder.Services.AddScoped<UsagePostgresService>();
+    builder.Services.AddScoped<TokenTrackingPostgresService>();
 }
 
 var databaseFeaturesPreview = builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName)
@@ -127,10 +129,12 @@ builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());
 builder.Services.AddScoped<ILlmSingleCompletionService, AgentLlmSingleCompletionService>();
 builder.Services.AddHttpClient<ISpeechService, AzureSpeechService>();
-builder.Services.AddHttpClient<UsageService>();
+builder.Services.AddHttpClient<UsageRedisService>();
+builder.Services.AddScoped<UsageService>();
 builder.Services.AddHttpClient<CareerProfileRedisService>();
 builder.Services.AddScoped<CareerProfileRedisService>();
-builder.Services.AddHttpClient<TokenTrackingService>();
+builder.Services.AddHttpClient<TokenTrackingRedisService>();
+builder.Services.AddScoped<TokenTrackingService>();
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
 builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<UpstashRedisStringStore>());
 builder.Services.AddScoped<LearningMemoryRedisService>();
@@ -185,7 +189,15 @@ builder.Services.AddCors(options =>
                 "X-Learning-Memory-Effective-Storage",
                 "X-Learning-Memory-Configured-Storage",
                 "X-Learning-Memory-Degraded",
-                "X-Learning-Memory-Degraded-Reason");
+                "X-Learning-Memory-Degraded-Reason",
+                "X-Daily-Usage-Effective-Storage",
+                "X-Daily-Usage-Configured-Storage",
+                "X-Daily-Usage-Degraded",
+                "X-Daily-Usage-Degraded-Reason",
+                "X-Token-Usage-Effective-Storage",
+                "X-Token-Usage-Configured-Storage",
+                "X-Token-Usage-Degraded",
+                "X-Token-Usage-Degraded-Reason");
     });
 });
 
@@ -264,6 +276,24 @@ if (databaseFeaturesPreview.PostgresEnabled
     startupLogger.LogWarning(
         "DatabaseFeatures: LearningMemoryStorage=postgres but no valid Supabase connection was resolved. "
         + "Learning memory will use Redis until a valid Postgres connection is available.");
+}
+
+if (databaseFeaturesPreview.PostgresEnabled
+    && string.Equals(databaseFeaturesPreview.TokenUsageStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(supabaseConnectionString))
+{
+    startupLogger.LogWarning(
+        "DatabaseFeatures: TokenUsageStorage=postgres but no valid Supabase connection was resolved. "
+        + "Token usage metrics will use Redis until a valid Postgres connection is available.");
+}
+
+if (databaseFeaturesPreview.PostgresEnabled
+    && string.Equals(databaseFeaturesPreview.UsageStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(supabaseConnectionString))
+{
+    startupLogger.LogWarning(
+        "DatabaseFeatures: UsageStorage=postgres but no valid Supabase connection was resolved. "
+        + "Daily usage limits will use Redis until a valid Postgres connection is available.");
 }
 var azureSpeechKey = app.Configuration["AZURE_SPEECH_KEY"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
 if (string.IsNullOrWhiteSpace(azureSpeechKey))

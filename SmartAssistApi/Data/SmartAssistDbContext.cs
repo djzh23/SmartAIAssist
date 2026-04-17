@@ -19,6 +19,20 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<LearningMemoryEntity> LearningMemories => Set<LearningMemoryEntity>();
 
+    public DbSet<TokenUsageGlobalDailyEntity> TokenUsageGlobalDaily => Set<TokenUsageGlobalDailyEntity>();
+
+    public DbSet<TokenUsageDailyUserEntity> TokenUsageDailyUsers => Set<TokenUsageDailyUserEntity>();
+
+    public DbSet<TokenUsageDailyUserModelEntity> TokenUsageDailyUserModels => Set<TokenUsageDailyUserModelEntity>();
+
+    public DbSet<TokenUsageDailyUserToolEntity> TokenUsageDailyUserTools => Set<TokenUsageDailyUserToolEntity>();
+
+    public DbSet<TokenUsageRegisteredUserEntity> TokenUsageRegisteredUsers => Set<TokenUsageRegisteredUserEntity>();
+
+    public DbSet<UserUsageDailyEntity> UserUsageDaily => Set<UserUsageDailyEntity>();
+
+    public DbSet<UserPlanEntity> UserPlans => Set<UserPlanEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppUserEntity>(e =>
@@ -65,6 +79,51 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
         modelBuilder.Entity<LearningMemoryEntity>(e =>
         {
             e.ToTable("learning_memories");
+            e.HasKey(x => x.ClerkUserId);
+        });
+
+        modelBuilder.Entity<TokenUsageGlobalDailyEntity>(e =>
+        {
+            e.ToTable("token_usage_global_daily");
+            e.HasKey(x => x.UsageDate);
+        });
+
+        modelBuilder.Entity<TokenUsageDailyUserEntity>(e =>
+        {
+            e.ToTable("token_usage_daily_user");
+            e.HasKey(x => new { x.ClerkUserId, x.UsageDate });
+            e.Property(x => x.CostUsd).HasPrecision(18, 6);
+        });
+
+        modelBuilder.Entity<TokenUsageDailyUserModelEntity>(e =>
+        {
+            e.ToTable("token_usage_daily_user_model");
+            e.HasKey(x => new { x.ClerkUserId, x.UsageDate, x.ModelKey });
+            e.Property(x => x.CostUsd).HasPrecision(18, 6);
+        });
+
+        modelBuilder.Entity<TokenUsageDailyUserToolEntity>(e =>
+        {
+            e.ToTable("token_usage_daily_user_tool");
+            e.HasKey(x => new { x.ClerkUserId, x.UsageDate, x.Tool });
+            e.Property(x => x.CostUsd).HasPrecision(18, 6);
+        });
+
+        modelBuilder.Entity<TokenUsageRegisteredUserEntity>(e =>
+        {
+            e.ToTable("token_usage_registered_users");
+            e.HasKey(x => x.ClerkUserId);
+        });
+
+        modelBuilder.Entity<UserUsageDailyEntity>(e =>
+        {
+            e.ToTable("user_usage_daily");
+            e.HasKey(x => new { x.ClerkUserId, x.UsageDate });
+        });
+
+        modelBuilder.Entity<UserPlanEntity>(e =>
+        {
+            e.ToTable("user_plan");
             e.HasKey(x => x.ClerkUserId);
         });
     }
