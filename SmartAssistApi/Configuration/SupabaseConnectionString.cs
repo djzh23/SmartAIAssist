@@ -38,6 +38,7 @@ public static class SupabaseConnectionString
             try
             {
                 var builder = new NpgsqlConnectionStringBuilder(normalized);
+                SanitizeConnectionTimeouts(builder);
                 return new SupabaseConnectionResolution(builder.ConnectionString, key, null);
             }
             catch (ArgumentException ex)
@@ -75,5 +76,21 @@ public static class SupabaseConnectionString
             && ((s[0] == '"' && s[^1] == '"') || (s[0] == '\'' && s[^1] == '\'')))
             s = s[1..^1].Trim();
         return s;
+    }
+
+    /// <summary>
+    /// Very large or zero <see cref="NpgsqlConnectionStringBuilder.Timeout"/> values have caused
+    /// <see cref="OverflowException"/> inside Npgsql connect (internal TimeSpan math). Clamp to safe bounds.
+    /// </summary>
+    private static void SanitizeConnectionTimeouts(NpgsqlConnectionStringBuilder builder)
+    {
+        if (builder.Timeout < 1)
+            builder.Timeout = 15;
+        else if (builder.Timeout > 600)
+            builder.Timeout = 300;
+
+        // Command Timeout: leave 0 (driver default); clamp only absurd positive values.
+        if (builder.CommandTimeout > 0 && builder.CommandTimeout > 600)
+            builder.CommandTimeout = 300;
     }
 }

@@ -64,6 +64,7 @@ Notes:
 
 - App supports Render `PORT` automatically.
 - CORS accepts local dev origins plus configured production origins.
+- If Postgres connects over IPv6 but Render reports **Network is unreachable**, set **`DOTNET_SYSTEM_NET_DISABLEIPV6=1`** on the API service (see [.NET networking config](https://learn.microsoft.com/en-us/dotnet/core/runtime-config/networking)); do not rely on a custom MSBuild switch in the repo for that.
 
 ## 5) Production React frontend (SmartAssist-react)
 

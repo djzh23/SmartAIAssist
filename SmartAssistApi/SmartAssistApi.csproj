@@ -5,10 +5,6 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UserSecretsId>smartassistapi-31e7bfee-4f6f-470c-9a75-tts</UserSecretsId>
 	</PropertyGroup>
-	<!-- Render outbound often cannot reach Supabase's IPv6 (AAAA); prefer IPv4 for Npgsql. -->
-	<ItemGroup>
-		<RuntimeHostConfigurationOption Include="System.Net.DisableIPv6" Value="true" />
-	</ItemGroup>
 	<ItemGroup>
 		<InternalsVisibleTo Include="SmartAssistApi.Tests" />
 	</ItemGroup>
