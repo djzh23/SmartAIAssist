@@ -12,6 +12,19 @@ namespace SmartAssistApi.Controllers;
 [EnableRateLimiting("sessions")]
 public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService chatSessions) : ControllerBase
 {
+    private void SetChatSessionStorageHeaders()
+    {
+        var info = chatSessions.GetBackendInfo();
+        Response.Headers["X-Chat-Sessions-Effective-Storage"] = info.EffectiveStorage;
+        Response.Headers["X-Chat-Sessions-Configured-Storage"] = info.ConfiguredChatSessionStorage;
+        if (info.Degraded)
+        {
+            Response.Headers["X-Chat-Sessions-Degraded"] = "true";
+            if (!string.IsNullOrEmpty(info.DegradedReason))
+                Response.Headers["X-Chat-Sessions-Degraded-Reason"] = info.DegradedReason;
+        }
+    }
+
     private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
     {
         userId = auth.userId ?? string.Empty;
@@ -26,6 +39,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
             return Unauthorized();
 
         var rows = await chatSessions.LoadIndexAsync(userId, cancellationToken).ConfigureAwait(false);
+        SetChatSessionStorageHeaders();
         return Ok(rows);
     }
 
@@ -57,6 +71,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         list.Insert(0, row);
         await chatSessions.SaveIndexAsync(userId, list, cancellationToken).ConfigureAwait(false);
         await chatSessions.SaveTranscriptAsync(userId, id, tool, "[]", cancellationToken).ConfigureAwait(false);
+        SetChatSessionStorageHeaders();
         return Ok(row);
     }
 
@@ -86,6 +101,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         }
 
         await chatSessions.SaveIndexAsync(userId, reordered, cancellationToken).ConfigureAwait(false);
+        SetChatSessionStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -110,6 +126,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
             messages = JsonSerializer.SerializeToElement(Array.Empty<object>());
         }
 
+        SetChatSessionStorageHeaders();
         return Ok(new { toolType = t.Value.ToolType, messages });
     }
 
@@ -127,12 +144,13 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         var tool = string.IsNullOrWhiteSpace(body.ToolType) ? "general" : body.ToolType.Trim();
         var messagesJson = System.Text.Json.JsonSerializer.Serialize(body.Messages);
         await chatSessions.SaveTranscriptAsync(userId, sessionId, tool, messagesJson, cancellationToken).ConfigureAwait(false);
+        SetChatSessionStorageHeaders();
         return Ok(new { success = true });
     }
 
     public sealed record PatchSessionTitleBody([StringLength(120)] string? Title);
 
-    /// <summary>Rename a chat tab (session list title in Redis index).</summary>
+    /// <summary>Rename a chat tab (session list title in the persisted index).</summary>
     [HttpPatch("{sessionId}")]
     public async Task<IActionResult> PatchTitle(string sessionId, [FromBody] PatchSessionTitleBody body, CancellationToken cancellationToken)
     {
@@ -153,6 +171,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
 
         row.Title = trimmed;
         await chatSessions.SaveIndexAsync(userId, list, cancellationToken).ConfigureAwait(false);
+        SetChatSessionStorageHeaders();
         return Ok(row);
     }
 
@@ -167,6 +186,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         var next = list.Where(r => !string.Equals(r.Id, sessionId, StringComparison.Ordinal)).ToList();
         await chatSessions.SaveIndexAsync(userId, next, cancellationToken).ConfigureAwait(false);
         await chatSessions.DeleteTranscriptAsync(userId, sessionId, cancellationToken).ConfigureAwait(false);
+        SetChatSessionStorageHeaders();
         return Ok(new { success = true });
     }
 }

@@ -1,6 +1,6 @@
 # Database migrations (Supabase / PostgreSQL)
 
-Run SQL files **in order** (`001` → `002` → `003` → `004`) in the Supabase SQL Editor (or your CI migration step) against the project database.
+Run SQL files **in order** (`001` → `005`) in the Supabase SQL Editor (or your CI migration step) against the project database.
 
 | File | Purpose |
 |------|---------|
@@ -8,6 +8,7 @@ Run SQL files **in order** (`001` → `002` → `003` → `004`) in the Supabase
 | `002_chat_notes.sql` | `chat_notes` + FK to `app_users` |
 | `003_job_applications.sql` | `job_applications` + FK to `app_users` |
 | `004_career_profiles.sql` | `career_profiles` + FK to `app_users` |
+| `005_chat_sessions.sql` | `chat_sessions` + `chat_transcripts` + FK to `app_users` |
 
 ## Backfill chat notes from Redis (manual)
 
@@ -35,6 +36,13 @@ When `DatabaseFeatures:CareerProfileStorage` is `postgres`:
 1. Ensure `004_career_profiles.sql` is applied.
 2. Use `POST /api/admin/migrations/backfill-career-profile/{userId}` (admin-only) to copy `profile:{userId}`, `profile:{userId}:cv_raw`, and `profile_version:{userId}` into Postgres.
 3. Test on staging first.
+
+## Chat sessions: Postgres vs Redis
+
+When `DatabaseFeatures:ChatSessionStorage` is `postgres`, the API stores the session list in `chat_sessions` and message arrays in `chat_transcripts` (instead of Upstash keys `chat_sessions_index:{userId}` and `chat_transcript:{userId}:{sessionId}`). This reduces Redis command volume for list/sync traffic.
+
+1. Ensure `005_chat_sessions.sql` is applied and `app_users` contains the Clerk user id (same FK requirement as other tables).
+2. Optional: `POST /api/admin/migrations/backfill-chat-sessions/{userId}` (admin-only) copies the Redis index + transcripts for one user into Postgres. Test on staging first.
 
 ## Troubleshooting: empty tables but Redis works
 

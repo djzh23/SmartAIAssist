@@ -105,6 +105,47 @@ public class AdminController(
         }
     }
 
+    /// <summary>
+    /// Copies <c>chat_sessions_index:{userId}</c> and <c>chat_transcript:{userId}:{sessionId}</c> from Redis into Postgres.
+    /// Requires <c>005_chat_sessions.sql</c> and a valid Supabase connection. Test on staging first.
+    /// </summary>
+    [HttpPost("migrations/backfill-chat-sessions/{userId}")]
+    public async Task<IActionResult> BackfillChatSessions(
+        string userId,
+        [FromServices] ChatSessionRedisService redisSessions,
+        [FromServices] IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+            return Forbid();
+
+        if (string.IsNullOrWhiteSpace(userId))
+            return BadRequest(new { error = "userId_required" });
+
+        var pg = services.GetService(typeof(ChatSessionPostgresService)) as ChatSessionPostgresService;
+        if (pg is null)
+        {
+            return StatusCode(
+                503,
+                new
+                {
+                    error = "postgres_not_configured",
+                    message = "No Supabase/EF connection. Set DATABASE_URL or ConnectionStrings:Supabase.",
+                });
+        }
+
+        try
+        {
+            await pg.ImportFromRedisAsync(userId, redisSessions, cancellationToken).ConfigureAwait(false);
+            return Ok(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Backfill chat sessions failed for {UserId}", userId);
+            return StatusCode(500, new { error = "backfill_failed", message = ex.Message });
+        }
+    }
+
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
     {

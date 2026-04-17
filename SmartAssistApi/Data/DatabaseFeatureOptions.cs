@@ -16,4 +16,7 @@ public sealed class DatabaseFeatureOptions
 
     /// <summary><c>redis</c> (default) or <c>postgres</c> for career profile (<c>/api/profile</c>).</summary>
     public string CareerProfileStorage { get; set; } = "redis";
+
+    /// <summary><c>redis</c> (default) or <c>postgres</c> for chat session index + transcripts (<c>/api/sessions</c>).</summary>
+    public string ChatSessionStorage { get; set; } = "redis";
 }

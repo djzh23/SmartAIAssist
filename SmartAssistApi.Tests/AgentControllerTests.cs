@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using SmartAssistApi.Controllers;
+using SmartAssistApi.Data;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -46,7 +49,10 @@ public class AgentControllerTests
                 It.IsAny<int>()))
             .Returns(Task.CompletedTask);
 
-        _chatSessionService = new ChatSessionService(_redisStoreMock.Object, NullLogger<ChatSessionService>.Instance);
+        var optMock = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        optMock.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, ChatSessionStorage = "redis" });
+        var redis = new ChatSessionRedisService(_redisStoreMock.Object, NullLogger<ChatSessionRedisService>.Instance);
+        _chatSessionService = new ChatSessionService(optMock.Object, redis, new ServiceCollection().BuildServiceProvider());
     }
 
     private AgentController CreateController()

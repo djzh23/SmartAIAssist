@@ -101,6 +101,7 @@ if (registerPostgres)
     builder.Services.AddScoped<ChatNotesPostgresService>();
     builder.Services.AddScoped<ApplicationsPostgresService>();
     builder.Services.AddScoped<CareerProfilePostgresService>();
+    builder.Services.AddScoped<ChatSessionPostgresService>();
 }
 
 var databaseFeaturesPreview = builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName)
@@ -132,6 +133,7 @@ builder.Services.AddHttpClient<LearningMemoryService>();
 builder.Services.AddHttpClient<TokenTrackingService>();
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
 builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<UpstashRedisStringStore>());
+builder.Services.AddScoped<ChatSessionRedisService>();
 builder.Services.AddScoped<ChatSessionService>();
 builder.Services.AddScoped<ChatNotesRedisService>();
 builder.Services.AddScoped<ChatNotesService>();
@@ -173,7 +175,11 @@ builder.Services.AddCors(options =>
                 "X-Career-Profile-Effective-Storage",
                 "X-Career-Profile-Configured-Storage",
                 "X-Career-Profile-Degraded",
-                "X-Career-Profile-Degraded-Reason");
+                "X-Career-Profile-Degraded-Reason",
+                "X-Chat-Sessions-Effective-Storage",
+                "X-Chat-Sessions-Configured-Storage",
+                "X-Chat-Sessions-Degraded",
+                "X-Chat-Sessions-Degraded-Reason");
     });
 });
 
@@ -234,6 +240,15 @@ if (databaseFeaturesPreview.PostgresEnabled
     startupLogger.LogWarning(
         "DatabaseFeatures: CareerProfileStorage=postgres but no valid Supabase connection was resolved. "
         + "Career profile will use Redis until a valid Postgres connection is available.");
+}
+
+if (databaseFeaturesPreview.PostgresEnabled
+    && string.Equals(databaseFeaturesPreview.ChatSessionStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(supabaseConnectionString))
+{
+    startupLogger.LogWarning(
+        "DatabaseFeatures: ChatSessionStorage=postgres but no valid Supabase connection was resolved. "
+        + "Chat sessions will use Redis until a valid Postgres connection is available.");
 }
 var azureSpeechKey = app.Configuration["AZURE_SPEECH_KEY"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
 if (string.IsNullOrWhiteSpace(azureSpeechKey))

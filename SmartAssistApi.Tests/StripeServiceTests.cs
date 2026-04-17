@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using SmartAssistApi.Controllers;
+using SmartAssistApi.Data;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 using Stripe;
@@ -205,9 +208,14 @@ public class StripeServiceTests
                 It.IsAny<int>()))
             .Returns(Task.CompletedTask);
 
+        var optMock = new Mock<IOptionsSnapshot<DatabaseFeatureOptions>>();
+        optMock.Setup(o => o.Value).Returns(new DatabaseFeatureOptions { PostgresEnabled = false, ChatSessionStorage = "redis" });
         var chatSessions = new ChatSessionService(
-            Mock.Of<IRedisStringStore>(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatSessionService>.Instance);
+            optMock.Object,
+            new ChatSessionRedisService(
+                Mock.Of<IRedisStringStore>(),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatSessionRedisService>.Instance),
+            new ServiceCollection().BuildServiceProvider());
         var controller = new AgentController(
             agentServiceMock.Object,
             new ConversationService(),

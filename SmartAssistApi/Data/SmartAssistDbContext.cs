@@ -13,6 +13,10 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<CareerProfileEntity> CareerProfiles => Set<CareerProfileEntity>();
 
+    public DbSet<ChatSessionEntity> ChatSessions => Set<ChatSessionEntity>();
+
+    public DbSet<ChatTranscriptEntity> ChatTranscripts => Set<ChatTranscriptEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppUserEntity>(e =>
@@ -41,6 +45,19 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
             e.ToTable("career_profiles");
             e.HasKey(x => x.ClerkUserId);
             e.HasIndex(x => x.UpdatedAt);
+        });
+
+        modelBuilder.Entity<ChatSessionEntity>(e =>
+        {
+            e.ToTable("chat_sessions");
+            e.HasKey(x => new { x.ClerkUserId, x.SessionId });
+            e.HasIndex(x => new { x.ClerkUserId, x.DisplayOrder });
+        });
+
+        modelBuilder.Entity<ChatTranscriptEntity>(e =>
+        {
+            e.ToTable("chat_transcripts");
+            e.HasKey(x => new { x.ClerkUserId, x.SessionId });
         });
     }
 }
