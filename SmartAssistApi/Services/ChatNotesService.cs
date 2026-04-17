@@ -13,11 +13,13 @@ public readonly record struct ChatNotesBackendInfo(
 
 /// <summary>
 /// Routes chat-notes persistence to Redis or PostgreSQL based on <see cref="DatabaseFeatureOptions"/>.
+/// Falls back to Redis transparently if a Postgres call throws at runtime.
 /// </summary>
 public sealed class ChatNotesService(
     IOptionsSnapshot<DatabaseFeatureOptions> options,
     ChatNotesRedisService redis,
-    IServiceProvider serviceProvider)
+    IServiceProvider serviceProvider,
+    ILogger<ChatNotesService> logger)
 {
     private readonly DatabaseFeatureOptions _opts = options.Value;
 
@@ -46,40 +48,70 @@ public sealed class ChatNotesService(
         return new ChatNotesBackendInfo(effective, configured, degraded, reason);
     }
 
-    public Task<IReadOnlyList<ChatNoteRecord>> ListAsync(string userId, CancellationToken cancellationToken = default) =>
-        UsePostgres
-            ? Postgres!.ListAsync(userId, cancellationToken)
-            : redis.ListAsync(userId, cancellationToken);
+    public async Task<IReadOnlyList<ChatNoteRecord>> ListAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (UsePostgres)
+        {
+            try { return await Postgres!.ListAsync(userId, cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { logger.LogError(ex, "Postgres ListAsync failed; falling back to Redis"); }
+        }
+        return await redis.ListAsync(userId, cancellationToken).ConfigureAwait(false);
+    }
 
-    public Task<ChatNoteRecord?> GetByIdAsync(string userId, string noteId, CancellationToken cancellationToken = default) =>
-        UsePostgres
-            ? Postgres!.GetByIdAsync(userId, noteId, cancellationToken)
-            : redis.GetByIdAsync(userId, noteId, cancellationToken);
+    public async Task<ChatNoteRecord?> GetByIdAsync(string userId, string noteId, CancellationToken cancellationToken = default)
+    {
+        if (UsePostgres)
+        {
+            try { return await Postgres!.GetByIdAsync(userId, noteId, cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { logger.LogError(ex, "Postgres GetByIdAsync failed; falling back to Redis"); }
+        }
+        return await redis.GetByIdAsync(userId, noteId, cancellationToken).ConfigureAwait(false);
+    }
 
-    public Task<ChatNoteRecord> CreateAsync(
+    public async Task<ChatNoteRecord> CreateAsync(
         string userId,
         string title,
         string body,
         IReadOnlyList<string> tags,
         ChatNoteSource? source,
-        CancellationToken cancellationToken = default) =>
-        UsePostgres
-            ? Postgres!.CreateAsync(userId, title, body, tags, source, cancellationToken)
-            : redis.CreateAsync(userId, title, body, tags, source, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        if (UsePostgres)
+        {
+            try { return await Postgres!.CreateAsync(userId, title, body, tags, source, cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { logger.LogError(ex, "Postgres CreateAsync failed; falling back to Redis"); }
+        }
+        return await redis.CreateAsync(userId, title, body, tags, source, cancellationToken).ConfigureAwait(false);
+    }
 
-    public Task<ChatNoteRecord?> UpdateAsync(
+    public async Task<ChatNoteRecord?> UpdateAsync(
         string userId,
         string noteId,
         string? title,
         string? body,
         IReadOnlyList<string>? tags,
-        CancellationToken cancellationToken = default) =>
-        UsePostgres
-            ? Postgres!.UpdateAsync(userId, noteId, title, body, tags, cancellationToken)
-            : redis.UpdateAsync(userId, noteId, title, body, tags, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        if (UsePostgres)
+        {
+            try { return await Postgres!.UpdateAsync(userId, noteId, title, body, tags, cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { logger.LogError(ex, "Postgres UpdateAsync failed; falling back to Redis"); }
+        }
+        return await redis.UpdateAsync(userId, noteId, title, body, tags, cancellationToken).ConfigureAwait(false);
+    }
 
-    public Task<bool> DeleteAsync(string userId, string noteId, CancellationToken cancellationToken = default) =>
-        UsePostgres
-            ? Postgres!.DeleteAsync(userId, noteId, cancellationToken)
-            : redis.DeleteAsync(userId, noteId, cancellationToken);
+    public async Task<bool> DeleteAsync(string userId, string noteId, CancellationToken cancellationToken = default)
+    {
+        if (UsePostgres)
+        {
+            try { return await Postgres!.DeleteAsync(userId, noteId, cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { logger.LogError(ex, "Postgres DeleteAsync failed; falling back to Redis"); }
+        }
+        return await redis.DeleteAsync(userId, noteId, cancellationToken).ConfigureAwait(false);
+    }
 }

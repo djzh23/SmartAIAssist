@@ -210,6 +210,41 @@ if (string.IsNullOrWhiteSpace(azureSpeechKey))
         "Azure Speech API key is not configured. TTS will fail. Set AZURE_SPEECH_KEY as an environment variable.");
 }
 
+// Auto-create Supabase tables (EnsureCreated is a no-op when they already exist).
+// This runs at startup so the first request never hits a "relation does not exist" error.
+if (registerPostgres)
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SmartAssistDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        startupLogger.LogInformation("Supabase: database schema verified.");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogWarning(ex,
+            "Supabase: could not verify/create database schema at startup. "
+            + "Chat notes will fall back to Redis on first use if Postgres is still unreachable.");
+    }
+}
+
+// Global exception handler — must be first so CORS headers are always present,
+// even when an unhandled exception would otherwise reset the response.
+app.UseExceptionHandler(exApp => exApp.Run(async context =>
+{
+    var origin = context.Request.Headers.Origin.ToString();
+    if (!string.IsNullOrEmpty(origin)
+        && allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+    {
+        context.Response.Headers["Access-Control-Allow-Origin"] = origin;
+        context.Response.Headers.Vary = "Origin";
+    }
+    context.Response.StatusCode = 500;
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsJsonAsync(new { error = "internal_server_error" });
+}));
+
 app.UseRouting();
 app.UseCors("SmartAssistWeb");
 
