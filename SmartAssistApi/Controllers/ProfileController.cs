@@ -15,6 +15,19 @@ public class ProfileController(
     CvParsingService cvParsingService,
     ILogger<ProfileController> logger) : ControllerBase
 {
+    private void SetCareerProfileStorageHeaders()
+    {
+        var info = profileService.GetBackendInfo();
+        Response.Headers["X-Career-Profile-Effective-Storage"] = info.EffectiveStorage;
+        Response.Headers["X-Career-Profile-Configured-Storage"] = info.ConfiguredCareerProfileStorage;
+        if (info.Degraded)
+        {
+            Response.Headers["X-Career-Profile-Degraded"] = "true";
+            if (!string.IsNullOrEmpty(info.DegradedReason))
+                Response.Headers["X-Career-Profile-Degraded-Reason"] = info.DegradedReason;
+        }
+    }
+
     private static void NormalizeProfileLists(CareerProfile profile)
     {
         profile.Goals ??= new List<string>();
@@ -36,6 +49,7 @@ public class ProfileController(
         try
         {
             var profile = await profileService.GetProfile(userId);
+            SetCareerProfileStorageHeaders();
             return Ok(profile ?? new CareerProfile { UserId = userId });
         }
         catch (Exception ex)
@@ -65,6 +79,7 @@ public class ProfileController(
             request.LevelLabel,
             request.CurrentRole,
             request.Goals ?? new List<string>());
+        SetCareerProfileStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -78,6 +93,7 @@ public class ProfileController(
             return Unauthorized();
 
         await profileService.SkipOnboardingAsync(userId);
+        SetCareerProfileStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -90,6 +106,7 @@ public class ProfileController(
             return Unauthorized();
 
         await profileService.SetSkills(userId, request.Skills ?? new List<string>());
+        SetCareerProfileStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -105,6 +122,7 @@ public class ProfileController(
             return BadRequest(new { error = "CV-Text darf nicht leer sein." });
 
         await profileService.SetCvText(userId, request.Text);
+        SetCareerProfileStorageHeaders();
         return Ok(new { success = true, length = request.Text.Length });
     }
 
@@ -146,6 +164,7 @@ public class ProfileController(
 
             await profileService.SetCvText(userId, rawText).ConfigureAwait(false);
 
+            SetCareerProfileStorageHeaders();
             return Ok(new
             {
                 success = true,
@@ -171,6 +190,7 @@ public class ProfileController(
         try
         {
             var jobId = await profileService.AddTargetJob(userId, request.Title, request.Company, request.Description);
+            SetCareerProfileStorageHeaders();
             return Ok(new { success = true, id = jobId });
         }
         catch (InvalidOperationException ex)
@@ -188,6 +208,7 @@ public class ProfileController(
             return Unauthorized();
 
         await profileService.RemoveTargetJob(userId, jobId);
+        SetCareerProfileStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -210,6 +231,7 @@ public class ProfileController(
         try
         {
             await profileService.SaveProfile(userId, profile);
+            SetCareerProfileStorageHeaders();
             return Ok(new { success = true });
         }
         catch (Exception ex)

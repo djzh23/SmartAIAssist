@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
 
@@ -6,23 +5,9 @@ namespace SmartAssistApi.Tests.Services;
 
 public class CareerProfileServiceTests
 {
-    private static CareerProfileService CreateService()
-    {
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Upstash:RestUrl"] = "https://example.invalid",
-            ["Upstash:RestToken"] = "test",
-        }).Build();
-        return new CareerProfileService(
-            config,
-            new HttpClient(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<CareerProfileService>.Instance);
-    }
-
     [Fact]
     public void BuildProfileContext_WithBasicProfile_ReturnsFormattedString()
     {
-        var service = CreateService();
         var profile = new CareerProfile
         {
             Field = "it",
@@ -34,7 +19,7 @@ public class CareerProfileServiceTests
         };
         var toggles = new ProfileContextToggles { IncludeBasicProfile = true };
 
-        var result = service.BuildProfileContext(profile, toggles);
+        var result = CareerProfileContextBuilder.Build(profile, toggles);
 
         Assert.Contains("[NUTZERPROFIL]", result);
         Assert.Contains("IT / Softwareentwicklung", result);
@@ -46,7 +31,6 @@ public class CareerProfileServiceTests
     [Fact]
     public void BuildProfileContext_WithAllTogglesOff_ReturnsEmpty()
     {
-        var service = CreateService();
         var profile = new CareerProfile
         {
             FieldLabel = "IT",
@@ -61,7 +45,7 @@ public class CareerProfileServiceTests
             ActiveTargetJobId = null,
         };
 
-        var result = service.BuildProfileContext(profile, toggles);
+        var result = CareerProfileContextBuilder.Build(profile, toggles);
 
         Assert.Empty(result);
     }
@@ -69,7 +53,6 @@ public class CareerProfileServiceTests
     [Fact]
     public void BuildProfileContext_WithSkills_IncludesSkillsList()
     {
-        var service = CreateService();
         var profile = new CareerProfile
         {
             Skills = new List<string> { "React", "TypeScript", "Node.js" },
@@ -80,7 +63,7 @@ public class CareerProfileServiceTests
             IncludeSkills = true,
         };
 
-        var result = service.BuildProfileContext(profile, toggles);
+        var result = CareerProfileContextBuilder.Build(profile, toggles);
 
         Assert.Contains("React, TypeScript, Node.js", result);
     }
@@ -88,7 +71,6 @@ public class CareerProfileServiceTests
     [Fact]
     public void BuildProfileContext_WithTargetJob_IncludesJobDetails()
     {
-        var service = CreateService();
         var profile = new CareerProfile
         {
             TargetJobs = new List<TargetJob>
@@ -102,7 +84,7 @@ public class CareerProfileServiceTests
             ActiveTargetJobId = "abc12345",
         };
 
-        var result = service.BuildProfileContext(profile, toggles);
+        var result = CareerProfileContextBuilder.Build(profile, toggles);
 
         Assert.Contains("Senior Developer", result);
         Assert.Contains("SAP", result);
@@ -112,7 +94,6 @@ public class CareerProfileServiceTests
     [Fact]
     public void BuildProfileContext_CvText_LimitedTo500CharsInExcerpt()
     {
-        var service = CreateService();
         var longCv = new string('X', 1000);
         var profile = new CareerProfile { CvRawText = longCv };
         var toggles = new ProfileContextToggles
@@ -121,9 +102,26 @@ public class CareerProfileServiceTests
             IncludeCv = true,
         };
 
-        var result = service.BuildProfileContext(profile, toggles);
+        var result = CareerProfileContextBuilder.Build(profile, toggles);
 
         Assert.True(result.Length < 700, $"Expected bounded context length, got {result.Length}");
         Assert.Contains("CV (Auszug", result);
+    }
+
+    [Fact]
+    public void CareerProfile_JsonRoundtrip_PreservesLists()
+    {
+        var original = new CareerProfile
+        {
+            UserId = "user_test",
+            FieldLabel = "IT",
+            Skills = new List<string> { "A", "B" },
+            Goals = new List<string> { "g1" },
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(original, CareerProfileRedisService.JsonOpts);
+        var back = System.Text.Json.JsonSerializer.Deserialize<CareerProfile>(json, CareerProfileRedisService.JsonOpts);
+        Assert.NotNull(back);
+        Assert.Equal(2, back!.Skills.Count);
+        Assert.Equal("A", back.Skills[0]);
     }
 }

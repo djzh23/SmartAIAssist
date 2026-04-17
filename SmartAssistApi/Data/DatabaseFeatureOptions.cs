@@ -13,4 +13,7 @@ public sealed class DatabaseFeatureOptions
 
     /// <summary><c>redis</c> (default) or <c>postgres</c> for job applications (<c>/api/applications</c>).</summary>
     public string JobApplicationsStorage { get; set; } = "redis";
+
+    /// <summary><c>redis</c> (default) or <c>postgres</c> for career profile (<c>/api/profile</c>).</summary>
+    public string CareerProfileStorage { get; set; } = "redis";
 }

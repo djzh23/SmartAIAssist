@@ -100,6 +100,7 @@ if (registerPostgres)
         options.UseNpgsql(supabaseConnectionString));
     builder.Services.AddScoped<ChatNotesPostgresService>();
     builder.Services.AddScoped<ApplicationsPostgresService>();
+    builder.Services.AddScoped<CareerProfilePostgresService>();
 }
 
 var databaseFeaturesPreview = builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName)
@@ -125,7 +126,8 @@ builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentServi
 builder.Services.AddScoped<ILlmSingleCompletionService, AgentLlmSingleCompletionService>();
 builder.Services.AddHttpClient<ISpeechService, AzureSpeechService>();
 builder.Services.AddHttpClient<UsageService>();
-builder.Services.AddHttpClient<CareerProfileService>();
+builder.Services.AddHttpClient<CareerProfileRedisService>();
+builder.Services.AddScoped<CareerProfileRedisService>();
 builder.Services.AddHttpClient<LearningMemoryService>();
 builder.Services.AddHttpClient<TokenTrackingService>();
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
@@ -136,6 +138,7 @@ builder.Services.AddScoped<ChatNotesService>();
 builder.Services.AddScoped<ApplicationsRedisService>();
 builder.Services.AddScoped<ApplicationsService>();
 builder.Services.AddScoped<IApplicationService>(sp => sp.GetRequiredService<ApplicationsService>());
+builder.Services.AddScoped<CareerProfileService>();
 builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
 builder.Services.AddScoped<StripeService>();
@@ -166,7 +169,11 @@ builder.Services.AddCors(options =>
                 "X-Job-Applications-Effective-Storage",
                 "X-Job-Applications-Configured-Storage",
                 "X-Job-Applications-Degraded",
-                "X-Job-Applications-Degraded-Reason");
+                "X-Job-Applications-Degraded-Reason",
+                "X-Career-Profile-Effective-Storage",
+                "X-Career-Profile-Configured-Storage",
+                "X-Career-Profile-Degraded",
+                "X-Career-Profile-Degraded-Reason");
     });
 });
 
@@ -218,6 +225,15 @@ if (databaseFeaturesPreview.PostgresEnabled
     startupLogger.LogWarning(
         "DatabaseFeatures: JobApplicationsStorage=postgres but no valid Supabase connection was resolved. "
         + "Job applications will use Redis until a valid Postgres connection is available.");
+}
+
+if (databaseFeaturesPreview.PostgresEnabled
+    && string.Equals(databaseFeaturesPreview.CareerProfileStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(supabaseConnectionString))
+{
+    startupLogger.LogWarning(
+        "DatabaseFeatures: CareerProfileStorage=postgres but no valid Supabase connection was resolved. "
+        + "Career profile will use Redis until a valid Postgres connection is available.");
 }
 var azureSpeechKey = app.Configuration["AZURE_SPEECH_KEY"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
 if (string.IsNullOrWhiteSpace(azureSpeechKey))

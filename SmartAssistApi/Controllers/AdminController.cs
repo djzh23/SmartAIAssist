@@ -56,6 +56,55 @@ public class AdminController(
         }
     }
 
+    /// <summary>
+    /// Copies <c>profile:{userId}</c>, <c>profile:{userId}:cv_raw</c>, and <c>profile_version:{userId}</c> from Redis into Postgres.
+    /// Requires <c>004_career_profiles.sql</c> and a valid Supabase connection. Test on staging first.
+    /// </summary>
+    [HttpPost("migrations/backfill-career-profile/{userId}")]
+    public async Task<IActionResult> BackfillCareerProfile(
+        string userId,
+        [FromServices] CareerProfileRedisService redisProfile,
+        [FromServices] IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+            return Forbid();
+
+        if (string.IsNullOrWhiteSpace(userId))
+            return BadRequest(new { error = "userId_required" });
+
+        var pg = services.GetService(typeof(CareerProfilePostgresService)) as CareerProfilePostgresService;
+        if (pg is null)
+        {
+            return StatusCode(
+                503,
+                new
+                {
+                    error = "postgres_not_configured",
+                    message = "No Supabase/EF connection. Set DATABASE_URL or ConnectionStrings:Supabase.",
+                });
+        }
+
+        try
+        {
+            var profile = await redisProfile.GetProfile(userId).ConfigureAwait(false);
+            if (profile is null)
+                return Ok(new { success = true, migrated = false });
+
+            var cvRaw = await redisProfile.GetCvRawAsync(userId).ConfigureAwait(false);
+            var versionRaw = await redisProfile.GetProfileVersionRawAsync(userId).ConfigureAwait(false);
+            long? cacheVersion = long.TryParse(versionRaw, out var v) ? v : null;
+
+            await pg.ImportFromRedisAsync(userId, profile, cvRaw, cacheVersion, cancellationToken).ConfigureAwait(false);
+            return Ok(new { success = true, migrated = true });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Backfill career profile failed for {UserId}", userId);
+            return StatusCode(500, new { error = "backfill_failed", message = ex.Message });
+        }
+    }
+
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
     {

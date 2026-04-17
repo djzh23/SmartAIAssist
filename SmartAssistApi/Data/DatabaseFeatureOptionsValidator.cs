@@ -18,6 +18,12 @@ public sealed class DatabaseFeatureOptionsValidator : IValidateOptions<DatabaseF
                 "DatabaseFeatures:JobApplicationsStorage must be \"redis\" or \"postgres\".");
         }
 
+        if (!IsRedisOrPostgres(options.CareerProfileStorage))
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:CareerProfileStorage must be \"redis\" or \"postgres\".");
+        }
+
         if (string.Equals(options.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase)
             && !options.PostgresEnabled)
         {
@@ -30,6 +36,13 @@ public sealed class DatabaseFeatureOptionsValidator : IValidateOptions<DatabaseF
         {
             return ValidateOptionsResult.Fail(
                 "DatabaseFeatures:JobApplicationsStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
+        }
+
+        if (string.Equals(options.CareerProfileStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+            && !options.PostgresEnabled)
+        {
+            return ValidateOptionsResult.Fail(
+                "DatabaseFeatures:CareerProfileStorage=postgres requires DatabaseFeatures:PostgresEnabled=true.");
         }
 
         // Do not require ConnectionStrings:Supabase here: it may be supplied only via DATABASE_URL /

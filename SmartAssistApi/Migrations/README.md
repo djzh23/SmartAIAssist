@@ -1,12 +1,13 @@
 # Database migrations (Supabase / PostgreSQL)
 
-Run SQL files **in order** (`001` → `002` → `003`) in the Supabase SQL Editor (or your CI migration step) against the project database.
+Run SQL files **in order** (`001` → `002` → `003` → `004`) in the Supabase SQL Editor (or your CI migration step) against the project database.
 
 | File | Purpose |
 |------|---------|
 | `001_initial_app_users.sql` | Root `app_users` table for Clerk IDs |
 | `002_chat_notes.sql` | `chat_notes` + FK to `app_users` |
 | `003_job_applications.sql` | `job_applications` + FK to `app_users` |
+| `004_career_profiles.sql` | `career_profiles` + FK to `app_users` |
 
 ## Backfill chat notes from Redis (manual)
 
@@ -26,6 +27,14 @@ When `DatabaseFeatures:JobApplicationsStorage` is `postgres`:
 1. Ensure `003_job_applications.sql` is applied.
 2. Use `POST /api/admin/migrations/backfill-job-applications/{userId}` (admin-only) to copy `job_apps:{userId}` from Redis into Postgres for one user, **preserving timestamps** from the stored JSON.
 3. Test on staging first; back up or export Redis if needed.
+
+## Backfill career profile from Redis (manual / admin)
+
+When `DatabaseFeatures:CareerProfileStorage` is `postgres`:
+
+1. Ensure `004_career_profiles.sql` is applied.
+2. Use `POST /api/admin/migrations/backfill-career-profile/{userId}` (admin-only) to copy `profile:{userId}`, `profile:{userId}:cv_raw`, and `profile_version:{userId}` into Postgres.
+3. Test on staging first.
 
 ## Troubleshooting: empty tables but Redis works
 

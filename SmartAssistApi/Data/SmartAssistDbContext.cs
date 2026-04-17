@@ -11,6 +11,8 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<JobApplicationEntity> JobApplications => Set<JobApplicationEntity>();
 
+    public DbSet<CareerProfileEntity> CareerProfiles => Set<CareerProfileEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppUserEntity>(e =>
@@ -32,6 +34,13 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
             e.ToTable("job_applications");
             e.HasKey(x => new { x.ClerkUserId, x.ApplicationId });
             e.HasIndex(x => new { x.ClerkUserId, x.UpdatedAt });
+        });
+
+        modelBuilder.Entity<CareerProfileEntity>(e =>
+        {
+            e.ToTable("career_profiles");
+            e.HasKey(x => x.ClerkUserId);
+            e.HasIndex(x => x.UpdatedAt);
         });
     }
 }
