@@ -10,4 +10,7 @@ public sealed class DatabaseFeatureOptions
 
     /// <summary><c>redis</c> (default) or <c>postgres</c> for chat notes persistence.</summary>
     public string ChatNotesStorage { get; set; } = "redis";
+
+    /// <summary><c>redis</c> (default) or <c>postgres</c> for job applications (<c>/api/applications</c>).</summary>
+    public string JobApplicationsStorage { get; set; } = "redis";
 }

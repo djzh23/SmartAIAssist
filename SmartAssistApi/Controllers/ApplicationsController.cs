@@ -9,8 +9,21 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/applications")]
 [EnableRateLimiting("applications")]
-public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationService applications) : ControllerBase
+public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationService applications) : ControllerBase
 {
+    private void SetJobApplicationsStorageHeaders()
+    {
+        var info = applications.GetBackendInfo();
+        Response.Headers["X-Job-Applications-Effective-Storage"] = info.EffectiveStorage;
+        Response.Headers["X-Job-Applications-Configured-Storage"] = info.ConfiguredJobApplicationsStorage;
+        if (info.Degraded)
+        {
+            Response.Headers["X-Job-Applications-Degraded"] = "true";
+            if (!string.IsNullOrEmpty(info.DegradedReason))
+                Response.Headers["X-Job-Applications-Degraded-Reason"] = info.DegradedReason;
+        }
+    }
+
     private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
     {
         userId = auth.userId ?? string.Empty;
@@ -25,6 +38,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
             return Unauthorized();
 
         var rows = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return Ok(rows);
     }
 
@@ -62,6 +76,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         };
         list.Insert(0, doc);
         await applications.SaveAllAsync(userId, list, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return Ok(doc);
     }
 
@@ -73,6 +88,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
             return Unauthorized();
 
         var doc = await applications.GetAsync(userId, id, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return doc is null ? NotFound() : Ok(doc);
     }
 
@@ -103,6 +119,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
                 Note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim(),
             });
         await applications.SaveAllAsync(userId, list, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return Ok(doc);
     }
 
@@ -123,6 +140,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         doc.CoverLetterText = body.Text ?? string.Empty;
         doc.UpdatedAt = DateTime.UtcNow;
         await applications.SaveAllAsync(userId, list, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -141,6 +159,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
         doc.InterviewNotes = body.Text ?? string.Empty;
         doc.UpdatedAt = DateTime.UtcNow;
         await applications.SaveAllAsync(userId, list, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -170,6 +189,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
 
         doc.UpdatedAt = DateTime.UtcNow;
         await applications.SaveAllAsync(userId, list, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return Ok(new { success = true });
     }
 
@@ -186,6 +206,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, ApplicationServi
             return NotFound();
 
         await applications.SaveAllAsync(userId, next, cancellationToken).ConfigureAwait(false);
+        SetJobApplicationsStorageHeaders();
         return Ok(new { success = true });
     }
 }

@@ -14,6 +14,48 @@ public class AdminController(
     IConfiguration configuration,
     ILogger<AdminController> logger) : ControllerBase
 {
+    /// <summary>
+    /// Copies <c>job_apps:{userId}</c> from Redis into Postgres with preserved timestamps.
+    /// Requires <c>003_job_applications.sql</c> and a valid Supabase connection. Test on staging first.
+    /// </summary>
+    [HttpPost("migrations/backfill-job-applications/{userId}")]
+    public async Task<IActionResult> BackfillJobApplications(
+        string userId,
+        [FromServices] ApplicationsRedisService redisApplications,
+        [FromServices] IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+            return Forbid();
+
+        if (string.IsNullOrWhiteSpace(userId))
+            return BadRequest(new { error = "userId_required" });
+
+        var pg = services.GetService(typeof(ApplicationsPostgresService)) as ApplicationsPostgresService;
+        if (pg is null)
+        {
+            return StatusCode(
+                503,
+                new
+                {
+                    error = "postgres_not_configured",
+                    message = "No Supabase/EF connection. Set DATABASE_URL or ConnectionStrings:Supabase.",
+                });
+        }
+
+        try
+        {
+            var docs = await redisApplications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
+            await pg.ImportDocumentsPreservingTimestampsAsync(userId, docs, cancellationToken).ConfigureAwait(false);
+            return Ok(new { success = true, count = docs.Count });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Backfill job applications failed for {UserId}", userId);
+            return StatusCode(500, new { error = "backfill_failed", message = ex.Message });
+        }
+    }
+
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
     {

@@ -9,6 +9,8 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<ChatNoteEntity> ChatNotes => Set<ChatNoteEntity>();
 
+    public DbSet<JobApplicationEntity> JobApplications => Set<JobApplicationEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppUserEntity>(e =>
@@ -23,6 +25,13 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.ClerkUserId, x.UpdatedAt });
             e.Property(x => x.Tags).HasColumnType("text[]");
+        });
+
+        modelBuilder.Entity<JobApplicationEntity>(e =>
+        {
+            e.ToTable("job_applications");
+            e.HasKey(x => new { x.ClerkUserId, x.ApplicationId });
+            e.HasIndex(x => new { x.ClerkUserId, x.UpdatedAt });
         });
     }
 }

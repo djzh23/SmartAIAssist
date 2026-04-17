@@ -99,6 +99,7 @@ if (registerPostgres)
     builder.Services.AddDbContext<SmartAssistDbContext>(options =>
         options.UseNpgsql(supabaseConnectionString));
     builder.Services.AddScoped<ChatNotesPostgresService>();
+    builder.Services.AddScoped<ApplicationsPostgresService>();
 }
 
 var databaseFeaturesPreview = builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName)
@@ -132,7 +133,9 @@ builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<Upstas
 builder.Services.AddScoped<ChatSessionService>();
 builder.Services.AddScoped<ChatNotesRedisService>();
 builder.Services.AddScoped<ChatNotesService>();
-builder.Services.AddScoped<ApplicationService>();
+builder.Services.AddScoped<ApplicationsRedisService>();
+builder.Services.AddScoped<ApplicationsService>();
+builder.Services.AddScoped<IApplicationService>(sp => sp.GetRequiredService<ApplicationsService>());
 builder.Services.AddScoped<ClerkAuthService>();
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
 builder.Services.AddScoped<StripeService>();
@@ -159,7 +162,11 @@ builder.Services.AddCors(options =>
                 "X-Chat-Notes-Effective-Storage",
                 "X-Chat-Notes-Configured-Storage",
                 "X-Chat-Notes-Degraded",
-                "X-Chat-Notes-Degraded-Reason");
+                "X-Chat-Notes-Degraded-Reason",
+                "X-Job-Applications-Effective-Storage",
+                "X-Job-Applications-Configured-Storage",
+                "X-Job-Applications-Degraded",
+                "X-Job-Applications-Degraded-Reason");
     });
 });
 
@@ -203,47 +210,21 @@ if (databaseFeaturesPreview.PostgresEnabled
         + "(set ConnectionStrings:Supabase, DATABASE_URL, or SUPABASE__CONNECTIONSTRING). "
         + "Chat notes will use Redis until a valid Postgres connection is available.");
 }
+
+if (databaseFeaturesPreview.PostgresEnabled
+    && string.Equals(databaseFeaturesPreview.JobApplicationsStorage, "postgres", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(supabaseConnectionString))
+{
+    startupLogger.LogWarning(
+        "DatabaseFeatures: JobApplicationsStorage=postgres but no valid Supabase connection was resolved. "
+        + "Job applications will use Redis until a valid Postgres connection is available.");
+}
 var azureSpeechKey = app.Configuration["AZURE_SPEECH_KEY"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
 if (string.IsNullOrWhiteSpace(azureSpeechKey))
 {
     startupLogger.LogWarning(
         "Azure Speech API key is not configured. TTS will fail. Set AZURE_SPEECH_KEY as an environment variable.");
 }
-
-// Auto-create Supabase tables (EnsureCreated is a no-op when they already exist).
-// This runs at startup so the first request never hits a "relation does not exist" error.
-if (registerPostgres)
-{
-    try
-    {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SmartAssistDbContext>();
-        await db.Database.EnsureCreatedAsync();
-        startupLogger.LogInformation("Supabase: database schema verified.");
-    }
-    catch (Exception ex)
-    {
-        startupLogger.LogWarning(ex,
-            "Supabase: could not verify/create database schema at startup. "
-            + "Chat notes will fall back to Redis on first use if Postgres is still unreachable.");
-    }
-}
-
-// Global exception handler — must be first so CORS headers are always present,
-// even when an unhandled exception would otherwise reset the response.
-app.UseExceptionHandler(exApp => exApp.Run(async context =>
-{
-    var origin = context.Request.Headers.Origin.ToString();
-    if (!string.IsNullOrEmpty(origin)
-        && allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
-    {
-        context.Response.Headers["Access-Control-Allow-Origin"] = origin;
-        context.Response.Headers.Vary = "Origin";
-    }
-    context.Response.StatusCode = 500;
-    context.Response.ContentType = "application/json";
-    await context.Response.WriteAsJsonAsync(new { error = "internal_server_error" });
-}));
 
 app.UseRouting();
 app.UseCors("SmartAssistWeb");

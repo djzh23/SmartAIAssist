@@ -6,9 +6,9 @@ using SmartAssistApi.Models;
 namespace SmartAssistApi.Services;
 
 /// <summary>Redis-backed job applications for <c>/api/applications</c> and agent context.</summary>
-public class ApplicationService(IRedisStringStore redis, ILogger<ApplicationService> logger)
+public sealed class ApplicationsRedisService(IRedisStringStore redis, ILogger<ApplicationsRedisService> logger)
 {
-    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    internal static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
@@ -61,52 +61,13 @@ public class ApplicationService(IRedisStringStore redis, ILogger<ApplicationServ
         }
     }
 
-    /// <summary>Compact German block for system prompt when <see cref="AgentRequest.JobApplicationId"/> is set.</summary>
+    /// <summary>Compact German block for system prompt when job application id is set on the agent request.</summary>
     public async Task<string?> BuildPromptContextAsync(string userId, string? applicationId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(applicationId))
             return null;
 
         var app = await GetAsync(userId, applicationId, cancellationToken).ConfigureAwait(false);
-        if (app is null)
-            return null;
-
-        var jd = (app.JobDescription ?? string.Empty).Trim();
-        if (jd.Length > 2400)
-            jd = jd[..2400] + "…";
-
-        var parts = new List<string>
-        {
-            "[AKTUELLE BEWERBUNG — nur diese Stelle adressieren, keine anderen Annahmen]",
-            $"Bewerbungs-ID: {app.Id}",
-            $"Rolle: {app.JobTitle}",
-            $"Firma: {app.Company}",
-            $"Status: {app.Status}",
-        };
-
-        if (!string.IsNullOrWhiteSpace(app.JobUrl))
-            parts.Add($"URL: {app.JobUrl}");
-
-        if (jd.Length > 0)
-            parts.Add($"Stellenbeschreibung (Auszug):\n{jd}");
-
-        if (!string.IsNullOrWhiteSpace(app.CoverLetterText))
-        {
-            var cl = app.CoverLetterText.Trim();
-            if (cl.Length > 800)
-                cl = cl[..800] + "…";
-            parts.Add($"Gespeichertes Anschreiben (Auszug):\n{cl}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(app.InterviewNotes))
-        {
-            var n = app.InterviewNotes.Trim();
-            if (n.Length > 600)
-                n = n[..600] + "…";
-            parts.Add($"Interview-Notizen:\n{n}");
-        }
-
-        parts.Add("[ENDE BEWERBUNG]");
-        return string.Join("\n", parts);
+        return JobApplicationPromptContext.Build(app);
     }
 }

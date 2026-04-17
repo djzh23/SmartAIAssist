@@ -13,7 +13,7 @@ public class PromptComposer(
     CareerProfileService careerProfileService,
     SystemPromptBuilder promptBuilder,
     LearningMemoryService learningMemoryService,
-    ApplicationService applicationService,
+    IApplicationService applicationService,
     IMemoryCache memoryCache,
     ILogger<PromptComposer> logger)
 {
