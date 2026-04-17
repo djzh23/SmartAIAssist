@@ -17,3 +17,7 @@ When `DatabaseFeatures:ChatNotesStorage` is switched to `postgres`, run a one-of
 4. `INSERT INTO chat_notes (...) ON CONFLICT (id) DO UPDATE` from JSON fields.
 
 Until backfill completes, new writes can go to Postgres while old data remains in Redis — prefer a maintenance window or dual-write (not implemented by default).
+
+## Troubleshooting: empty tables but Redis works
+
+If logs show **`Failed to connect`** to an **IPv6** address (`2a05:…`) and **`Network is unreachable`**, the API never reaches Postgres — **migrations and empty tables are not the cause**. Typical fix: hosting egress without IPv6 (e.g. Render) while Supabase DNS returns AAAA first. The API resolves **`*.supabase.co`** to an **IPv4** address when building the Npgsql connection string (see `SupabaseConnectionString.TryRewriteSupabaseHostToIpv4`). Alternatively use Supabase **Session pooler** (port **6543**) in your URI, or set **`DOTNET_SYSTEM_NET_DISABLEIPV6=1`** on the API host per [.NET networking docs](https://learn.microsoft.com/en-us/dotnet/core/runtime-config/networking).
