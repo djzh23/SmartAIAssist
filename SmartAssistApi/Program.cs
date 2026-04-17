@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Serilog;
 using SmartAssistApi.Configuration;
 using SmartAssistApi.Data;
@@ -86,12 +87,11 @@ builder.Services.AddControllers();
 builder.Services.Configure<DatabaseFeatureOptions>(builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName));
 builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<DatabaseFeatureOptions>, DatabaseFeatureOptionsValidator>();
 
-// Last-wins in-memory value so a valid URI from DATABASE_URL / SUPABASE__CONNECTIONSTRING overrides empty JSON / bad placeholders.
-var supabaseConnectionString = SupabaseConnectionString.TryResolve(builder.Configuration, out var supabaseRejectReason);
+// Last-wins in-memory value so a valid URI from DATABASE_URL / SUPABASE__… overrides empty JSON / bad placeholders.
+var supabaseResolution = SupabaseConnectionString.Resolve(builder.Configuration);
+var supabaseConnectionString = supabaseResolution.ConnectionString;
 if (supabaseConnectionString is not null)
     builder.Configuration.AddInMemoryCollection([new KeyValuePair<string, string?>("ConnectionStrings:Supabase", supabaseConnectionString)]);
-else if (supabaseRejectReason is not null)
-    Console.WriteLine("[Startup] " + supabaseRejectReason);
 
 var registerPostgres = !string.IsNullOrWhiteSpace(supabaseConnectionString);
 if (registerPostgres)
@@ -165,6 +165,34 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 startupLogger.LogInformation("CORS allowed origins: {Origins}", string.Join(", ", allowedOrigins));
+if (supabaseConnectionString is not null)
+{
+    try
+    {
+        var parsed = new NpgsqlConnectionStringBuilder(supabaseConnectionString);
+        startupLogger.LogInformation(
+            "Supabase: Npgsql connection resolved from {SourceKey}. Host={Host}; Database={Database}; SSL={SslMode}. (password not logged)",
+            supabaseResolution.SourceKey ?? "unknown",
+            parsed.Host,
+            parsed.Database,
+            parsed.SslMode);
+    }
+    catch
+    {
+        startupLogger.LogInformation(
+            "Supabase: Npgsql connection resolved from {SourceKey}. (password not logged)",
+            supabaseResolution.SourceKey ?? "unknown");
+    }
+}
+else
+{
+    startupLogger.LogWarning(
+        "Supabase: no EF connection registered. SourceKey={SourceKey}; Reason={Reason}. "
+        + "Check Render env DATABASE_URL or SUPABASE__CONNECTIONSTRING (two underscores) or ConnectionStrings__Supabase.",
+        supabaseResolution.SourceKey ?? "(none)",
+        supabaseResolution.RejectReason ?? "unknown");
+}
+
 if (databaseFeaturesPreview.PostgresEnabled
     && string.Equals(databaseFeaturesPreview.ChatNotesStorage, "postgres", StringComparison.OrdinalIgnoreCase)
     && string.IsNullOrWhiteSpace(supabaseConnectionString))

@@ -2,45 +2,70 @@ using Npgsql;
 
 namespace SmartAssistApi.Configuration;
 
+/// <summary>Result of resolving a Supabase / Postgres connection string for Npgsql (no secrets logged).</summary>
+public sealed record SupabaseConnectionResolution(
+    string? ConnectionString,
+    /// <summary>Env or config key that supplied the value (when resolved or when the first invalid value was found).</summary>
+    string? SourceKey,
+    string? RejectReason);
+
 /// <summary>
 /// Resolves and normalizes the Supabase / Postgres connection string so Npgsql never receives garbage
-/// (BOM, quotes, blank env overrides). Returns null if unset or invalid — callers skip EF registration.
+/// (BOM, quotes, blank env overrides). Returns <see cref="SupabaseConnectionResolution.ConnectionString"/> null
+/// if unset or invalid — callers skip EF registration.
 /// </summary>
 public static class SupabaseConnectionString
 {
     /// <summary>
-    /// Priority: <c>DATABASE_URL</c>, <c>SUPABASE__CONNECTIONSTRING</c>, <c>SUPABASE_CONNECTIONSTRING</c> (single underscore, common on hosts),
+    /// Priority: <c>DATABASE_URL</c>, <c>SUPABASE__CONNECTIONSTRING</c>, <c>SUPABASE_CONNECTIONSTRING</c> (single underscore),
     /// then <c>ConnectionStrings:Supabase</c> (includes <c>ConnectionStrings__Supabase</c> env).
     /// </summary>
-    public static string? TryResolve(IConfiguration configuration, out string? rejectReason)
+    public static SupabaseConnectionResolution Resolve(IConfiguration configuration)
     {
-        rejectReason = null;
-        var raw =
-            Environment.GetEnvironmentVariable("DATABASE_URL")
-            ?? Environment.GetEnvironmentVariable("SUPABASE__CONNECTIONSTRING")
-            ?? Environment.GetEnvironmentVariable("SUPABASE_CONNECTIONSTRING")
-            ?? configuration.GetConnectionString("Supabase");
-
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        var normalized = Normalize(raw);
-        if (string.IsNullOrEmpty(normalized))
+        string? whitespaceOnlyKey = null;
+        foreach (var (key, raw) in EnumerateCandidates(configuration))
         {
-            rejectReason = "Supabase connection value was only whitespace.";
-            return null;
+            if (string.IsNullOrWhiteSpace(raw))
+                continue;
+
+            var normalized = Normalize(raw);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                whitespaceOnlyKey ??= key;
+                continue;
+            }
+
+            try
+            {
+                var builder = new NpgsqlConnectionStringBuilder(normalized);
+                return new SupabaseConnectionResolution(builder.ConnectionString, key, null);
+            }
+            catch (ArgumentException ex)
+            {
+                return new SupabaseConnectionResolution(null, key, ex.Message);
+            }
         }
 
-        try
+        if (whitespaceOnlyKey is not null)
         {
-            var builder = new NpgsqlConnectionStringBuilder(normalized);
-            return builder.ConnectionString;
+            return new SupabaseConnectionResolution(
+                null,
+                whitespaceOnlyKey,
+                "connection value was only whitespace after trim");
         }
-        catch (ArgumentException ex)
-        {
-            rejectReason = $"Supabase connection string is not valid for Npgsql: {ex.Message}";
-            return null;
-        }
+
+        return new SupabaseConnectionResolution(
+            null,
+            null,
+            "no non-empty DATABASE_URL, SUPABASE__CONNECTIONSTRING, SUPABASE_CONNECTIONSTRING, or ConnectionStrings:Supabase");
+    }
+
+    private static IEnumerable<(string Key, string? Value)> EnumerateCandidates(IConfiguration configuration)
+    {
+        yield return ("DATABASE_URL", Environment.GetEnvironmentVariable("DATABASE_URL"));
+        yield return ("SUPABASE__CONNECTIONSTRING", Environment.GetEnvironmentVariable("SUPABASE__CONNECTIONSTRING"));
+        yield return ("SUPABASE_CONNECTIONSTRING", Environment.GetEnvironmentVariable("SUPABASE_CONNECTIONSTRING"));
+        yield return ("ConnectionStrings:Supabase", configuration.GetConnectionString("Supabase"));
     }
 
     private static string Normalize(string raw)
