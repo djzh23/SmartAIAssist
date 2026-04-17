@@ -4,18 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SmartAssistApi is a full-stack AI Agent application:
+SmartAssistApi is the **ASP.NET Core 9 REST API** for the SmartAssist product.
 
-- **Backend:** ASP.NET Core 9 REST API with Anthropic Claude Tool Calling
-- **Frontend:** Blazor WebAssembly — chat UI with session memory
+- **Production frontend:** **React** (separate repo: `SmartAssist-react`, Vite) — this is what ships to users.
+- **Optional in this repo:** `SmartAssistApi.Client/` — **Blazor WebAssembly** sample/legacy UI used for early testing; not the live product UI.
 - **Infrastructure:** Docker Compose, GitHub Actions CI
 
 ## Solution Structure
 
 ```
 SmartAssistApi/
-├── SmartAssistApi/          ← Backend API
-├── SmartAssistApi.Client/   ← Blazor WebAssembly Frontend
+├── SmartAssistApi/          ← Backend API (primary focus)
+├── SmartAssistApi.Client/   ← Blazor WASM (optional / legacy — do not assume production traffic)
 ├── SmartAssistApi.Tests/    ← xUnit Tests
 ├── docs/
 │   ├── agents/              ← Claude Code Agents
@@ -31,7 +31,7 @@ SmartAssistApi/
 - ALWAYS run `dotnet test` — zero failures before commit
 - ALWAYS use conventional commits (feat/fix/refactor/chore/docs)
 - NEVER hardcode config — use appsettings.json + IConfiguration
-- NEVER put business logic in Controllers or Blazor pages
+- NEVER put business logic in Controllers or (if touching Blazor) Blazor pages
 - When adding a feature: read the relevant playbook in `docs/playbooks/`
 - When asked to add a tool: use `docs/agents/tool-builder-agent.md`
 - When asked to write tests: use `docs/agents/testing-agent.md`
@@ -54,8 +54,14 @@ test: add or fix tests
 - Tools: static classes in `Services/Tools/` — one file per tool
 - Models: C# records for DTOs
 - Config: all values in `appsettings.json` under named sections
+- **CORS policy name:** `SmartAssistWeb` (React and other allowed web origins — see `Program.cs`)
 
-## Frontend Standards (SmartAssistApi.Client/)
+## Production React frontend (SmartAssist-react)
+
+- Lives outside this repo; consumes this API via `VITE_API_BASE_URL` (or host proxy).
+- CORS / `FRONTEND__BASEURL` / `CORS_ALLOWED_ORIGINS` on the API host must include the deployed React origin(s).
+
+## Optional: Blazor client (SmartAssistApi.Client/)
 
 - Pages: Blazor pages in `Pages/` — only UI logic
 - Services: HttpClient wrappers in `Services/`
@@ -66,7 +72,7 @@ test: add or fix tests
 
 Read: `docs/playbooks/add-new-tool.md`
 
-## How to Add a New Blazor Page
+## How to Add a New Blazor Page (only if you touch the WASM client)
 
 Read: `docs/playbooks/add-blazor-page.md`
 

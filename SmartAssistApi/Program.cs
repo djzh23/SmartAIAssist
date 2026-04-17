@@ -139,7 +139,8 @@ builder.Services.AddScoped<StripeService>();
 builder.Services.AddHostedService<ConversationCleanupService>();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("BlazorClient", policy =>
+    // Primary production UI: React (SmartAssist-react). Blazor WASM client is optional / legacy in repo.
+    options.AddPolicy("SmartAssistWeb", policy =>
     {
         policy.WithOrigins(allowedOrigins)
             .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
@@ -210,7 +211,7 @@ if (string.IsNullOrWhiteSpace(azureSpeechKey))
 }
 
 app.UseRouting();
-app.UseCors("BlazorClient");
+app.UseCors("SmartAssistWeb");
 
 app.UseRequestId();
 app.UseSerilogRequestLogging();
@@ -228,7 +229,7 @@ app.UseSmartAssistApiSecurityHeaders();
 
 app.MapHealthChecks("/api/health");
 // Endpoint routing: attach named CORS policy to API controllers (fixes missing ACAO on some hosts).
-app.MapControllers().RequireCors("BlazorClient");
+app.MapControllers().RequireCors("SmartAssistWeb");
 
 try
 {

@@ -58,32 +58,22 @@ Required environment variables in Render:
 - `ELEVENLABS_API_KEY`
 - `ELEVENLABS_VOICE_ES` (optional but recommended)
 - `ELEVENLABS_VOICE_DEFAULT` (optional)
-- `CORS_ALLOWED_ORIGINS` (comma-separated; include your Blazor domain)
+- `CORS_ALLOWED_ORIGINS` (comma-separated; include your **production React** site origin(s), e.g. `https://www.example.de`)
 
 Notes:
 
 - App supports Render `PORT` automatically.
 - CORS accepts local dev origins plus configured production origins.
 
-## 5) Blazor client deploy
+## 5) Production React frontend (SmartAssist-react)
 
-This is a standalone WASM app. Deploy static files from `SmartAssistApi.Client/wwwroot` build output.
+The live product UI is **not** in this repository. Deploy **SmartAssist-react** (Vite) to your static host / CDN and set `VITE_API_BASE_URL` to your Render API URL.
 
-Before production build, set API base URL in:
+## 6) Optional: Blazor WASM client (legacy / testing only)
 
-- `SmartAssistApi.Client/wwwroot/appsettings.json`
+`SmartAssistApi.Client` is a standalone WASM app. Only if you still use it: deploy static files from `SmartAssistApi.Client/wwwroot` build output and set API base URL in `SmartAssistApi.Client/wwwroot/appsettings.json` (`ApiBaseUrl` → your API URL), then build/publish and deploy to a static host.
 
-Set:
-
-```json
-{
-  "ApiBaseUrl": "https://<your-render-service>.onrender.com/"
-}
-```
-
-Then build/publish client and deploy to your static host.
-
-## 6) Final commit and push
+## 7) Final commit and push
 
 ```bash
 git add .
