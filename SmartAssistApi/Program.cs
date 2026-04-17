@@ -227,7 +227,8 @@ app.UseRateLimiter();
 app.UseSmartAssistApiSecurityHeaders();
 
 app.MapHealthChecks("/api/health");
-app.MapControllers();
+// Endpoint routing: attach named CORS policy to API controllers (fixes missing ACAO on some hosts).
+app.MapControllers().RequireCors("BlazorClient");
 
 try
 {
