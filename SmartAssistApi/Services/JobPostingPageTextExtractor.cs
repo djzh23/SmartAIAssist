@@ -2,6 +2,7 @@ using System.Linq;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using SmartAssistApi.Models;
 
 namespace SmartAssistApi.Services;
 
@@ -39,37 +40,29 @@ internal static class JobPostingPageTextExtractor
         @"<script\b[^>]*type\s*=\s*[""']application/ld\+json[^""']*[""'][^>]*>(.*?)</script>",
         RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
+    internal sealed record ExtractResult(string PlainText, JobPostingStructuredMeta? StructuredMeta);
+
     /// <summary>Primär JSON-LD JobPosting, sonst Body-Text ohne Script/Style.</summary>
-    public static string FromHtml(string html)
+    public static string FromHtml(string html) => FromHtmlWithMeta(html).PlainText;
+
+    /// <summary>Fließtext plus strukturierte Meta aus JSON-LD (wenn erkannt).</summary>
+    public static ExtractResult FromHtmlWithMeta(string html)
     {
         if (string.IsNullOrWhiteSpace(html))
-            return string.Empty;
+            return new ExtractResult(string.Empty, null);
 
-        if (TryExtractBestJobPostingPlainText(html, out var fromLd) && fromLd.Length >= MinPreferJsonLd)
-            return Truncate(fromLd, MaxChars);
+        if (TryBestFromJsonLd(html, out var fromLd, out var meta) && fromLd.Length >= MinPreferJsonLd)
+            return new ExtractResult(Truncate(fromLd, MaxChars), meta);
 
         var stripped = StripHtmlDocumentToPlainText(html);
-        return Truncate(stripped, MaxChars);
+        return new ExtractResult(Truncate(stripped, MaxChars), null);
     }
 
-    private static string StripHtmlDocumentToPlainText(string html)
+    private static bool TryBestFromJsonLd(string html, out string bestText, out JobPostingStructuredMeta? bestMeta)
     {
-        var s = html;
-        s = HtmlComment.Replace(s, " ");
-        s = ScriptBlock.Replace(s, " ");
-        s = StyleBlock.Replace(s, " ");
-        s = NoscriptBlock.Replace(s, " ");
-        s = HtmlTag.Replace(s, " ");
-        s = WebUtility.HtmlDecode(s);
-        s = Regex.Replace(s, @"\s+", " ").Trim();
-        return s;
-    }
-
-    private static bool TryExtractBestJobPostingPlainText(string html, out string best)
-    {
-        best = string.Empty;
-        var matches = JsonLdScript.Matches(html);
-        foreach (Match m in matches)
+        bestText = string.Empty;
+        bestMeta = null;
+        foreach (Match m in JsonLdScript.Matches(html))
         {
             var json = m.Groups.Count > 1 ? m.Groups[1].Value.Trim() : string.Empty;
             if (json.Length < 30)
@@ -77,8 +70,14 @@ internal static class JobPostingPageTextExtractor
             try
             {
                 using var doc = JsonDocument.Parse(json);
-                if (TryCollectJobPostingPlainText(doc.RootElement, out var text) && text.Length > best.Length)
-                    best = text;
+                foreach (var (text, meta) in EnumerateJobPostingCandidates(doc.RootElement))
+                {
+                    if (text.Length > bestText.Length)
+                    {
+                        bestText = text;
+                        bestMeta = meta;
+                    }
+                }
             }
             catch (JsonException)
             {
@@ -86,40 +85,41 @@ internal static class JobPostingPageTextExtractor
             }
         }
 
-        return best.Length >= MinPreferJsonLd;
+        return bestText.Length >= MinPreferJsonLd;
     }
 
-    private static bool TryCollectJobPostingPlainText(JsonElement root, out string text)
+    private static IEnumerable<(string Text, JobPostingStructuredMeta Meta)> EnumerateJobPostingCandidates(JsonElement root)
     {
-        text = string.Empty;
         switch (root.ValueKind)
         {
             case JsonValueKind.Array:
                 foreach (var el in root.EnumerateArray())
                 {
-                    if (TryCollectJobPostingPlainText(el, out var t) && t.Length > text.Length)
-                        text = t;
+                    foreach (var pair in EnumerateJobPostingCandidates(el))
+                        yield return pair;
                 }
-                return text.Length > 0;
+                yield break;
             case JsonValueKind.Object:
                 if (IsJobPostingElement(root))
                 {
-                    text = BuildPlainTextFromJobPosting(root);
-                    return text.Length > 0;
+                    var text = BuildPlainTextFromJobPosting(root);
+                    var meta = BuildStructuredMetaFromJobPosting(root);
+                    if (text.Length > 0)
+                        yield return (text, meta);
+                    yield break;
                 }
 
                 if (root.TryGetProperty("@graph", out var graph) && graph.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var el in graph.EnumerateArray())
                     {
-                        if (TryCollectJobPostingPlainText(el, out var t) && t.Length > text.Length)
-                            text = t;
+                        foreach (var pair in EnumerateJobPostingCandidates(el))
+                            yield return pair;
                     }
                 }
-
-                return text.Length > 0;
+                yield break;
             default:
-                return false;
+                yield break;
         }
     }
 
@@ -140,6 +140,109 @@ internal static class JobPostingPageTextExtractor
                 && string.Equals(e.GetString(), "JobPosting", StringComparison.OrdinalIgnoreCase)),
             _ => false,
         };
+    }
+
+    private static JobPostingStructuredMeta BuildStructuredMetaFromJobPosting(JsonElement job)
+    {
+        string? title = null;
+        if (job.TryGetProperty("title", out var titleEl) && titleEl.ValueKind == JsonValueKind.String)
+            title = WebUtility.HtmlDecode(titleEl.GetString()!.Trim());
+
+        var company = ResolveHiringOrganizationName(job);
+        var location = ResolveJobLocationText(job);
+
+        return new JobPostingStructuredMeta(
+            NullIfEmpty(title),
+            NullIfEmpty(company),
+            NullIfEmpty(location));
+    }
+
+    private static string? NullIfEmpty(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static string? ResolveHiringOrganizationName(JsonElement job)
+    {
+        if (!job.TryGetProperty("hiringOrganization", out var ho))
+            return null;
+        return ParseOrganizationName(ho);
+    }
+
+    private static string? ParseOrganizationName(JsonElement ho)
+    {
+        switch (ho.ValueKind)
+        {
+            case JsonValueKind.String:
+                return WebUtility.HtmlDecode(ho.GetString()!.Trim());
+            case JsonValueKind.Object:
+                if (ho.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String)
+                    return WebUtility.HtmlDecode(n.GetString()!.Trim());
+                break;
+            case JsonValueKind.Array:
+                foreach (var el in ho.EnumerateArray())
+                {
+                    var name = ParseOrganizationName(el);
+                    if (!string.IsNullOrWhiteSpace(name))
+                        return name;
+                }
+                break;
+        }
+
+        return null;
+    }
+
+    private static string? ResolveJobLocationText(JsonElement job)
+    {
+        if (job.TryGetProperty("jobLocation", out var jl))
+        {
+            var t = ParseJobLocationElement(jl);
+            if (!string.IsNullOrWhiteSpace(t))
+                return t;
+        }
+
+        if (job.TryGetProperty("employmentLocation", out var el))
+        {
+            var t = ParseJobLocationElement(el);
+            if (!string.IsNullOrWhiteSpace(t))
+                return t;
+        }
+
+        return null;
+    }
+
+    private static string? ParseJobLocationElement(JsonElement jl)
+    {
+        switch (jl.ValueKind)
+        {
+            case JsonValueKind.String:
+                return WebUtility.HtmlDecode(jl.GetString()!.Trim());
+            case JsonValueKind.Object:
+                if (jl.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String)
+                    return WebUtility.HtmlDecode(name.GetString()!.Trim());
+                if (jl.TryGetProperty("address", out var addr) && addr.ValueKind == JsonValueKind.Object)
+                    return ParsePostalAddress(addr);
+                break;
+            case JsonValueKind.Array:
+                foreach (var el in jl.EnumerateArray())
+                {
+                    var t = ParseJobLocationElement(el);
+                    if (!string.IsNullOrWhiteSpace(t))
+                        return t;
+                }
+                break;
+        }
+
+        return null;
+    }
+
+    private static string? ParsePostalAddress(JsonElement addr)
+    {
+        if (addr.TryGetProperty("addressLocality", out var loc) && loc.ValueKind == JsonValueKind.String)
+            return WebUtility.HtmlDecode(loc.GetString()!.Trim());
+        if (addr.TryGetProperty("streetAddress", out var st) && st.ValueKind == JsonValueKind.String)
+            return WebUtility.HtmlDecode(st.GetString()!.Trim());
+        if (addr.TryGetProperty("addressCountry", out var c) && c.ValueKind == JsonValueKind.String)
+            return WebUtility.HtmlDecode(c.GetString()!.Trim());
+        return null;
     }
 
     private static string BuildPlainTextFromJobPosting(JsonElement job)
@@ -184,6 +287,19 @@ internal static class JobPostingPageTextExtractor
         s = Regex.Replace(s, @"\r\n?", "\n");
         s = Regex.Replace(s, @"\n{3,}", "\n\n");
         return s.Trim();
+    }
+
+    private static string StripHtmlDocumentToPlainText(string html)
+    {
+        var s = html;
+        s = HtmlComment.Replace(s, " ");
+        s = ScriptBlock.Replace(s, " ");
+        s = StyleBlock.Replace(s, " ");
+        s = NoscriptBlock.Replace(s, " ");
+        s = HtmlTag.Replace(s, " ");
+        s = WebUtility.HtmlDecode(s);
+        s = Regex.Replace(s, @"\s+", " ").Trim();
+        return s;
     }
 
     private static string Truncate(string s, int max)

@@ -38,4 +38,25 @@ public class JobPostingPageTextExtractorTests
         Assert.DoesNotContain("@import", t);
         Assert.DoesNotContain("font-family", t);
     }
+
+    [Fact]
+    public void FromHtmlWithMeta_IncludesStructuredMeta_FromHiringOrgAndLocation()
+    {
+        var desc = "<p>" + new string('y', 130) + "</p>";
+        var html =
+            "<script type=\"application/ld+json\">"
+            + "{\"@type\":\"JobPosting\",\"title\":\"Tax Manager\",\"description\":"
+            + System.Text.Json.JsonSerializer.Serialize(desc)
+            + ",\"hiringOrganization\":{\"name\":\"KPMG Deutschland\"}"
+            + ",\"jobLocation\":{\"name\":\"Berlin\"}}"
+            + "</script>";
+
+        var r = JobPostingPageTextExtractor.FromHtmlWithMeta(html);
+
+        Assert.NotNull(r.StructuredMeta);
+        Assert.Equal("Tax Manager", r.StructuredMeta!.Title);
+        Assert.Equal("KPMG Deutschland", r.StructuredMeta.CompanyName);
+        Assert.Equal("Berlin", r.StructuredMeta.Location);
+        Assert.Contains("Tax Manager", r.PlainText);
+    }
 }

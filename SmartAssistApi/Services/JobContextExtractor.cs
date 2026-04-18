@@ -13,14 +13,22 @@ public class JobContextExtractor(IHttpClientFactory httpClientFactory, ILogger<J
         "experience", "required", "preferred", "skills", "ability"
     ];
 
+    private static readonly HashSet<string> TitleLineNoise =
+    [
+        "cookie", "cookies", "datenschutz", "impressum", "kontakt", "login", "anmelden",
+        "barrierefreiheit", "rechtliche hinweise", "navigation", "footer", "bewerber",
+        "bewerbungsfragen", "cookie einstellungen",
+    ];
+
     public async Task<JobContext> ExtractAsync(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
             throw new ArgumentException("Job posting input cannot be empty.", nameof(input));
 
         var jobText = input.Trim();
+        JobPostingStructuredMeta? structuredMeta = null;
         if (LooksLikeUrl(jobText))
-            jobText = await FetchAndSanitizeHtmlAsync(jobText);
+            (jobText, structuredMeta) = await FetchAndSanitizeHtmlAsync(jobText);
 
         if (jobText.Length < 100)
             throw new InvalidOperationException("Job posting text is too short to analyze.");
@@ -28,12 +36,16 @@ public class JobContextExtractor(IHttpClientFactory httpClientFactory, ILogger<J
         var requirements = ExtractRequirements(jobText);
         var keywords = ExtractKeywords(jobText);
 
+        var jobTitle = PickTitle(jobText, structuredMeta);
+        var companyName = PickCompany(jobText, structuredMeta);
+        var location = PickLocation(jobText, structuredMeta);
+
         return new JobContext
         {
             IsAnalyzed = true,
-            JobTitle = ExtractJobTitle(jobText),
-            CompanyName = ExtractCompany(jobText),
-            Location = ExtractLocation(jobText),
+            JobTitle = jobTitle,
+            CompanyName = companyName,
+            Location = location,
             KeyRequirements = requirements.Count > 0
                 ? requirements
                 : new List<string> { "No explicit requirements detected. Use the full posting for tailoring." },
@@ -44,23 +56,44 @@ public class JobContextExtractor(IHttpClientFactory httpClientFactory, ILogger<J
         };
     }
 
+    private static string PickTitle(string jobText, JobPostingStructuredMeta? meta)
+    {
+        if (!string.IsNullOrWhiteSpace(meta?.Title))
+            return meta.Title.Trim();
+        return ExtractJobTitle(jobText);
+    }
+
+    private static string PickCompany(string jobText, JobPostingStructuredMeta? meta)
+    {
+        if (!string.IsNullOrWhiteSpace(meta?.CompanyName))
+            return meta.CompanyName.Trim();
+        return ExtractCompany(jobText);
+    }
+
+    private static string PickLocation(string jobText, JobPostingStructuredMeta? meta)
+    {
+        if (!string.IsNullOrWhiteSpace(meta?.Location))
+            return meta.Location.Trim();
+        return ExtractLocation(jobText);
+    }
+
     private static bool LooksLikeUrl(string input) =>
         input.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
         || input.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<string> FetchAndSanitizeHtmlAsync(string url)
+    private async Task<(string Text, JobPostingStructuredMeta? Meta)> FetchAndSanitizeHtmlAsync(string url)
     {
         try
         {
             var client = httpClientFactory.CreateClient();
             var html = await client.GetStringAsync(url);
-            var normalized = JobPostingPageTextExtractor.FromHtml(html);
-            normalized = Regex.Replace(normalized, @"\s+", " ").Trim();
+            var result = JobPostingPageTextExtractor.FromHtmlWithMeta(html);
+            var normalized = NormalizeWhitespacePreserveNewlines(result.PlainText);
 
             if (normalized.Length > 5000)
                 normalized = normalized[..5000];
 
-            return normalized;
+            return (normalized, result.StructuredMeta);
         }
         catch (Exception ex)
         {
@@ -70,41 +103,106 @@ public class JobContextExtractor(IHttpClientFactory httpClientFactory, ILogger<J
         }
     }
 
+    /// <summary>Keine vollständige Kollabierung von Zeilenumbrüchen (hilft Fallback-Heuristiken).</summary>
+    private static string NormalizeWhitespacePreserveNewlines(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+            return s;
+        s = Regex.Replace(s, "\r\n?", "\n");
+        s = Regex.Replace(s, "[ \t\f\v]+", " ");
+        s = Regex.Replace(s, @"\n{3,}", "\n\n");
+        return s.Trim();
+    }
+
+    private static bool LooksLikeTitleCandidate(string line)
+    {
+        if (line.Length < 6 || line.Length > 200)
+            return false;
+        var lower = line.ToLowerInvariant();
+        foreach (var n in TitleLineNoise)
+        {
+            if (lower.Contains(n, StringComparison.Ordinal))
+                return false;
+        }
+        return true;
+    }
+
     private static string ExtractJobTitle(string text)
     {
         var lines = text.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries)
             .Select(l => l.Trim())
             .Where(l => l.Length > 3)
-            .Take(20)
+            .Take(25)
             .ToList();
 
-        var match = lines.FirstOrDefault(line =>
-            Regex.IsMatch(line, @"\b(engineer|developer|manager|analyst|designer|consultant|specialist|lead)\b",
-                RegexOptions.IgnoreCase));
+        var rolePattern =
+            @"\b(engineer|developer|manager|analyst|designer|consultant|specialist|lead|director|intern|trainee|officer|architect|scientist|researcher|associate|" +
+            @"marketing|kommunikation|vertrieb|referent|berater|beraterin|assistent|assistentin|buchhalter|controller|sachbearbeiter|mitarbeiter|mitarbeiterin|" +
+            @"wirtschaftsprüfung|steuer|personal|hr|it|software|data|product|project|sales|account|executive)\b";
 
-        return string.IsNullOrWhiteSpace(match) ? "Unknown Role" : match;
+        var match = lines.FirstOrDefault(line =>
+            Regex.IsMatch(line, rolePattern, RegexOptions.IgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(match))
+            return match;
+
+        foreach (var line in lines)
+        {
+            if (!line.Contains('|', StringComparison.Ordinal))
+                continue;
+            var first = line.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault();
+            if (!string.IsNullOrEmpty(first) && LooksLikeTitleCandidate(first) && first.Length >= 8)
+                return first.Length > 160 ? first[..160].Trim() : first;
+        }
+
+        var firstLine = lines.FirstOrDefault();
+        if (!string.IsNullOrEmpty(firstLine) && LooksLikeTitleCandidate(firstLine))
+            return firstLine.Length > 180 ? firstLine[..180].Trim() : firstLine;
+
+        return "Unknown Role";
     }
 
     private static string ExtractCompany(string text)
     {
-        var companyByAt = Regex.Match(text, @"\b(?:at|for)\s+([A-Z][A-Za-z0-9&\-. ]{2,40})");
+        var companyByAt = Regex.Match(text, @"\b(?:at|for)\s+([A-ZÄÖÜ][A-Za-z0-9&\-. ]{2,50})");
         if (companyByAt.Success)
             return companyByAt.Groups[1].Value.Trim();
 
-        var companyLabel = Regex.Match(text, @"(?i)\bcompany[:\s]+([A-Z][A-Za-z0-9&\-. ]{2,40})");
+        var bei = Regex.Match(text, @"(?i)\b(?:bei|unternehmen)[:\s]+([A-ZÄÖÜ][A-Za-z0-9&\-. ]{1,50})(?:\s|$|[,.])");
+        if (bei.Success)
+            return bei.Groups[1].Value.Trim();
+
+        var companyLabel = Regex.Match(text, @"(?i)\bcompany[:\s]+([A-ZÄÖÜ][A-Za-z0-9&\-. ]{2,50})");
         if (companyLabel.Success)
             return companyLabel.Groups[1].Value.Trim();
+
+        var pipeKarriere = Regex.Match(
+            text,
+            @"\|\s*Karriere\s*\|\s*([A-ZÄÖÜ0-9][A-Za-z0-9&\-.]{1,40})\s*\|");
+        if (pipeKarriere.Success)
+            return pipeKarriere.Groups[1].Value.Trim();
+
+        var pipeCountry = Regex.Match(
+            text,
+            @"\|\s*([A-ZÄÖÜ][A-Za-z0-9&\-.]{1,40})\s*\|\s*(?:DE|AT|CH)\b");
+        if (pipeCountry.Success)
+            return pipeCountry.Groups[1].Value.Trim();
 
         return "Unknown Company";
     }
 
     private static string ExtractLocation(string text)
     {
-        var locationLabel = Regex.Match(text, @"(?i)\blocation[:\s]+([A-Za-z0-9, \-()]{2,60})");
+        var locationLabel = Regex.Match(text, @"(?i)\blocation[:\s]+([A-Za-z0-9äöüÄÖÜ, \-()]{2,60})");
         if (locationLabel.Success)
             return locationLabel.Groups[1].Value.Trim();
 
-        var remote = Regex.Match(text, @"(?i)\b(remote|hybrid|on[- ]?site)\b");
+        var standort = Regex.Match(text, @"(?i)\bstandort[:\s]+([A-Za-z0-9äöüÄÖÜ, \-()]{2,80})");
+        if (standort.Success)
+            return standort.Groups[1].Value.Trim().Split('|')[0].Trim();
+
+        var remote = Regex.Match(text, @"(?i)\b(remote|hybrid|on[- ]?site|telearbeit|homeoffice)\b");
         if (remote.Success)
             return remote.Value.Trim();
 
@@ -126,7 +224,7 @@ public class JobContextExtractor(IHttpClientFactory httpClientFactory, ILogger<J
 
     private static List<string> ExtractKeywords(string text)
     {
-        var words = Regex.Matches(text.ToLowerInvariant(), @"\b[a-z][a-z0-9+#\-.]{2,}\b")
+        var words = Regex.Matches(text.ToLowerInvariant(), @"\b[a-zäöü][a-z0-9äöü+#\-.]{2,}\b")
             .Select(m => m.Value)
             .Where(w => !StopWords.Contains(w))
             .Where(w => w.Length <= 24)
