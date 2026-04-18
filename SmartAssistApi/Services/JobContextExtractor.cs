@@ -54,8 +54,8 @@ public class JobContextExtractor(IHttpClientFactory httpClientFactory, ILogger<J
         {
             var client = httpClientFactory.CreateClient();
             var html = await client.GetStringAsync(url);
-            var withoutTags = Regex.Replace(html, "<[^>]+>", " ");
-            var normalized = Regex.Replace(withoutTags, @"\s+", " ").Trim();
+            var normalized = JobPostingPageTextExtractor.FromHtml(html);
+            normalized = Regex.Replace(normalized, @"\s+", " ").Trim();
 
             if (normalized.Length > 5000)
                 normalized = normalized[..5000];
