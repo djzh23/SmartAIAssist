@@ -158,13 +158,9 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(allowedOrigins)
             .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-            .WithHeaders(
-                "Authorization",
-                "Content-Type",
-                "Accept",
-                "Stripe-Signature",
-                "X-Requested-With",
-                "X-Request-Id")
+            // Allow any request header so preflight succeeds across browsers (Firefox can send
+            // additional Access-Control-Request-Headers vs Chromium).
+            .AllowAnyHeader()
             .WithExposedHeaders(
                 "X-Usage-Today",
                 "X-Usage-Limit",
@@ -303,6 +299,36 @@ if (string.IsNullOrWhiteSpace(azureSpeechKey))
 }
 
 app.UseRouting();
+
+// When an inner middleware throws, CorsMiddleware never runs EvaluateResponse(), so the client
+// sees a 500 without Access-Control-Allow-Origin — Firefox reports this as a CORS failure.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("UnhandledException");
+        logger.LogError(ex, "Unhandled exception");
+        if (!context.Response.HasStarted)
+        {
+            var origin = context.Request.Headers.Origin.FirstOrDefault();
+            if (!string.IsNullOrEmpty(origin) && allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+            {
+                context.Response.Headers["Access-Control-Allow-Origin"] = origin;
+                context.Response.Headers["Vary"] = "Origin";
+            }
+
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync("{\"error\":\"internal_error\"}");
+        }
+    }
+});
+
 app.UseCors("SmartAssistWeb");
 
 app.UseRequestId();
