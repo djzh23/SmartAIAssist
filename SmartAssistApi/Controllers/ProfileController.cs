@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Models;
@@ -108,6 +109,170 @@ public class ProfileController(
         await profileService.SetSkills(userId, request.Skills ?? new List<string>());
         SetCareerProfileStorageHeaders();
         return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Erzeugt einen anonymisierten Profil-Fließtext für KI-Kontext (keine Namen/Adressen/Kontaktdaten im Output).
+    /// </summary>
+    [HttpPost("cv/anonymous-summary")]
+    [EnableRateLimiting("cv_summary")]
+    public async Task<IActionResult> AnonymousCvSummary()
+    {
+        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        if (isAnonymous || string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        CareerProfile? profile;
+        try
+        {
+            profile = await profileService.GetProfile(userId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Anonymous CV summary: profile load failed for {UserId}", userId);
+            return StatusCode(503, new
+            {
+                error = "profile_load_failed",
+                message = "Profil konnte nicht geladen werden. Bitte später erneut versuchen.",
+            });
+        }
+
+        profile ??= new CareerProfile { UserId = userId };
+        NormalizeProfileLists(profile);
+
+        if (!HasEnoughForAnonymousSummary(profile))
+        {
+            return BadRequest(new
+            {
+                error = "insufficient_data",
+                message = "Trage mindestens Skills, eine Berufserfahrung oder einen CV-Text (mind. 50 Zeichen) ein.",
+            });
+        }
+
+        var prompt = BuildAnonymousCvSummaryPrompt(profile);
+        try
+        {
+            var text = await llmSingleCompletion
+                .CompleteAsync(prompt, 720, HttpContext.RequestAborted)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return StatusCode(502, new
+                {
+                    error = "llm_empty",
+                    message = "Die KI hat keinen Text zurückgegeben.",
+                });
+            }
+
+            var trimmed = text.Trim();
+            if (trimmed.Length > 12_000)
+                trimmed = trimmed[..12_000];
+
+            return Ok(new AnonymousCvSummaryResponse(trimmed));
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(499, new { error = "cancelled", message = "Anfrage abgebrochen." });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Anonymous CV summary LLM failed for user {UserId}", userId);
+            return StatusCode(502, new
+            {
+                error = "llm_failed",
+                message = "Zusammenfassung konnte nicht erstellt werden. Bitte später erneut versuchen.",
+            });
+        }
+    }
+
+    private static bool HasEnoughForAnonymousSummary(CareerProfile p)
+    {
+        if ((p.Skills?.Count ?? 0) > 0)
+            return true;
+        if ((p.Experience?.Count ?? 0) > 0)
+            return true;
+        var cv = p.CvRawText?.Trim();
+        return cv is { Length: >= 50 };
+    }
+
+    private static string BuildAnonymousCvSummaryPrompt(CareerProfile p)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Du erstellst einen sachlichen deutschen Fließtext (5–12 Sätze) für ein KI-Assistenz-Profil.");
+        sb.AppendLine("STRIKT: Keine Personennamen, keine Adressen, keine Telefonnummern, keine E-Mail-Adressen, keine URLs, keine Firmennamen.");
+        sb.AppendLine("Nutze neutrale Formulierungen wie \"eine mittelständische Softwarefirma\" statt konkreter Unternehmen.");
+        sb.AppendLine("Beschreibe Berufserfahrung ohne konkrete Arbeitgeber.");
+        sb.AppendLine();
+        sb.AppendLine("Strukturierte Input-Daten (ggf. mit sensiblen Spalten — NICHT wörtlich übernehmen):");
+
+        if (!string.IsNullOrWhiteSpace(p.FieldLabel))
+            sb.AppendLine($"Berufsfeld: {p.FieldLabel}");
+        if (!string.IsNullOrWhiteSpace(p.LevelLabel))
+            sb.AppendLine($"Erfahrungslevel: {p.LevelLabel}");
+        if (!string.IsNullOrWhiteSpace(p.CurrentRole))
+            sb.AppendLine($"Aktuelle Rolle (Text kann Namen enthalten — NICHT ausgeben): {Truncate(p.CurrentRole, 300)}");
+
+        if (p.Goals.Count > 0)
+            sb.AppendLine("Ziele: " + string.Join("; ", p.Goals.Take(12)));
+
+        if (p.Skills.Count > 0)
+            sb.AppendLine("Skills: " + string.Join(", ", p.Skills.Take(40)));
+
+        if (p.Experience.Count > 0)
+        {
+            sb.AppendLine("Berufserfahrung (Unternehmen NICHT im Output nennen):");
+            foreach (var e in p.Experience.Take(8))
+            {
+                sb.Append(" - ");
+                if (!string.IsNullOrWhiteSpace(e.Title))
+                    sb.Append($"{e.Title.Trim()}. ");
+                if (!string.IsNullOrWhiteSpace(e.Duration))
+                    sb.Append($"Zeitraum: {e.Duration.Trim()}. ");
+                if (!string.IsNullOrWhiteSpace(e.Summary))
+                    sb.Append(Truncate(e.Summary.Trim(), 400));
+                sb.AppendLine();
+            }
+        }
+
+        if (p.EducationEntries.Count > 0)
+        {
+            sb.AppendLine("Ausbildung (Institution nicht nennen wenn nicht nötig — evtl. \"Studium\" ohne Ortsnamen):");
+            foreach (var ed in p.EducationEntries.Take(6))
+            {
+                sb.Append(" - ");
+                if (!string.IsNullOrWhiteSpace(ed.Degree))
+                    sb.Append(ed.Degree.Trim());
+                if (!string.IsNullOrWhiteSpace(ed.Year))
+                    sb.Append($" ({ed.Year.Trim()})");
+                sb.AppendLine();
+            }
+        }
+
+        if (p.Languages.Count > 0)
+        {
+            sb.AppendLine("Sprachen: "
+                + string.Join(", ", p.Languages
+                    .Where(l => !string.IsNullOrWhiteSpace(l.Name))
+                    .Take(12)
+                    .Select(l => string.IsNullOrWhiteSpace(l.Level) ? l.Name!.Trim() : $"{l.Name!.Trim()} ({l.Level.Trim()})")));
+        }
+
+        var rawCv = p.CvRawText?.Trim();
+        if (!string.IsNullOrEmpty(rawCv))
+            sb.AppendLine();
+        sb.AppendLine($"CV-Rohtext (auf 6000 Zeichen gekürzt, kann PII enthalten — nicht ausgeben):");
+        sb.AppendLine(Truncate(rawCv ?? string.Empty, 6000));
+        sb.AppendLine();
+        sb.AppendLine("Antwort nur mit dem Fließtext, ohne Überschrift, ohne Aufzählungszeichen am Anfang.");
+        return sb.ToString();
+    }
+
+    private static string Truncate(string s, int max)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length <= max)
+            return s;
+        return s[..max] + "…";
     }
 
     [HttpPost("cv")]

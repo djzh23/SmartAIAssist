@@ -98,6 +98,30 @@ public static class HttpSecurityExtensions
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         QueueLimit = 0,
                     }));
+
+            options.AddPolicy("job_preview", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    ClientPartitionKey.Get(ctx),
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        AutoReplenishment = true,
+                        PermitLimit = 20,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
+            options.AddPolicy("cv_summary", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    ClientPartitionKey.Get(ctx),
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        AutoReplenishment = true,
+                        PermitLimit = 10,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
         });
 
         return services;

@@ -4,6 +4,7 @@ using SmartAssistApi.Models;
 namespace SmartAssistApi.Services;
 
 public class JobContextExtractor(IHttpClientFactory httpClientFactory, ILogger<JobContextExtractor> logger)
+    : IJobContextExtractor
 {
     private static readonly HashSet<string> StopWords =
     [

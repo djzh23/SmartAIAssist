@@ -124,6 +124,7 @@ builder.Services.AddSingleton<ConversationService>();
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddScoped<PromptComposer>();
 builder.Services.AddScoped<JobContextExtractor>();
+builder.Services.AddScoped<IJobContextExtractor>(sp => sp.GetRequiredService<JobContextExtractor>());
 builder.Services.AddScoped<CvParsingService>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<IAgentService>(sp => sp.GetRequiredService<AgentService>());

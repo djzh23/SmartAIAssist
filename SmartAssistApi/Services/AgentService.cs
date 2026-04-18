@@ -15,7 +15,7 @@ public class AgentService(
     IConfiguration config,
     ConversationService conversationService,
     PromptComposer promptComposer,
-    JobContextExtractor jobExtractor,
+    IJobContextExtractor jobExtractor,
     GroqChatCompletionService groqChat,
     LearningMemoryService learningMemoryService,
     IOptions<GroqOptions> groqOptions,
