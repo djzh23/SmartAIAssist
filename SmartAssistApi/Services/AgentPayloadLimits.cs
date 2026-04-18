@@ -29,6 +29,7 @@ public static class AgentPayloadLimits
             CompanyName = Clamp(setup.CompanyName, MaxSetupCompanyChars),
             InterviewLanguageCode = Clamp(setup.InterviewLanguageCode, 8),
             InterviewAlias = Clamp(setup.InterviewAlias, MaxSetupInterviewAliasChars),
+            GeneralCoaching = setup.GeneralCoaching,
         };
     }
 

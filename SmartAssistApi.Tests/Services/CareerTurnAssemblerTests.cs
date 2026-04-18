@@ -29,4 +29,14 @@ public class CareerTurnAssemblerTests
         Assert.Contains("Passt mein Profil?", composed);
         Assert.Contains("[ENDE_AKTUELLE_NUTZERFRAGE]", composed);
     }
+
+    [Fact]
+    public void ComposeEffectiveUserMessage_GeneralCoaching_IncludesMetaEvenWithSparseSetup()
+    {
+        var setup = new CareerToolSetup(GeneralCoaching: true);
+        var req = new AgentRequest("Los gehts", SessionId: "s1", ToolType: "interviewprep", CareerToolSetup: setup);
+        var composed = CareerTurnAssembler.ComposeEffectiveUserMessage(req, "interviewprep", "Los gehts");
+        Assert.Contains("[META]", composed);
+        Assert.Contains("Allgemeines Coaching", composed, StringComparison.Ordinal);
+    }
 }

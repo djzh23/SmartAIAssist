@@ -8,10 +8,12 @@ public static class CareerTurnAssembler
 {
     public static bool HasStructuredSetup(AgentRequest request) =>
         request.CareerToolSetup is { } s
-        && (!string.IsNullOrWhiteSpace(s.CvText)
+        && (s.GeneralCoaching
+            || !string.IsNullOrWhiteSpace(s.CvText)
             || !string.IsNullOrWhiteSpace(s.JobText)
             || !string.IsNullOrWhiteSpace(s.JobUrl)
-            || !string.IsNullOrWhiteSpace(s.JobTitle));
+            || !string.IsNullOrWhiteSpace(s.JobTitle)
+            || !string.IsNullOrWhiteSpace(s.CompanyName));
 
     public static bool ShouldComposeStructuredTurn(AgentRequest request, string toolType) =>
         (toolType == "jobanalyzer" || toolType == "interviewprep")
@@ -25,6 +27,14 @@ public static class CareerTurnAssembler
 
         var setup = request.CareerToolSetup!;
         var sb = new StringBuilder();
+
+        if (setup.GeneralCoaching)
+        {
+            sb.AppendLine("[META]");
+            sb.AppendLine("Modus: Allgemeines Coaching ohne feste Stellenanzeige. Nutze CV/Profil-Snippets, stelle klärende Fragen wenn nötig, keine erfundene Stelle.");
+            sb.AppendLine("[ENDE_META]");
+            sb.AppendLine();
+        }
 
         if (!string.IsNullOrWhiteSpace(setup.CvText))
         {

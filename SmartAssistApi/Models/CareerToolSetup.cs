@@ -9,4 +9,5 @@ public record CareerToolSetup(
     string? CompanyName = null,
     string? InterviewLanguageCode = null,
     bool JobAnalyzerFollowUp = false,
-    string? InterviewAlias = null);
+    string? InterviewAlias = null,
+    bool GeneralCoaching = false);
