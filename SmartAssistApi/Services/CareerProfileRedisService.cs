@@ -160,6 +160,8 @@ public sealed class CareerProfileRedisService(
             profile.CreatedAt = DateTime.UtcNow;
 
         profile.CvRawText = Truncate(profile.CvRawText, CareerProfileStorageLimits.CvRawTextInProfileMax);
+        profile.CvSummary = Truncate(profile.CvSummary, CareerProfileStorageLimits.CvSummaryMaxChars);
+        profile.CvSummaryEn = Truncate(profile.CvSummaryEn, CareerProfileStorageLimits.CvSummaryMaxChars);
         foreach (var job in profile.TargetJobs)
         {
             job.Description = Truncate(job.Description, CareerProfileStorageLimits.TargetJobDescriptionMax);

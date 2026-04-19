@@ -5,5 +5,6 @@ public static class CareerProfileStorageLimits
 {
     public const int CvRawTextInProfileMax = 3000;
     public const int CvRawSeparateKeyMax = 50_000;
+    public const int CvSummaryMaxChars = 12_000;
     public const int TargetJobDescriptionMax = 2000;
 }

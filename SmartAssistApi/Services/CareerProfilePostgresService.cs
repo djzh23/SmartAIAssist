@@ -53,6 +53,8 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
             profile.CreatedAt = DateTime.UtcNow;
 
         profile.CvRawText = Truncate(profile.CvRawText, CareerProfileStorageLimits.CvRawTextInProfileMax);
+        profile.CvSummary = Truncate(profile.CvSummary, CareerProfileStorageLimits.CvSummaryMaxChars);
+        profile.CvSummaryEn = Truncate(profile.CvSummaryEn, CareerProfileStorageLimits.CvSummaryMaxChars);
         foreach (var job in profile.TargetJobs)
         {
             job.Description = Truncate(job.Description, CareerProfileStorageLimits.TargetJobDescriptionMax);
@@ -248,6 +250,8 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
 
         profile.UserId = userId;
         profile.CvRawText = Truncate(profile.CvRawText, CareerProfileStorageLimits.CvRawTextInProfileMax);
+        profile.CvSummary = Truncate(profile.CvSummary, CareerProfileStorageLimits.CvSummaryMaxChars);
+        profile.CvSummaryEn = Truncate(profile.CvSummaryEn, CareerProfileStorageLimits.CvSummaryMaxChars);
         foreach (var job in profile.TargetJobs)
         {
             job.Description = Truncate(job.Description, CareerProfileStorageLimits.TargetJobDescriptionMax);

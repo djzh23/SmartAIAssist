@@ -116,11 +116,14 @@ public class ProfileController(
     /// </summary>
     [HttpPost("cv/anonymous-summary")]
     [EnableRateLimiting("cv_summary")]
-    public async Task<IActionResult> AnonymousCvSummary()
+    public async Task<IActionResult> AnonymousCvSummary([FromBody] AnonymousCvSummaryRequest? request)
     {
         var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
+
+        var lang = request?.Language?.Trim().ToLowerInvariant();
+        var isEnglish = lang is "en" or "english";
 
         CareerProfile? profile;
         try
@@ -149,7 +152,7 @@ public class ProfileController(
             });
         }
 
-        var prompt = BuildAnonymousCvSummaryPrompt(profile);
+        var prompt = BuildAnonymousCvSummaryPrompt(profile, isEnglish);
         try
         {
             var text = await llmSingleCompletion
@@ -166,8 +169,8 @@ public class ProfileController(
             }
 
             var trimmed = text.Trim();
-            if (trimmed.Length > 12_000)
-                trimmed = trimmed[..12_000];
+            if (trimmed.Length > CareerProfileStorageLimits.CvSummaryMaxChars)
+                trimmed = trimmed[..CareerProfileStorageLimits.CvSummaryMaxChars];
 
             return Ok(new AnonymousCvSummaryResponse(trimmed));
         }
@@ -196,15 +199,27 @@ public class ProfileController(
         return cv is { Length: >= 50 };
     }
 
-    private static string BuildAnonymousCvSummaryPrompt(CareerProfile p)
+    private static string BuildAnonymousCvSummaryPrompt(CareerProfile p, bool isEnglish)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Du erstellst einen sachlichen deutschen Fließtext (5–12 Sätze) für ein KI-Assistenz-Profil.");
-        sb.AppendLine("STRIKT: Keine Personennamen, keine Adressen, keine Telefonnummern, keine E-Mail-Adressen, keine URLs, keine Firmennamen.");
-        sb.AppendLine("Nutze neutrale Formulierungen wie \"eine mittelständische Softwarefirma\" statt konkreter Unternehmen.");
-        sb.AppendLine("Beschreibe Berufserfahrung ohne konkrete Arbeitgeber.");
-        sb.AppendLine();
-        sb.AppendLine("Strukturierte Input-Daten (ggf. mit sensiblen Spalten — NICHT wörtlich übernehmen):");
+        if (isEnglish)
+        {
+            sb.AppendLine("You write a factual English prose summary (5–12 sentences) for an AI assistant user profile.");
+            sb.AppendLine("STRICT: No person names, no postal addresses, no phone numbers, no email addresses, no URLs, no company names.");
+            sb.AppendLine("Use neutral wording such as \"a mid-sized software company\" instead of specific employers.");
+            sb.AppendLine("Describe work experience without naming specific organizations.");
+            sb.AppendLine();
+            sb.AppendLine("Structured input (may contain sensitive fields — do NOT copy literally into the output):");
+        }
+        else
+        {
+            sb.AppendLine("Du erstellst einen sachlichen deutschen Fließtext (5–12 Sätze) für ein KI-Assistenz-Profil.");
+            sb.AppendLine("STRIKT: Keine Personennamen, keine Adressen, keine Telefonnummern, keine E-Mail-Adressen, keine URLs, keine Firmennamen.");
+            sb.AppendLine("Nutze neutrale Formulierungen wie \"eine mittelständische Softwarefirma\" statt konkreter Unternehmen.");
+            sb.AppendLine("Beschreibe Berufserfahrung ohne konkrete Arbeitgeber.");
+            sb.AppendLine();
+            sb.AppendLine("Strukturierte Input-Daten (ggf. mit sensiblen Spalten — NICHT wörtlich übernehmen):");
+        }
 
         if (!string.IsNullOrWhiteSpace(p.FieldLabel))
             sb.AppendLine($"Berufsfeld: {p.FieldLabel}");
@@ -261,10 +276,14 @@ public class ProfileController(
         var rawCv = p.CvRawText?.Trim();
         if (!string.IsNullOrEmpty(rawCv))
             sb.AppendLine();
-        sb.AppendLine($"CV-Rohtext (auf 6000 Zeichen gekürzt, kann PII enthalten — nicht ausgeben):");
+        sb.AppendLine(isEnglish
+            ? "CV raw text (truncated to 6000 chars, may contain PII — do not output):"
+            : "CV-Rohtext (auf 6000 Zeichen gekürzt, kann PII enthalten — nicht ausgeben):");
         sb.AppendLine(Truncate(rawCv ?? string.Empty, 6000));
         sb.AppendLine();
-        sb.AppendLine("Antwort nur mit dem Fließtext, ohne Überschrift, ohne Aufzählungszeichen am Anfang.");
+        sb.AppendLine(isEnglish
+            ? "Answer with the prose only: no heading, no leading bullet or number."
+            : "Antwort nur mit dem Fließtext, ohne Überschrift, ohne Aufzählungszeichen am Anfang.");
         return sb.ToString();
     }
 

@@ -24,7 +24,10 @@ public class CareerProfile
 
     // === CV-DATEN ===
     public string? CvRawText { get; set; }
+    /// <summary>Anonyme Kurz-Zusammenfassung für den Assistenten (Deutsch).</summary>
     public string? CvSummary { get; set; }
+    /// <summary>English version of the anonymous summary (optional).</summary>
+    public string? CvSummaryEn { get; set; }
     public DateTime? CvUploadedAt { get; set; }
 
     // === WUNSCHSTELLEN (max 3) ===
