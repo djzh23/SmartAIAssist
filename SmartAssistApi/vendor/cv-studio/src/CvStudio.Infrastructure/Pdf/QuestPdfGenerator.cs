@@ -150,7 +150,7 @@ public sealed class QuestPdfGenerator : IPdfGenerator
                     {
                         foreach (var work in data.WorkItems)
                         {
-                            section.Item().Element(x => RenderWorkEntry(x, work));
+                            section.Item().PreventPageBreak().Element(x => RenderWorkEntry(x, work));
                             section.Item().PaddingBottom(2);
                         }
                     }));
@@ -164,7 +164,7 @@ public sealed class QuestPdfGenerator : IPdfGenerator
                     {
                         foreach (var education in data.EducationItems)
                         {
-                            section.Item().Element(x => RenderEducationEntry(x, education));
+                            section.Item().PreventPageBreak().Element(x => RenderEducationEntry(x, education));
                             section.Item().PaddingBottom(2);
                         }
                     }));
@@ -215,7 +215,7 @@ public sealed class QuestPdfGenerator : IPdfGenerator
                     {
                         foreach (var work in data.WorkItems)
                         {
-                            section.Item().Element(x => RenderDesignBWorkEntry(x, work));
+                            section.Item().PreventPageBreak().Element(x => RenderDesignBWorkEntry(x, work));
                             section.Item().PaddingBottom(3);
                         }
                     }));
@@ -229,7 +229,7 @@ public sealed class QuestPdfGenerator : IPdfGenerator
                     {
                         foreach (var education in data.EducationItems)
                         {
-                            section.Item().Element(x => RenderDesignBEducationEntry(x, education));
+                            section.Item().PreventPageBreak().Element(x => RenderDesignBEducationEntry(x, education));
                             section.Item().PaddingBottom(3);
                         }
                     }));
@@ -289,11 +289,11 @@ public sealed class QuestPdfGenerator : IPdfGenerator
 
                 row.ConstantItem(10);
 
-                row.RelativeItem().BorderLeft(1.2f).BorderColor(Style.Navy).PaddingLeft(10).Column(inner =>
+                row.RelativeItem().BorderLeft(1.2f).BorderColor(Style.Navy).PaddingLeft(10).Column(right =>
                 {
-                    inner.Spacing(2);
+                    right.Spacing(3);
 
-                    inner.Item().Text($"{data.Profile.FirstName} {data.Profile.LastName}".Trim())
+                    right.Item().Text($"{data.Profile.FirstName} {data.Profile.LastName}".Trim())
                         .FontColor("#111827")
                         .FontSize(26f)
                         .Bold()
@@ -301,74 +301,61 @@ public sealed class QuestPdfGenerator : IPdfGenerator
 
                     if (!string.IsNullOrWhiteSpace(data.Profile.Headline))
                     {
-                        inner.Item().Text(data.Profile.Headline.Trim())
-                            .FontColor("#6B7280")
-                            .FontSize(11f)
+                        right.Item().Text(data.Profile.Headline.Trim())
+                            .FontColor("#4B5563")
+                            .FontSize(11.5f)
+                            .SemiBold()
                             .LetterSpacing(0.01f);
+                    }
+
+                    var contactParts = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(data.Profile.Email))
+                        contactParts.Add(data.Profile.Email.Trim());
+                    if (!string.IsNullOrWhiteSpace(data.Profile.Phone))
+                        contactParts.Add(data.Profile.Phone.Trim());
+                    if (!string.IsNullOrWhiteSpace(data.Profile.Location))
+                        contactParts.Add(data.Profile.Location.Trim());
+
+                    if (contactParts.Count > 0)
+                    {
+                        right.Item().Text(string.Join("  |  ", contactParts))
+                            .FontSize(10.5f)
+                            .SemiBold()
+                            .FontColor("#1C2833")
+                            .LineHeight(1.25f);
+                    }
+
+                    if (HasSocialLinks(data.Profile))
+                    {
+                        var links = new List<string>();
+                        if (!string.IsNullOrWhiteSpace(data.Profile.LinkedInUrl))
+                            links.Add($"in: {FormatUrl(data.Profile.LinkedInUrl)}");
+                        if (!string.IsNullOrWhiteSpace(data.Profile.GitHubUrl))
+                            links.Add($"gh: {FormatUrl(data.Profile.GitHubUrl)}");
+                        if (!string.IsNullOrWhiteSpace(data.Profile.PortfolioUrl))
+                            links.Add($"web: {FormatUrl(data.Profile.PortfolioUrl)}");
+
+                        right.Item().Text(string.Join("   ", links))
+                            .FontSize(9.5f)
+                            .SemiBold()
+                            .FontColor("#374151");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(data.Profile.WorkPermit))
+                    {
+                        right.Item().AlignLeft()
+                            .Background("#F0FDF4")
+                            .Border(0.6f)
+                            .BorderColor("#BBF7D0")
+                            .PaddingHorizontal(5)
+                            .PaddingVertical(3)
+                            .Text($"✓ {data.Profile.WorkPermit.Trim()}")
+                            .FontSize(9f)
+                            .SemiBold()
+                            .FontColor("#15803D");
                     }
                 });
             });
-
-            col.Item().Height(6);
-
-            var contactParts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(data.Profile.Email))
-            {
-                contactParts.Add(data.Profile.Email.Trim());
-            }
-
-            if (!string.IsNullOrWhiteSpace(data.Profile.Phone))
-            {
-                contactParts.Add(data.Profile.Phone.Trim());
-            }
-
-            if (!string.IsNullOrWhiteSpace(data.Profile.Location))
-            {
-                contactParts.Add(data.Profile.Location.Trim());
-            }
-
-            if (contactParts.Count > 0)
-            {
-                col.Item().Text(string.Join("  |  ", contactParts))
-                    .FontSize(8.5f)
-                    .FontColor("#374151");
-            }
-
-            if (HasSocialLinks(data.Profile))
-            {
-                col.Item().Height(3);
-                var links = new List<string>();
-                if (!string.IsNullOrWhiteSpace(data.Profile.LinkedInUrl))
-                {
-                    links.Add($"in: {FormatUrl(data.Profile.LinkedInUrl)}");
-                }
-
-                if (!string.IsNullOrWhiteSpace(data.Profile.GitHubUrl))
-                {
-                    links.Add($"gh: {FormatUrl(data.Profile.GitHubUrl)}");
-                }
-
-                if (!string.IsNullOrWhiteSpace(data.Profile.PortfolioUrl))
-                {
-                    links.Add($"web: {FormatUrl(data.Profile.PortfolioUrl)}");
-                }
-
-                col.Item().Text(string.Join("   ", links))
-                    .FontSize(8f)
-                    .FontColor("#6B7280");
-            }
-
-            if (!string.IsNullOrWhiteSpace(data.Profile.WorkPermit))
-            {
-                col.Item().Height(4);
-                col.Item().AlignRight()
-                    .Background("#F0FDF4")
-                    .PaddingHorizontal(3)
-                    .PaddingVertical(2)
-                    .Text($"✓ {data.Profile.WorkPermit.Trim()}")
-                    .FontSize(7.5f)
-                    .FontColor("#15803D");
-            }
         });
     }
 
