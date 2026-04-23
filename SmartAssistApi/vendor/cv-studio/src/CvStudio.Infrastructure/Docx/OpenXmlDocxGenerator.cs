@@ -65,17 +65,7 @@ public sealed class OpenXmlDocxGenerator : IDocxGenerator
             var body = mainPart.Document.Body!;
             body.Append(CreateHeaderTable(mainPart, data, profileImageBytes));
             body.Append(CreateRuleParagraph(Navy, 10U));
-
-            if (!string.IsNullOrWhiteSpace(data.Profile.Summary))
-            {
-                body.Append(CreateSectionTitle(CvSectionTitleResolver.QualificationsProfile(data)));
-                body.Append(CreateStyledParagraph(data.Profile.Summary, 21, color: BodyColor, spacingAfter: 80));
-            }
-
-            AppendKnowledge(body, data);
-            AppendWork(body, data);
-            AppendEducation(body, data);
-            AppendLanguagesAndInterests(body, data);
+            AppendOrderedMainSections(body, data);
 
             mainPart.Document.Save();
         }
@@ -234,6 +224,37 @@ public sealed class OpenXmlDocxGenerator : IDocxGenerator
         return paragraph;
     }
 
+    private static void AppendOrderedMainSections(Body body, ResumeData data)
+    {
+        foreach (var sectionKey in CvStudioMainSectionOrder.Resolve(data.ContentSectionOrder))
+        {
+            switch (sectionKey)
+            {
+                case CvStudioMainSectionOrder.Summary:
+                    if (!string.IsNullOrWhiteSpace(data.Profile.Summary))
+                    {
+                        body.Append(CreateSectionTitle(CvSectionTitleResolver.QualificationsProfile(data)));
+                        body.Append(CreateStyledParagraph(data.Profile.Summary, 21, color: BodyColor, spacingAfter: 80));
+                    }
+                    break;
+                case CvStudioMainSectionOrder.Skills:
+                    AppendKnowledge(body, data);
+                    break;
+                case CvStudioMainSectionOrder.Work:
+                    AppendWork(body, data);
+                    break;
+                case CvStudioMainSectionOrder.Education:
+                    AppendEducation(body, data);
+                    break;
+                case CvStudioMainSectionOrder.Languages:
+                    AppendLanguagesAndInterests(body, data);
+                    break;
+                case CvStudioMainSectionOrder.Projects:
+                    break;
+            }
+        }
+    }
+
     private static void AppendKnowledge(Body body, ResumeData data)
     {
         var groups = data.Skills
@@ -359,6 +380,9 @@ public sealed class OpenXmlDocxGenerator : IDocxGenerator
             {
                 body.Append(CreateStyledParagraph(item.Degree, 20, bold: true, italic: true, color: Teal, spacingAfter: 80));
             }
+
+            if (!string.IsNullOrWhiteSpace(item.Description))
+                body.Append(CreateStyledParagraph(item.Description.Trim(), 18, italic: true, color: Muted, spacingAfter: 60));
         }
     }
 

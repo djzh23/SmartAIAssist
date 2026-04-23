@@ -172,7 +172,12 @@ public sealed class CvStudioResumesController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DownloadPdf(Guid id, [FromQuery] Guid? versionId, [FromQuery] string? design, CancellationToken cancellationToken)
+    public async Task<IActionResult> DownloadPdf(
+        Guid id,
+        [FromQuery] Guid? versionId,
+        [FromQuery] string? design,
+        [FromQuery] string? fileName,
+        CancellationToken cancellationToken)
     {
         var (uid, denied) = RequireUser();
         if (denied is not null) return denied;
@@ -191,13 +196,13 @@ public sealed class CvStudioResumesController(
 
         var parsedDesign = ParsePdfDesign(design);
         var pdf = await pdfExportService.ExportAsync(uid, id, versionId, parsedDesign, cancellationToken).ConfigureAwait(false);
-        var fileName = versionId.HasValue ? $"resume-{id}-v{versionId}.pdf" : $"resume-{id}.pdf";
+        var downloadName = BuildCvPdfDownloadName(fileName, id, versionId);
         var designLetter = PdfDesignLetter(parsedDesign);
 
         CvPdfExportEntity row;
         try
         {
-            row = await pdfExportTracker.RecordPdfExportAsync(uid, id, versionId, designLetter, fileName, cancellationToken)
+            row = await pdfExportTracker.RecordPdfExportAsync(uid, id, versionId, designLetter, downloadName, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (CvStudioPdfQuotaExceededException ex)
@@ -216,7 +221,34 @@ public sealed class CvStudioResumesController(
         Response.Headers.Append("X-Cv-Pdf-Export-Id", row.Id.ToString("D"));
         Response.Headers.Append("X-Cv-Pdf-Quota-Limit", limit.ToString());
         Response.Headers.Append("X-Cv-Pdf-Quota-Used", (used + 1).ToString());
-        return File(pdf, PdfContentType, fileName);
+        return File(pdf, PdfContentType, downloadName);
+    }
+
+    /// <summary>Safe download + list label; optional user <paramref name="requested"/> stem (without or with .pdf).</summary>
+    private static string BuildCvPdfDownloadName(string? requested, Guid resumeId, Guid? versionId)
+    {
+        static string Fallback(Guid rid, Guid? vid) =>
+            vid.HasValue ? $"resume-{rid:D}-v{vid:D}.pdf" : $"resume-{rid:D}.pdf";
+
+        if (string.IsNullOrWhiteSpace(requested))
+            return Fallback(resumeId, versionId);
+
+        var trimmed = requested.Trim();
+        if (trimmed.Length > 180)
+            trimmed = trimmed[..180];
+
+        trimmed = Path.GetFileName(trimmed.Replace('\\', '_').Replace('/', '_'));
+        foreach (var ch in Path.GetInvalidFileNameChars())
+            trimmed = trimmed.Replace(ch, '_');
+
+        if (trimmed.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[..^4];
+
+        trimmed = trimmed.Trim('.', '_', ' ', '-');
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return Fallback(resumeId, versionId);
+
+        return $"{trimmed}.pdf";
     }
 
     [HttpGet("{id:guid}/docx")]

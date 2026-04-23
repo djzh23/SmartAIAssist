@@ -322,46 +322,67 @@ public sealed class DesignCDocument : IDocument
 
             inner.Item().Height(8);
 
-            if (!string.IsNullOrWhiteSpace(_profile.Summary))
+            foreach (var sectionKey in CvStudioMainSectionOrder.Resolve(_data.ContentSectionOrder))
             {
-                ComposeMainSection(inner, "\u2712", CvSectionTitleResolver.QualificationsProfile(_data));
-                inner.Item()
-                    .Text(_profile.Summary.Trim())
-                    .FontSize(DesignCStyles.BodyText)
-                    .FontColor(DesignCStyles.MainMuted)
-                    .LineHeight(1.38f);
-                inner.Item().Height(5);
-            }
+                switch (sectionKey)
+                {
+                    case CvStudioMainSectionOrder.Summary:
+                        if (!string.IsNullOrWhiteSpace(_profile.Summary))
+                        {
+                            ComposeMainSection(inner, "\u2712", CvSectionTitleResolver.QualificationsProfile(_data));
+                            inner.Item()
+                                .Text(_profile.Summary.Trim())
+                                .FontSize(DesignCStyles.BodyText)
+                                .FontColor(DesignCStyles.MainMuted)
+                                .LineHeight(1.38f);
+                            inner.Item().Height(5);
+                        }
+                        break;
 
-            if (_workItems.Count > 0)
-            {
-                ComposeMainSection(inner, "\u2630", CvSectionTitleResolver.WorkExperience(_data));
-                foreach (var work in _workItems)
-                    ComposeWorkItem(inner, work);
-                inner.Item().Height(3);
-            }
+                    case CvStudioMainSectionOrder.Work:
+                        if (_workItems.Count > 0)
+                        {
+                            ComposeMainSection(inner, "\u2630", CvSectionTitleResolver.WorkExperience(_data));
+                            foreach (var work in _workItems)
+                                ComposeWorkItem(inner, work);
+                            inner.Item().Height(3);
+                        }
+                        break;
 
-            if (_educationItems.Count > 0)
-            {
-                ComposeMainSection(inner, "\u25CE", CvSectionTitleResolver.Education(_data));
-                foreach (var edu in _educationItems)
-                    ComposeEduItem(inner, edu);
-                inner.Item().Height(3);
-            }
+                    case CvStudioMainSectionOrder.Education:
+                        if (_educationItems.Count > 0)
+                        {
+                            ComposeMainSection(inner, "\u25CE", CvSectionTitleResolver.Education(_data));
+                            foreach (var edu in _educationItems)
+                                ComposeEduItem(inner, edu);
+                            inner.Item().Height(3);
+                        }
+                        break;
 
-            var knowledgeGroups = GetKnowledgeGroupsForMainColumn();
-            if (knowledgeGroups.Count > 0)
-            {
-                ComposeMainSection(inner, "\u2605", CvSectionTitleResolver.Skills(_data));
-                ComposeKnowledgeGroupsMain(inner, knowledgeGroups);
-                inner.Item().Height(3);
-            }
+                    case CvStudioMainSectionOrder.Skills:
+                    {
+                        var knowledgeGroups = GetKnowledgeGroupsForMainColumn();
+                        if (knowledgeGroups.Count > 0)
+                        {
+                            ComposeMainSection(inner, "\u2605", CvSectionTitleResolver.Skills(_data));
+                            ComposeKnowledgeGroupsMain(inner, knowledgeGroups);
+                            inner.Item().Height(3);
+                        }
+                        break;
+                    }
 
-            if (_projects.Count > 0)
-            {
-                ComposeMainSection(inner, "\u25C8", CvSectionTitleResolver.Projects(_data));
-                foreach (var project in _projects)
-                    ComposeProjectItem(inner, project);
+                    case CvStudioMainSectionOrder.Projects:
+                        if (_projects.Count > 0)
+                        {
+                            ComposeMainSection(inner, "\u25C8", CvSectionTitleResolver.Projects(_data));
+                            foreach (var project in _projects)
+                                ComposeProjectItem(inner, project);
+                        }
+                        break;
+
+                    case CvStudioMainSectionOrder.Languages:
+                        break;
+                }
             }
         });
     }
@@ -522,6 +543,21 @@ public sealed class DesignCDocument : IDocument
                 .FontSize(DesignCStyles.SmallText)
                 .FontColor(DesignCStyles.MainMuted);
         });
+
+        if (!string.IsNullOrWhiteSpace(edu.Description))
+        {
+            col.Item().Row(r =>
+            {
+                r.ConstantItem(DesignCStyles.BulletIndent)
+                    .Text("\u2022")
+                    .FontColor(DesignCStyles.BulletColor);
+                r.RelativeItem()
+                    .Text(edu.Description.Trim())
+                    .FontSize(DesignCStyles.BodyText)
+                    .LineHeight(1.35f)
+                    .FontColor(DesignCStyles.MainMuted);
+            });
+        }
 
         col.Item().Height(DesignCStyles.ItemGap);
     }

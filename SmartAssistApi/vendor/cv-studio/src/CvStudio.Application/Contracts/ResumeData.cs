@@ -15,6 +15,12 @@ public sealed class ResumeData
 
     /// <summary> Optionale Sektions-Ueberschriften fuer Exporte (Sprache / Wunschtext). </summary>
     public CvSectionTitleOverrides? SectionTitles { get; set; }
+
+    /// <summary>
+    /// Reihenfolge der Hauptspalten-Sektionen fuer PDF/DOCX (Schluessel siehe <see cref="CvStudioMainSectionOrder"/>).
+    /// Leer = Standardreihenfolge.
+    /// </summary>
+    public List<string> ContentSectionOrder { get; set; } = [];
 }
 
 public sealed class ProfileData
@@ -96,6 +102,9 @@ public sealed class EducationItemData
 
     [MaxLength(30)]
     public string EndDate { get; set; } = string.Empty;
+
+    [MaxLength(1600)]
+    public string Description { get; set; } = string.Empty;
 }
 
 public sealed class SkillGroupData

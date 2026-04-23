@@ -87,41 +87,8 @@ public sealed class QuestPdfGenerator : IPdfGenerator
                     column.Item().Element(c => RenderHeader(c, data, profileImageBytes));
                     column.Item().LineHorizontal(1.2f).LineColor(Style.Navy);
 
-                    if (!string.IsNullOrWhiteSpace(data.Profile.Summary))
-                    {
-                        column.Item().Element(c => RenderSection(c, CvSectionTitleResolver.QualificationsProfile(data), section =>
-                        {
-                            section.Item().Text(data.Profile.Summary.Trim());
-                        }));
-                    }
-
-                    column.Item().Element(c => RenderSkillsAndKnowledge(c, data));
-
-                    if (data.WorkItems.Count > 0)
-                    {
-                        column.Item().Element(c => RenderSection(c, CvSectionTitleResolver.WorkExperience(data), section =>
-                        {
-                            foreach (var work in data.WorkItems)
-                            {
-                                section.Item().Element(x => RenderWorkEntry(x, work));
-                                section.Item().PaddingBottom(2);
-                            }
-                        }));
-                    }
-
-                    if (data.EducationItems.Count > 0)
-                    {
-                        column.Item().Element(c => RenderSection(c, CvSectionTitleResolver.Education(data), section =>
-                        {
-                            foreach (var education in data.EducationItems)
-                            {
-                                section.Item().Element(x => RenderEducationEntry(x, education));
-                                section.Item().PaddingBottom(2);
-                            }
-                        }));
-                    }
-
-                    column.Item().Element(c => RenderLanguagesAndInterests(c, data));
+                    foreach (var sectionKey in CvStudioMainSectionOrder.Resolve(data.ContentSectionOrder))
+                        AppendDesignAMainSection(column, sectionKey, data);
                 });
             });
         }).GeneratePdf();
@@ -146,64 +113,8 @@ public sealed class QuestPdfGenerator : IPdfGenerator
                     column.Spacing(7);
                     column.Item().Element(c => RenderDesignBHeader(c, data, profileImageBytes));
 
-                    if (!string.IsNullOrWhiteSpace(data.Profile.Summary))
-                    {
-                        column.Item().Text(data.Profile.Summary.Trim()).FontSize(11f);
-                    }
-
-                    if (data.WorkItems.Count > 0)
-                    {
-                        column.Item().Element(c => RenderDesignBSection(c, CvSectionTitleResolver.WorkExperience(data), section =>
-                        {
-                            foreach (var work in data.WorkItems)
-                            {
-                                section.Item().Element(x => RenderDesignBWorkEntry(x, work));
-                                section.Item().PaddingBottom(3);
-                            }
-                        }));
-                    }
-
-                    if (data.EducationItems.Count > 0)
-                    {
-                        column.Item().Element(c => RenderDesignBSection(c, CvSectionTitleResolver.Education(data), section =>
-                        {
-                            foreach (var education in data.EducationItems)
-                            {
-                                section.Item().Element(x => RenderDesignBEducationEntry(x, education));
-                                section.Item().PaddingBottom(3);
-                            }
-                        }));
-                    }
-
-                    var designBKnowledgeGroups = (data.Skills ?? [])
-                        .Where(s =>
-                            !string.IsNullOrWhiteSpace(s.CategoryName) &&
-                            !IsLanguageCategory(s.CategoryName) &&
-                            !IsLinkCategory(s.CategoryName))
-                        .Select(s => new
-                        {
-                            s.CategoryName,
-                            Line = string.Join(" · ", (s.Items ?? []).Where(static x => !string.IsNullOrWhiteSpace(x)))
-                        })
-                        .Where(x => !string.IsNullOrWhiteSpace(x.Line))
-                        .ToList();
-
-                    if (designBKnowledgeGroups.Count > 0)
-                    {
-                        column.Item().Element(c => RenderDesignBSection(c, CvSectionTitleResolver.Skills(data), section =>
-                        {
-                            foreach (var row in designBKnowledgeGroups)
-                            {
-                                section.Item().Text(text =>
-                                {
-                                    text.Span($"{row.CategoryName.Trim()}: ").Bold().FontSize(10.5f);
-                                    text.Span(row.Line).FontSize(10.5f);
-                                });
-                            }
-                        }));
-                    }
-
-                    column.Item().Element(c => RenderDesignBLanguagesAndInterests(c, data));
+                    foreach (var sectionKey in CvStudioMainSectionOrder.Resolve(data.ContentSectionOrder))
+                        AppendDesignBMainSection(column, sectionKey, data);
                 });
             });
         }).GeneratePdf();
@@ -212,6 +123,142 @@ public sealed class QuestPdfGenerator : IPdfGenerator
     private static byte[] GenerateDesignC(ResumeData data, byte[]? profileImageBytes)
     {
         return new DesignCDocument(data, profileImageBytes).GeneratePdf();
+    }
+
+    private static void AppendDesignAMainSection(ColumnDescriptor column, string sectionKey, ResumeData data)
+    {
+        switch (sectionKey)
+        {
+            case CvStudioMainSectionOrder.Summary:
+                if (!string.IsNullOrWhiteSpace(data.Profile.Summary))
+                {
+                    column.Item().Element(c => RenderSection(c, CvSectionTitleResolver.QualificationsProfile(data), section =>
+                    {
+                        section.Item().Text(data.Profile.Summary.Trim());
+                    }));
+                }
+                break;
+
+            case CvStudioMainSectionOrder.Skills:
+                column.Item().Element(c => RenderSkillsAndKnowledge(c, data));
+                break;
+
+            case CvStudioMainSectionOrder.Work:
+                if (data.WorkItems.Count > 0)
+                {
+                    column.Item().Element(c => RenderSection(c, CvSectionTitleResolver.WorkExperience(data), section =>
+                    {
+                        foreach (var work in data.WorkItems)
+                        {
+                            section.Item().Element(x => RenderWorkEntry(x, work));
+                            section.Item().PaddingBottom(2);
+                        }
+                    }));
+                }
+                break;
+
+            case CvStudioMainSectionOrder.Education:
+                if (data.EducationItems.Count > 0)
+                {
+                    column.Item().Element(c => RenderSection(c, CvSectionTitleResolver.Education(data), section =>
+                    {
+                        foreach (var education in data.EducationItems)
+                        {
+                            section.Item().Element(x => RenderEducationEntry(x, education));
+                            section.Item().PaddingBottom(2);
+                        }
+                    }));
+                }
+                break;
+
+            case CvStudioMainSectionOrder.Languages:
+                column.Item().Element(c => RenderLanguagesAndInterests(c, data));
+                break;
+
+            case CvStudioMainSectionOrder.Projects:
+                break;
+        }
+    }
+
+    private static List<(string CategoryName, string Line)> GetDesignBKnowledgeRows(ResumeData data)
+    {
+        return (data.Skills ?? [])
+            .Where(s =>
+                !string.IsNullOrWhiteSpace(s.CategoryName) &&
+                !IsLanguageCategory(s.CategoryName) &&
+                !IsLinkCategory(s.CategoryName))
+            .Select(s => (
+                CategoryName: s.CategoryName.Trim(),
+                Line: string.Join(" · ", (s.Items ?? []).Where(static x => !string.IsNullOrWhiteSpace(x)))
+            ))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Line))
+            .ToList();
+    }
+
+    private static void AppendDesignBMainSection(ColumnDescriptor column, string sectionKey, ResumeData data)
+    {
+        switch (sectionKey)
+        {
+            case CvStudioMainSectionOrder.Summary:
+                if (!string.IsNullOrWhiteSpace(data.Profile.Summary))
+                    column.Item().Text(data.Profile.Summary.Trim()).FontSize(11f);
+                break;
+
+            case CvStudioMainSectionOrder.Work:
+                if (data.WorkItems.Count > 0)
+                {
+                    column.Item().Element(c => RenderDesignBSection(c, CvSectionTitleResolver.WorkExperience(data), section =>
+                    {
+                        foreach (var work in data.WorkItems)
+                        {
+                            section.Item().Element(x => RenderDesignBWorkEntry(x, work));
+                            section.Item().PaddingBottom(3);
+                        }
+                    }));
+                }
+                break;
+
+            case CvStudioMainSectionOrder.Education:
+                if (data.EducationItems.Count > 0)
+                {
+                    column.Item().Element(c => RenderDesignBSection(c, CvSectionTitleResolver.Education(data), section =>
+                    {
+                        foreach (var education in data.EducationItems)
+                        {
+                            section.Item().Element(x => RenderDesignBEducationEntry(x, education));
+                            section.Item().PaddingBottom(3);
+                        }
+                    }));
+                }
+                break;
+
+            case CvStudioMainSectionOrder.Skills:
+            {
+                var designBKnowledgeGroups = GetDesignBKnowledgeRows(data);
+                if (designBKnowledgeGroups.Count > 0)
+                {
+                    column.Item().Element(c => RenderDesignBSection(c, CvSectionTitleResolver.Skills(data), section =>
+                    {
+                        foreach (var row in designBKnowledgeGroups)
+                        {
+                            section.Item().Text(text =>
+                            {
+                                text.Span($"{row.CategoryName}: ").Bold().FontSize(10.5f);
+                                text.Span(row.Line).FontSize(10.5f);
+                            });
+                        }
+                    }));
+                }
+                break;
+            }
+
+            case CvStudioMainSectionOrder.Languages:
+                column.Item().Element(c => RenderDesignBLanguagesAndInterests(c, data));
+                break;
+
+            case CvStudioMainSectionOrder.Projects:
+                break;
+        }
     }
 
     private static void RenderHeader(IContainer container, ResumeData data, byte[]? profileImageBytes)
@@ -491,6 +538,9 @@ public sealed class QuestPdfGenerator : IPdfGenerator
             {
                 column.Item().Text(range).FontSize(10.2f).FontColor("#7D8A99");
             }
+
+            if (!string.IsNullOrWhiteSpace(item.Description))
+                column.Item().Text(item.Description.Trim()).FontSize(10.4f).FontColor("#3E4652").LineHeight(1.2f);
         });
     }
 
@@ -620,6 +670,9 @@ public sealed class QuestPdfGenerator : IPdfGenerator
             {
                 column.Item().Text(item.Degree).FontColor(Style.Teal).Italic().SemiBold();
             }
+
+            if (!string.IsNullOrWhiteSpace(item.Description))
+                column.Item().PaddingTop(1).Text(item.Description.Trim()).FontColor(Style.Muted).Italic();
         });
     }
 
