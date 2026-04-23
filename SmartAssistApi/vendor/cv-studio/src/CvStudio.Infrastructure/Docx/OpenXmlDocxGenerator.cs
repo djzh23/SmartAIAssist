@@ -247,7 +247,10 @@ public sealed class OpenXmlDocxGenerator : IDocxGenerator
                     AppendEducation(body, data);
                     break;
                 case CvStudioMainSectionOrder.Languages:
-                    AppendLanguagesAndInterests(body, data);
+                    AppendStandaloneLanguages(body, data);
+                    break;
+                case CvStudioMainSectionOrder.Interests:
+                    AppendStandaloneInterests(body, data);
                     break;
                 case CvStudioMainSectionOrder.Projects:
                     break;
@@ -386,40 +389,42 @@ public sealed class OpenXmlDocxGenerator : IDocxGenerator
         }
     }
 
-    private static void AppendLanguagesAndInterests(Body body, ResumeData data)
+    private static void AppendStandaloneLanguages(Body body, ResumeData data)
     {
-        var languageLine = string.Join(" - ", data.Skills
-            .Where(g => IsLanguageCategory(g.CategoryName))
-            .SelectMany(g => g.Items)
-            .Where(static x => !string.IsNullOrWhiteSpace(x)));
-
-        var interestsLine = string.Join(" - ", data.Hobbies.Where(static x => !string.IsNullOrWhiteSpace(x)));
-        if (string.IsNullOrWhiteSpace(languageLine) && string.IsNullOrWhiteSpace(interestsLine))
+        string languageLine;
+        if (data.LanguageItems is { Count: > 0 })
         {
+            languageLine = string.Join(" - ", data.LanguageItems
+                .Where(static x => !string.IsNullOrWhiteSpace(x.Label))
+                .Select(x =>
+                {
+                    var label = x.Label.Trim();
+                    return string.IsNullOrWhiteSpace(x.Level) ? label : $"{label} ({x.Level.Trim()})";
+                }));
+        }
+        else
+        {
+            languageLine = string.Join(" - ", data.Skills
+                .Where(g => IsLanguageCategory(g.CategoryName))
+                .SelectMany(g => g.Items)
+                .Where(static x => !string.IsNullOrWhiteSpace(x)));
+        }
+
+        if (string.IsNullOrWhiteSpace(languageLine))
             return;
-        }
 
-        body.Append(CreateSectionTitle(CvSectionTitleResolver.LanguagesAndInterests(data)));
-        var paragraph = CreateParagraphWithSpacing(0, 20);
+        body.Append(CreateSectionTitle(CvSectionTitleResolver.Languages(data)));
+        body.Append(CreateStyledParagraph(languageLine, 19, color: BodyColor, spacingAfter: 80));
+    }
 
-        if (!string.IsNullOrWhiteSpace(languageLine))
-        {
-            paragraph.Append(new Run(CreateRunProperties(19, Navy, bold: true), new Text(CvSectionTitleResolver.LanguagesInlineLabel(data))));
-            paragraph.Append(new Run(CreateRunProperties(19, BodyColor), new Text(languageLine)));
-        }
+    private static void AppendStandaloneInterests(Body body, ResumeData data)
+    {
+        var interestsLine = string.Join(" - ", data.Hobbies.Where(static x => !string.IsNullOrWhiteSpace(x)));
+        if (string.IsNullOrWhiteSpace(interestsLine))
+            return;
 
-        if (!string.IsNullOrWhiteSpace(languageLine) && !string.IsNullOrWhiteSpace(interestsLine))
-        {
-            paragraph.Append(new Run(CreateRunProperties(19, Muted), new Text("  |  ")));
-        }
-
-        if (!string.IsNullOrWhiteSpace(interestsLine))
-        {
-            paragraph.Append(new Run(CreateRunProperties(19, Navy, bold: true), new Text(CvSectionTitleResolver.InterestsInlineLabel(data))));
-            paragraph.Append(new Run(CreateRunProperties(19, BodyColor), new Text(interestsLine)));
-        }
-
-        body.Append(paragraph);
+        body.Append(CreateSectionTitle(CvSectionTitleResolver.Interests(data)));
+        body.Append(CreateStyledParagraph(interestsLine, 19, color: BodyColor, spacingAfter: 80));
     }
 
     private static Paragraph CreateSectionTitle(string text)

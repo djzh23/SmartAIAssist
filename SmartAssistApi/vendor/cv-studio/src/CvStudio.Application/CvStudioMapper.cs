@@ -27,6 +27,9 @@ public static class CvStudioMapper
         data.Profile.PortfolioUrl = NormalizeOptional(data.Profile.PortfolioUrl);
         data.Profile.WorkPermit = NormalizeOptional(data.Profile.WorkPermit);
 
+        data.LanguageItems ??= [];
+        NormalizeLegacySectionTitles(data);
+
         return data;
     }
 
@@ -63,5 +66,23 @@ public static class CvStudioMapper
         }
 
         return value.Trim();
+    }
+
+    /// <summary>
+    /// Legacy: kombinierte Ueberschrift — PDF nutzt nur noch getrennte Sektionen „Sprachen“ / „Interessen“.
+    /// </summary>
+    private static void NormalizeLegacySectionTitles(ResumeData data)
+    {
+        var st = data.SectionTitles;
+        if (st is null)
+            return;
+        var combo = st.LanguagesAndInterests?.Trim();
+        if (string.IsNullOrEmpty(combo))
+            return;
+        if (string.IsNullOrWhiteSpace(st.Languages))
+            st.Languages = "Sprachen";
+        if (string.IsNullOrWhiteSpace(st.Interests))
+            st.Interests = "Interessen";
+        st.LanguagesAndInterests = null;
     }
 }

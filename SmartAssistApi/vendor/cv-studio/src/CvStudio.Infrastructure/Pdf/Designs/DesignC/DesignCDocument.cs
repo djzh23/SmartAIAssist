@@ -88,66 +88,6 @@ public sealed class DesignCDocument : IDocument
         });
 
         col.Item().Height(8);
-
-        var languages = ResolveLanguages();
-        if (languages.Count > 0)
-        {
-            ComposeSidebarSectionLabel(col, "\u25C9", CvSectionTitleResolver.Languages(_data));
-            col.Item().PaddingHorizontal(16).Column(inner =>
-            {
-                foreach (var lang in languages)
-                {
-                    inner.Item().Column(langBlock =>
-                    {
-                        langBlock.Spacing(2);
-                        langBlock.Item().Row(r =>
-                        {
-                            r.RelativeItem()
-                                .Text(lang.Name.ToUpperInvariant())
-                                .FontSize(DesignCStyles.SmallText)
-                                .FontColor(DesignCStyles.SidebarText)
-                                .Bold();
-
-                            r.ConstantItem(DesignCStyles.LanguageDotsColumnWidth).AlignRight().Row(dots =>
-                            {
-                                var filled = GetLanguageDotCount(lang.Level);
-                                for (var i = 1; i <= 5; i++)
-                                {
-                                    var color = i <= filled ? DesignCStyles.DotFilled : DesignCStyles.DotEmpty;
-                                    dots.ConstantItem(8).Text("\u25CF").FontSize(8).FontColor(color);
-                                }
-                            });
-                        });
-
-                        var levelLine = GetLevelLabel(lang.Level);
-                        if (!string.IsNullOrWhiteSpace(levelLine))
-                        {
-                            langBlock.Item()
-                                .Text(levelLine)
-                                .FontSize(DesignCStyles.SmallText)
-                                .FontColor(DesignCStyles.SidebarMuted)
-                                .LineHeight(1.28f);
-                        }
-                    });
-                    inner.Item().Height(5);
-                }
-            });
-            col.Item().Height(8);
-        }
-
-        var hobbyLine = string.Join(" · ", (_data.Hobbies ?? [])
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim()));
-        if (!string.IsNullOrWhiteSpace(hobbyLine))
-        {
-            ComposeSidebarSectionLabel(col, "\u2665", CvSectionTitleResolver.Interests(_data));
-            col.Item().PaddingHorizontal(16)
-                .Text(hobbyLine)
-                .FontSize(DesignCStyles.SidebarBody)
-                .FontColor(DesignCStyles.SidebarMuted)
-                .LineHeight(1.35f);
-            col.Item().Height(8);
-        }
     }
 
     private void ComposePhotoWithAccent(ColumnDescriptor col)
@@ -381,8 +321,91 @@ public sealed class DesignCDocument : IDocument
                         break;
 
                     case CvStudioMainSectionOrder.Languages:
+                    {
+                        var langs = ResolveLanguagesForMainColumn();
+                        if (langs.Count > 0)
+                        {
+                            ComposeMainSection(inner, "\u25C9", CvSectionTitleResolver.Languages(_data));
+                            ComposeLanguageRowsMainColumn(inner, langs);
+                            inner.Item().Height(3);
+                        }
                         break;
+                    }
+
+                    case CvStudioMainSectionOrder.Interests:
+                    {
+                        var hobbyLine = string.Join(" · ", (_data.Hobbies ?? [])
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .Select(x => x.Trim()));
+                        if (!string.IsNullOrWhiteSpace(hobbyLine))
+                        {
+                            ComposeMainSection(inner, "\u2665", CvSectionTitleResolver.Interests(_data));
+                            inner.Item()
+                                .Text(hobbyLine)
+                                .FontSize(DesignCStyles.BodyText)
+                                .FontColor(DesignCStyles.MainMuted)
+                                .LineHeight(1.35f);
+                            inner.Item().Height(3);
+                        }
+                        break;
+                    }
                 }
+            }
+        });
+    }
+
+    private List<(string Name, string? Level)> ResolveLanguagesForMainColumn()
+    {
+        if (_data.LanguageItems is { Count: > 0 })
+        {
+            return _data.LanguageItems
+                .Where(x => !string.IsNullOrWhiteSpace(x.Label))
+                .Select(x => (x.Label.Trim(), string.IsNullOrWhiteSpace(x.Level) ? null : x.Level!.Trim()))
+                .ToList();
+        }
+
+        return ResolveLanguages();
+    }
+
+    private void ComposeLanguageRowsMainColumn(ColumnDescriptor inner, IReadOnlyList<(string Name, string? Level)> languages)
+    {
+        inner.Item().Column(block =>
+        {
+            foreach (var lang in languages)
+            {
+                block.Item().Column(langBlock =>
+                {
+                    langBlock.Spacing(2);
+                    langBlock.Item().Row(r =>
+                    {
+                        r.RelativeItem()
+                            .Text(lang.Name.ToUpperInvariant())
+                            .FontSize(DesignCStyles.BodyText)
+                            .FontColor(DesignCStyles.MainText)
+                            .Bold();
+
+                        r.ConstantItem(DesignCStyles.LanguageDotsColumnWidth).AlignRight().Row(dots =>
+                        {
+                            var filled = GetLanguageDotCount(lang.Level);
+                            for (var i = 1; i <= 5; i++)
+                            {
+                                var color = i <= filled ? DesignCStyles.DotFilled : DesignCStyles.DotEmpty;
+                                dots.ConstantItem(8).Text("\u25CF").FontSize(8).FontColor(color);
+                            }
+                        });
+                    });
+
+                    var levelLine = GetLevelLabel(lang.Level);
+                    if (!string.IsNullOrWhiteSpace(levelLine))
+                    {
+                        langBlock.Item()
+                            .Text(levelLine)
+                            .FontSize(DesignCStyles.SmallText)
+                            .FontColor(DesignCStyles.MainMuted)
+                            .LineHeight(1.28f);
+                    }
+                });
+                block.Item().Height(5);
             }
         });
     }

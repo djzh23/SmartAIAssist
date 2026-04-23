@@ -13,6 +13,9 @@ public sealed class ResumeData
     public List<SkillGroupData> Skills { get; set; } = [];
     public List<string> Hobbies { get; set; } = [];
 
+    /// <summary> Eigene Sprachenliste (PDF-Sektion „Sprachen“); leer = Fallback aus Sprach-Kategorien in Kenntnissen. </summary>
+    public List<LanguageItemData> LanguageItems { get; set; } = [];
+
     /// <summary> Optionale Sektions-Ueberschriften fuer Exporte (Sprache / Wunschtext). </summary>
     public CvSectionTitleOverrides? SectionTitles { get; set; }
 
@@ -125,4 +128,18 @@ public sealed class ResumeProjectItem
     public string Description { get; set; } = string.Empty;
 
     public List<string> Technologies { get; set; } = [];
+}
+
+public sealed class LanguageItemData
+{
+    /// <summary> Leer erlaubt (Entwurfszeile); PDF ignoriert leere Labels. </summary>
+    [MaxLength(80)]
+    public string Label { get; set; } = string.Empty;
+
+    [MaxLength(40)]
+    public string? Level { get; set; }
+
+    /// <summary> Optional: stabile Id fuer UI (React); wird ansonsten ignoriert. </summary>
+    [MaxLength(64)]
+    public string? RowKey { get; set; }
 }

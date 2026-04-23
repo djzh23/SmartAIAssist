@@ -2,7 +2,6 @@ namespace CvStudio.Application.Contracts;
 
 /// <summary>
 /// Logical main-column sections for PDF/DOCX export order (Design A/B main body; Design C main column).
-/// Sidebar-only blocks (Design C languages) are not reorderable here and stay fixed.
 /// </summary>
 public static class CvStudioMainSectionOrder
 {
@@ -11,9 +10,11 @@ public static class CvStudioMainSectionOrder
     public const string Work = "work";
     public const string Education = "education";
     public const string Languages = "languages";
+    public const string Interests = "interests";
     public const string Projects = "projects";
 
-    private static readonly string[] DefaultSequence =
+    /// <summary>Keys merged from user order + defaults (without interests — inserted after languages).</summary>
+    private static readonly string[] DefaultBaseSequence =
     [
         Summary,
         Skills,
@@ -23,7 +24,16 @@ public static class CvStudioMainSectionOrder
         Projects
     ];
 
-    private static readonly HashSet<string> Known = new(DefaultSequence, StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> Known =
+    [
+        Summary,
+        Skills,
+        Work,
+        Education,
+        Languages,
+        Interests,
+        Projects
+    ];
 
     /// <summary>Returns normalized section keys: user order first, then any defaults not listed.</summary>
     public static IReadOnlyList<string> Resolve(IReadOnlyList<string>? userOrder)
@@ -44,11 +54,16 @@ public static class CvStudioMainSectionOrder
             }
         }
 
-        foreach (var d in DefaultSequence)
+        foreach (var d in DefaultBaseSequence)
         {
             if (!result.Contains(d, StringComparer.OrdinalIgnoreCase))
                 result.Add(d);
         }
+
+        var langIdx = result.FindIndex(x => x.Equals(Languages, StringComparison.OrdinalIgnoreCase));
+        var intIdx = result.FindIndex(x => x.Equals(Interests, StringComparison.OrdinalIgnoreCase));
+        if (langIdx >= 0 && intIdx < 0)
+            result.Insert(langIdx + 1, Interests);
 
         return result;
     }

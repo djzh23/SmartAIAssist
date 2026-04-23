@@ -172,7 +172,11 @@ public sealed class QuestPdfGenerator : IPdfGenerator
                 break;
 
             case CvStudioMainSectionOrder.Languages:
-                column.Item().Element(c => RenderLanguagesAndInterests(c, data));
+                column.Item().Element(c => RenderStandaloneLanguagesSectionA(c, data));
+                break;
+
+            case CvStudioMainSectionOrder.Interests:
+                column.Item().Element(c => RenderStandaloneInterestsSectionA(c, data));
                 break;
 
             case CvStudioMainSectionOrder.Projects:
@@ -253,7 +257,11 @@ public sealed class QuestPdfGenerator : IPdfGenerator
             }
 
             case CvStudioMainSectionOrder.Languages:
-                column.Item().Element(c => RenderDesignBLanguagesAndInterests(c, data));
+                column.Item().Element(c => RenderStandaloneLanguagesSectionB(c, data));
+                break;
+
+            case CvStudioMainSectionOrder.Interests:
+                column.Item().Element(c => RenderStandaloneInterestsSectionB(c, data));
                 break;
 
             case CvStudioMainSectionOrder.Projects:
@@ -676,92 +684,86 @@ public sealed class QuestPdfGenerator : IPdfGenerator
         });
     }
 
-    private static void RenderLanguagesAndInterests(IContainer container, ResumeData data)
+    private static string BuildStandaloneLanguageLine(ResumeData data)
     {
-        if (!TryBuildLanguagesInterestsLines(data, out var languageLine, out var hobbies))
+        if (data.LanguageItems is { Count: > 0 })
         {
-            return;
+            return string.Join(" · ", data.LanguageItems
+                .Where(static x => !string.IsNullOrWhiteSpace(x.Label))
+                .Select(x =>
+                {
+                    var label = x.Label.Trim();
+                    var lvl = string.IsNullOrWhiteSpace(x.Level) ? null : x.Level!.Trim();
+                    return lvl is null ? label : $"{label} ({lvl})";
+                }));
         }
 
-        RenderSection(container, CvSectionTitleResolver.LanguagesAndInterests(data), section =>
-        {
-            section.Item().Text(text => AppendLanguagesInterestsSpans(text, languageLine, hobbies, data));
-        });
-    }
-
-    private static void RenderDesignBLanguagesAndInterests(IContainer container, ResumeData data)
-    {
-        var languageItems = (data.Skills ?? [])
+        return string.Join(" · ", (data.Skills ?? [])
             .Where(g => IsLanguageCategory(g.CategoryName))
             .SelectMany(g => g.Items ?? [])
             .Where(static x => !string.IsNullOrWhiteSpace(x))
-            .Select(static x => x.Trim())
-            .ToList();
+            .Select(static x => x.Trim()));
+    }
 
+    private static void RenderStandaloneLanguagesSectionA(IContainer container, ResumeData data)
+    {
+        var line = BuildStandaloneLanguageLine(data);
+        if (string.IsNullOrWhiteSpace(line))
+            return;
+
+        RenderSection(container, CvSectionTitleResolver.Languages(data), section =>
+        {
+            section.Item().Text(line);
+        });
+    }
+
+    private static void RenderStandaloneInterestsSectionA(IContainer container, ResumeData data)
+    {
+        var hobbies = string.Join(" · ", (data.Hobbies ?? [])
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .Select(static x => x.Trim()));
+        if (string.IsNullOrWhiteSpace(hobbies))
+            return;
+
+        RenderSection(container, CvSectionTitleResolver.Interests(data), section =>
+        {
+            section.Item().Text(hobbies);
+        });
+    }
+
+    private static void RenderStandaloneLanguagesSectionB(IContainer container, ResumeData data)
+    {
+        var line = BuildStandaloneLanguageLine(data);
+        if (string.IsNullOrWhiteSpace(line))
+            return;
+
+        RenderDesignBSection(container, CvSectionTitleResolver.Languages(data), section =>
+        {
+            section.Item().Text(text =>
+            {
+                text.Span(CvSectionTitleResolver.DesignBLanguagesRowLabel(data)).Bold().FontSize(10.5f);
+                text.Span(line).FontSize(10.5f);
+            });
+        });
+    }
+
+    private static void RenderStandaloneInterestsSectionB(IContainer container, ResumeData data)
+    {
         var hobbyItems = (data.Hobbies ?? [])
             .Where(static x => !string.IsNullOrWhiteSpace(x))
             .Select(static x => x.Trim())
             .ToList();
-
-        if (languageItems.Count == 0 && hobbyItems.Count == 0)
-        {
+        if (hobbyItems.Count == 0)
             return;
-        }
 
-        RenderDesignBSection(container, CvSectionTitleResolver.LanguagesAndInterests(data), section =>
+        RenderDesignBSection(container, CvSectionTitleResolver.Interests(data), section =>
         {
-            if (languageItems.Count > 0)
+            section.Item().Text(text =>
             {
-                section.Item()
-                    .PaddingBottom(hobbyItems.Count > 0 ? 4 : 0)
-                    .Text(text =>
-                    {
-                        text.Span(CvSectionTitleResolver.DesignBLanguagesRowLabel(data)).Bold().FontSize(10.5f);
-                        text.Span(string.Join(" · ", languageItems)).FontSize(10.5f);
-                    });
-            }
-
-            if (hobbyItems.Count > 0)
-            {
-                section.Item().Text(text =>
-                {
-                    text.Span(CvSectionTitleResolver.DesignBInterestsRowLabel(data)).Bold().FontSize(10.5f);
-                    text.Span(string.Join(" · ", hobbyItems)).FontSize(10.5f);
-                });
-            }
+                text.Span(CvSectionTitleResolver.DesignBInterestsRowLabel(data)).Bold().FontSize(10.5f);
+                text.Span(string.Join(" · ", hobbyItems)).FontSize(10.5f);
+            });
         });
-    }
-
-    private static bool TryBuildLanguagesInterestsLines(ResumeData data, out string languageLine, out string hobbies)
-    {
-        languageLine = string.Join(" - ", (data.Skills ?? [])
-            .Where(g => IsLanguageCategory(g.CategoryName))
-            .SelectMany(g => g.Items ?? [])
-            .Where(static x => !string.IsNullOrWhiteSpace(x)));
-
-        hobbies = string.Join(" - ", (data.Hobbies ?? []).Where(static x => !string.IsNullOrWhiteSpace(x)));
-
-        return !string.IsNullOrWhiteSpace(languageLine) || !string.IsNullOrWhiteSpace(hobbies);
-    }
-
-    private static void AppendLanguagesInterestsSpans(TextDescriptor text, string languageLine, string hobbies, ResumeData data)
-    {
-        if (!string.IsNullOrWhiteSpace(languageLine))
-        {
-            text.Span(CvSectionTitleResolver.LanguagesInlineLabel(data)).Bold().FontColor(Style.Navy);
-            text.Span(languageLine);
-        }
-
-        if (!string.IsNullOrWhiteSpace(languageLine) && !string.IsNullOrWhiteSpace(hobbies))
-        {
-            text.Span("    |    ").FontColor(Style.Muted);
-        }
-
-        if (!string.IsNullOrWhiteSpace(hobbies))
-        {
-            text.Span(CvSectionTitleResolver.InterestsInlineLabel(data)).Bold().FontColor(Style.Navy);
-            text.Span(hobbies);
-        }
     }
 
     private static byte[]? LoadProfileImageBytes(string? imageUrl)
