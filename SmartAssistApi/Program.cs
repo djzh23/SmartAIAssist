@@ -217,11 +217,25 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment() && registerPostgres)
+// CV.Studio tables (resumes, snapshots, …) live in the same Postgres as SmartAssist. Apply EF migrations
+// on every startup so Render/production never serves /api/cv-studio with a missing "resumes" relation.
+if (registerPostgres)
 {
-    using var cvScope = app.Services.CreateScope();
-    var cvDb = cvScope.ServiceProvider.GetRequiredService<CvStudioDbContext>();
-    await cvDb.Database.MigrateAsync();
+    var cvMigrateLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    try
+    {
+        using var cvScope = app.Services.CreateScope();
+        var cvDb = cvScope.ServiceProvider.GetRequiredService<CvStudioDbContext>();
+        await cvDb.Database.MigrateAsync();
+        cvMigrateLogger.LogInformation("CV.Studio: EF Core schema migrated successfully.");
+    }
+    catch (Exception ex)
+    {
+        cvMigrateLogger.LogCritical(
+            ex,
+            "CV.Studio: EF Core migration failed. Fix Postgres permissions/connection; CV.Studio API will not work until migrations succeed.");
+        throw;
+    }
 }
 
 var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
