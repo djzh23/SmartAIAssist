@@ -33,6 +33,8 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<UserPlanEntity> UserPlans => Set<UserPlanEntity>();
 
+    public DbSet<CvPdfExportEntity> CvPdfExports => Set<CvPdfExportEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppUserEntity>(e =>
@@ -125,6 +127,13 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
         {
             e.ToTable("user_plan");
             e.HasKey(x => x.ClerkUserId);
+        });
+
+        modelBuilder.Entity<CvPdfExportEntity>(e =>
+        {
+            e.ToTable("cv_pdf_exports");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.ClerkUserId, x.CreatedAt });
         });
     }
 }

@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Serilog;
+using CvStudio.Application;
+using CvStudio.Infrastructure;
+using CvStudio.Infrastructure.Persistence;
 using SmartAssistApi.Configuration;
 using SmartAssistApi.Data;
 using SmartAssistApi.Services;
@@ -91,7 +94,14 @@ builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<Data
 var supabaseResolution = SupabaseConnectionString.Resolve(builder.Configuration);
 var supabaseConnectionString = supabaseResolution.ConnectionString;
 if (supabaseConnectionString is not null)
-    builder.Configuration.AddInMemoryCollection([new KeyValuePair<string, string?>("ConnectionStrings:Supabase", supabaseConnectionString)]);
+{
+    builder.Configuration.AddInMemoryCollection(
+    [
+        new KeyValuePair<string, string?>("ConnectionStrings:Supabase", supabaseConnectionString),
+        // CV.Studio (CvStudio.Infrastructure) reads ConnectionStrings:Postgres
+        new KeyValuePair<string, string?>("ConnectionStrings:Postgres", supabaseConnectionString),
+    ]);
+}
 
 var registerPostgres = !string.IsNullOrWhiteSpace(supabaseConnectionString);
 if (registerPostgres)
@@ -105,7 +115,11 @@ if (registerPostgres)
     builder.Services.AddScoped<LearningMemoryPostgresService>();
     builder.Services.AddScoped<UsagePostgresService>();
     builder.Services.AddScoped<TokenTrackingPostgresService>();
+    builder.Services.AddScoped<CvStudioPdfExportService>();
 }
+
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
 
 var databaseFeaturesPreview = builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName)
     .Get<DatabaseFeatureOptions>() ?? new DatabaseFeatureOptions();
@@ -194,11 +208,22 @@ builder.Services.AddCors(options =>
                 "X-Token-Usage-Effective-Storage",
                 "X-Token-Usage-Configured-Storage",
                 "X-Token-Usage-Degraded",
-                "X-Token-Usage-Degraded-Reason");
+                "X-Token-Usage-Degraded-Reason",
+                "X-Cv-Pdf-Export-Id",
+                "X-Cv-Pdf-Quota-Limit",
+                "X-Cv-Pdf-Quota-Used");
     });
 });
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment() && registerPostgres)
+{
+    using var cvScope = app.Services.CreateScope();
+    var cvDb = cvScope.ServiceProvider.GetRequiredService<CvStudioDbContext>();
+    await cvDb.Database.MigrateAsync();
+}
+
 var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 startupLogger.LogInformation("CORS allowed origins: {Origins}", string.Join(", ", allowedOrigins));
 if (supabaseConnectionString is not null)
@@ -345,6 +370,10 @@ app.Use(async (context, next) =>
 
 app.UseRateLimiter();
 app.UseSmartAssistApiSecurityHeaders();
+
+app.UseWhen(
+    static ctx => ctx.Request.Path.StartsWithSegments("/api/cv-studio"),
+    static branch => branch.UseMiddleware<SmartAssistApi.Middleware.CvStudioApiExceptionMiddleware>());
 
 app.MapHealthChecks("/api/health");
 // Endpoint routing: attach named CORS policy to API controllers (fixes missing ACAO on some hosts).
