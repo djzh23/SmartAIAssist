@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using CvStudio.Application;
 using CvStudio.Application.DTOs;
 using CvStudio.Application.Exceptions;
 using CvStudio.Application.Repositories;
@@ -112,6 +113,29 @@ public sealed class SnapshotService : ISnapshotService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Deleted version {VersionId} for resume {ResumeId}", versionId, resumeId);
+    }
+
+    public async Task<ResumeDto> RestoreSnapshotToWorkingCopyAsync(
+        string clerkUserId,
+        Guid resumeId,
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        var resume = await _resumeRepository.GetByIdAsync(resumeId, clerkUserId, cancellationToken)
+            ?? throw new NotFoundException($"Resume '{resumeId}' was not found.");
+
+        var version = await _versionRepository.GetByResumeAndVersionIdAsync(resumeId, versionId, cancellationToken)
+            ?? throw new NotFoundException($"Version '{versionId}' for resume '{resumeId}' was not found.");
+
+        resume.CurrentContentJson = version.ContentJson;
+        resume.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _resumeRepository.UpdateAsync(resume, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Restored snapshot {VersionId} onto working copy for resume {ResumeId}", versionId, resumeId);
+
+        return CvStudioMapper.ToDto(resume);
     }
 }
 

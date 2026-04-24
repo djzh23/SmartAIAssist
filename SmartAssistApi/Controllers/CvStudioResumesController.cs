@@ -154,54 +154,6 @@ public sealed class CvStudioResumesController(
         return Ok(version);
     }
 
-    [HttpPatch("{id:guid}/link-application")]
-    [ProducesResponseType(typeof(ResumeDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> LinkApplication(Guid id, [FromBody] LinkJobApplicationRequest request, CancellationToken cancellationToken)
-    {
-        var (uid, denied) = RequireUser();
-        if (denied is not null) return denied;
-        var resume = await resumeService.LinkJobApplicationAsync(uid, id, request, cancellationToken);
-        return Ok(resume);
-    }
-
-    [HttpPatch("{id:guid}/notes")]
-    [ProducesResponseType(typeof(ResumeDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> PatchNotes(Guid id, [FromBody] PatchResumeNotesRequest request, CancellationToken cancellationToken)
-    {
-        var (uid, denied) = RequireUser();
-        if (denied is not null) return denied;
-        var resume = await resumeService.PatchNotesAsync(uid, id, request, cancellationToken);
-        return Ok(resume);
-    }
-
-    [HttpPost("{id:guid}/versions/{versionId:guid}/restore")]
-    [ProducesResponseType(typeof(ResumeVersionDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> RestoreVersion(Guid id, Guid versionId, CancellationToken cancellationToken)
-    {
-        var (uid, denied) = RequireUser();
-        if (denied is not null) return denied;
-        // Restore = load snapshot content into current working version, then create a new snapshot
-        var snapshot = await snapshotService.GetSnapshotAsync(uid, id, versionId, cancellationToken);
-        var resume = await resumeService.GetCurrentAsync(uid, id, cancellationToken);
-        var updateRequest = new UpdateResumeRequest
-        {
-            Title = resume.Title,
-            TemplateKey = resume.TemplateKey,
-            ResumeData = snapshot.ResumeData
-        };
-        await resumeService.UpdateAsync(uid, id, updateRequest, cancellationToken);
-        var newSnapshot = await snapshotService.CreateSnapshotAsync(uid, id,
-            new CreateVersionRequest { Label = $"Wiederhergestellt von v{snapshot.VersionNumber}" },
-            cancellationToken);
-        return CreatedAtAction(nameof(GetVersion), new { id, versionId = newSnapshot.Id }, newSnapshot);
-    }
-
     [HttpDelete("{id:guid}/versions/{versionId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -212,6 +164,18 @@ public sealed class CvStudioResumesController(
         if (denied is not null) return denied;
         await snapshotService.DeleteSnapshotAsync(uid, id, versionId, cancellationToken);
         return NoContent();
+    }
+
+    [HttpPost("{id:guid}/versions/{versionId:guid}/restore")]
+    [ProducesResponseType(typeof(ResumeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RestoreVersion(Guid id, Guid versionId, CancellationToken cancellationToken)
+    {
+        var (uid, denied) = RequireUser();
+        if (denied is not null) return denied;
+        var resume = await snapshotService.RestoreSnapshotToWorkingCopyAsync(uid, id, versionId, cancellationToken);
+        return Ok(resume);
     }
 
     [HttpGet("{id:guid}/pdf")]
@@ -244,28 +208,21 @@ public sealed class CvStudioResumesController(
 
         var parsedDesign = ParsePdfDesign(design);
         var pdf = await pdfExportService.ExportAsync(uid, id, versionId, parsedDesign, cancellationToken).ConfigureAwait(false);
-
-        // Resolve company/role from resume for smart naming
-        string? targetCompany = null;
-        string? targetRole = null;
-        try
-        {
-            var resumeMeta = await resumeService.GetCurrentAsync(uid, id, cancellationToken).ConfigureAwait(false);
-            targetCompany = resumeMeta.TargetCompany;
-            targetRole = resumeMeta.TargetRole;
-        }
-        catch { /* non-fatal — fall back to generic name */ }
-
-        var versionNumber = versionId.HasValue
-            ? (await snapshotService.GetSnapshotAsync(uid, id, versionId.Value, cancellationToken).ConfigureAwait(false)).VersionNumber
-            : (int?)null;
-        var downloadName = BuildCvPdfDownloadName(fileName, id, versionId, targetCompany, targetRole, versionNumber);
+        var downloadName = BuildCvPdfDownloadName(fileName, id, versionId);
         var designLetter = PdfDesignLetter(parsedDesign);
 
         CvPdfExportEntity row;
         try
         {
-            row = await pdfExportTracker.RecordPdfExportAsync(uid, id, versionId, designLetter, downloadName, targetCompany, targetRole, cancellationToken)
+            row = await pdfExportTracker.RecordPdfExportAsync(
+                    uid,
+                    id,
+                    versionId,
+                    designLetter,
+                    downloadName,
+                    targetCompany: null,
+                    targetRole: null,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (CvStudioPdfQuotaExceededException ex)
@@ -287,44 +244,14 @@ public sealed class CvStudioResumesController(
         return File(pdf, PdfContentType, downloadName);
     }
 
-    /// <summary>
-    /// Builds a safe PDF download filename. When the user supplies a <paramref name="requested"/> stem it takes priority.
-    /// Otherwise an auto-name is derived: <c>CV_{Company}_{Role}_v{N}.pdf</c> when company/role are known.
-    /// </summary>
-    private static string BuildCvPdfDownloadName(
-        string? requested,
-        Guid resumeId,
-        Guid? versionId,
-        string? targetCompany = null,
-        string? targetRole = null,
-        int? versionNumber = null)
+    /// <summary>Safe download + list label; optional user <paramref name="requested"/> stem (without or with .pdf).</summary>
+    private static string BuildCvPdfDownloadName(string? requested, Guid resumeId, Guid? versionId)
     {
-        string Fallback()
-        {
-            if (!string.IsNullOrWhiteSpace(targetCompany) || !string.IsNullOrWhiteSpace(targetRole))
-            {
-                var company = Sanitize(targetCompany ?? string.Empty);
-                var role = Sanitize(targetRole ?? string.Empty);
-                var vSuffix = versionNumber.HasValue ? $"_v{versionNumber}" : string.Empty;
-                var stem = $"CV_{company}_{role}{vSuffix}".Trim('_');
-                if (!string.IsNullOrWhiteSpace(stem))
-                    return $"{stem}.pdf";
-            }
-            return versionId.HasValue ? $"resume-{resumeId:D}-v{versionId:D}.pdf" : $"resume-{resumeId:D}.pdf";
-        }
-
-        static string Sanitize(string input)
-        {
-            var s = input.Replace(" ", "-").Replace("ä", "ae").Replace("ö", "oe").Replace("ü", "ue")
-                .Replace("Ä", "Ae").Replace("Ö", "Oe").Replace("Ü", "Ue").Replace("ß", "ss");
-            foreach (var ch in Path.GetInvalidFileNameChars())
-                s = s.Replace(ch, '_');
-            s = s.Trim('.', '_', ' ', '-');
-            return s.Length > 60 ? s[..60] : s;
-        }
+        static string Fallback(Guid rid, Guid? vid) =>
+            vid.HasValue ? $"resume-{rid:D}-v{vid:D}.pdf" : $"resume-{rid:D}.pdf";
 
         if (string.IsNullOrWhiteSpace(requested))
-            return Fallback();
+            return Fallback(resumeId, versionId);
 
         var trimmed = requested.Trim();
         if (trimmed.Length > 180)
@@ -339,7 +266,7 @@ public sealed class CvStudioResumesController(
 
         trimmed = trimmed.Trim('.', '_', ' ', '-');
         if (string.IsNullOrWhiteSpace(trimmed))
-            return Fallback();
+            return Fallback(resumeId, versionId);
 
         return $"{trimmed}.pdf";
     }
