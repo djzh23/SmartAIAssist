@@ -94,6 +94,12 @@ public sealed class UpdateVersionRequest
     public string? Label { get; set; }
 }
 
+/// <summary>Optional body for <c>POST .../resumes/templates/{templateKey}</c> — links in one round-trip after create.</summary>
+public sealed class CreateFromTemplateBody
+{
+    public LinkJobApplicationRequest? Link { get; set; }
+}
+
 public sealed class LinkJobApplicationRequest
 {
     /// <summary>Null to unlink. Must match an existing ApplicationId when set.</summary>

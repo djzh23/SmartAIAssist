@@ -29,8 +29,6 @@ public sealed class CvStudioPdfExportService(SmartAssistDbContext db, UsageServi
         Guid? versionId,
         string design,
         string fileLabel,
-        string? targetCompany = null,
-        string? targetRole = null,
         CancellationToken cancellationToken = default)
     {
         var (limit, used) = await GetQuotaAsync(clerkUserId, cancellationToken).ConfigureAwait(false);
@@ -47,8 +45,6 @@ public sealed class CvStudioPdfExportService(SmartAssistDbContext db, UsageServi
             FileLabel = fileLabel,
             CreatedAt = DateTime.UtcNow,
             StorageObjectPath = null,
-            TargetCompany = string.IsNullOrWhiteSpace(targetCompany) ? null : targetCompany.Trim(),
-            TargetRole = string.IsNullOrWhiteSpace(targetRole) ? null : targetRole.Trim(),
         };
         db.CvPdfExports.Add(row);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -63,6 +59,12 @@ public sealed class CvStudioPdfExportService(SmartAssistDbContext db, UsageServi
             .ConfigureAwait(false);
         return deleted > 0;
     }
+
+    /// <summary>Removes tracked PDF rows for a resume (e.g. before deleting the resume).</summary>
+    public Task<int> DeleteExportsForResumeAsync(string clerkUserId, Guid resumeId, CancellationToken cancellationToken = default) =>
+        db.CvPdfExports
+            .Where(x => x.ClerkUserId == clerkUserId && x.ResumeId == resumeId)
+            .ExecuteDeleteAsync(cancellationToken);
 
     private static string NormalizeDesign(string? design)
     {

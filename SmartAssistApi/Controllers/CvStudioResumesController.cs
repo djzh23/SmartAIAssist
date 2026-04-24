@@ -48,11 +48,14 @@ public sealed class CvStudioResumesController(
     [ProducesResponseType(typeof(ResumeDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> CreateFromTemplate(string templateKey, CancellationToken cancellationToken)
+    public async Task<IActionResult> CreateFromTemplate(
+        string templateKey,
+        [FromBody] CreateFromTemplateBody? body,
+        CancellationToken cancellationToken)
     {
         var (uid, denied) = RequireUser();
         if (denied is not null) return denied;
-        var resume = await resumeService.CreateFromTemplateAsync(uid, templateKey, cancellationToken);
+        var resume = await resumeService.CreateFromTemplateAsync(uid, templateKey, body?.Link, cancellationToken);
         return CreatedAtAction(nameof(GetCurrent), new { id = resume.Id }, resume);
     }
 
@@ -78,6 +81,19 @@ public sealed class CvStudioResumesController(
         return NoContent();
     }
 
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DeleteOne(Guid id, CancellationToken cancellationToken)
+    {
+        var (uid, denied) = RequireUser();
+        if (denied is not null) return denied;
+        await pdfExportTracker.DeleteExportsForResumeAsync(uid, id, cancellationToken).ConfigureAwait(false);
+        await resumeService.DeleteAsync(uid, id, cancellationToken).ConfigureAwait(false);
+        return NoContent();
+    }
+
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ResumeDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -100,6 +116,30 @@ public sealed class CvStudioResumesController(
         var (uid, denied) = RequireUser();
         if (denied is not null) return denied;
         var resume = await resumeService.UpdateAsync(uid, id, request, cancellationToken);
+        return Ok(resume);
+    }
+
+    [HttpPatch("{id:guid}/link-application")]
+    [ProducesResponseType(typeof(ResumeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> LinkApplication(Guid id, [FromBody] LinkJobApplicationRequest request, CancellationToken cancellationToken)
+    {
+        var (uid, denied) = RequireUser();
+        if (denied is not null) return denied;
+        var resume = await resumeService.LinkJobApplicationAsync(uid, id, request, cancellationToken);
+        return Ok(resume);
+    }
+
+    [HttpPatch("{id:guid}/notes")]
+    [ProducesResponseType(typeof(ResumeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> PatchNotes(Guid id, [FromBody] PatchResumeNotesRequest request, CancellationToken cancellationToken)
+    {
+        var (uid, denied) = RequireUser();
+        if (denied is not null) return denied;
+        var resume = await resumeService.PatchNotesAsync(uid, id, request, cancellationToken);
         return Ok(resume);
     }
 
@@ -220,9 +260,7 @@ public sealed class CvStudioResumesController(
                     versionId,
                     designLetter,
                     downloadName,
-                    targetCompany: null,
-                    targetRole: null,
-                    cancellationToken: cancellationToken)
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (CvStudioPdfQuotaExceededException ex)

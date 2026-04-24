@@ -44,7 +44,11 @@ public sealed class ResumeService : IResumeService
         return resumes.Select(CvStudioMapper.ToSummaryDto).ToList();
     }
 
-    public async Task<ResumeDto> CreateFromTemplateAsync(string clerkUserId, string templateKey, CancellationToken cancellationToken = default)
+    public async Task<ResumeDto> CreateFromTemplateAsync(
+        string clerkUserId,
+        string templateKey,
+        LinkJobApplicationRequest? linkAfterCreate,
+        CancellationToken cancellationToken = default)
     {
         var normalizedKey = NormalizeTemplateKeyRequired(templateKey);
         var template = ResumeTemplateCatalog.GetDefaultResume(normalizedKey);
@@ -65,7 +69,23 @@ public sealed class ResumeService : IResumeService
 
         _logger.LogInformation("Created resume {ResumeId} from template {TemplateKey}", resume.Id, normalizedKey);
 
+        if (linkAfterCreate is not null
+            && (!string.IsNullOrWhiteSpace(linkAfterCreate.JobApplicationId)
+                || !string.IsNullOrWhiteSpace(linkAfterCreate.TargetCompany)
+                || !string.IsNullOrWhiteSpace(linkAfterCreate.TargetRole)))
+        {
+            return await LinkJobApplicationAsync(clerkUserId, resume.Id, linkAfterCreate, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return CvStudioMapper.ToDto(resume);
+    }
+
+    public async Task DeleteAsync(string clerkUserId, Guid id, CancellationToken cancellationToken = default)
+    {
+        var deleted = await _resumeRepository.DeleteByIdAsync(id, clerkUserId, cancellationToken).ConfigureAwait(false);
+        if (deleted == 0)
+            throw new NotFoundException($"Resume '{id}' was not found.");
     }
 
     public async Task<ResumeDto> CreateAsync(string clerkUserId, CreateResumeRequest request, CancellationToken cancellationToken = default)

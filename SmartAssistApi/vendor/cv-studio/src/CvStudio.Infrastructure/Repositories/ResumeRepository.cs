@@ -45,5 +45,12 @@ public sealed class ResumeRepository : IResumeRepository
     {
         return _dbContext.Resumes.Where(x => x.ClerkUserId == clerkUserId).ExecuteDeleteAsync(cancellationToken);
     }
+
+    public Task<int> DeleteByIdAsync(Guid id, string clerkUserId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.Resumes
+            .Where(x => x.Id == id && x.ClerkUserId == clerkUserId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
 }
 
