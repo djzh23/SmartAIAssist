@@ -33,6 +33,9 @@ public sealed class CvStudioDbContext : DbContext, IApplicationDbContext
 
             entity.HasIndex(x => new { x.ClerkUserId, x.UpdatedAtUtc });
 
+            entity.HasIndex(x => x.LinkedJobApplicationId)
+                .HasDatabaseName("IX_resumes_linked_job_application_id");
+
             entity.HasMany(x => x.Versions)
                 .WithOne(x => x.Resume)
                 .HasForeignKey(x => x.ResumeId)

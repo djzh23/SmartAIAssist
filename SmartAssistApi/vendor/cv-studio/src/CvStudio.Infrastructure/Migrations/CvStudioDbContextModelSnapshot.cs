@@ -122,10 +122,7 @@ partial class CvStudioDbContextModelSnapshot : ModelSnapshot
                     .HasDatabaseName("IX_resume_versions_resume_id_version_number");
 
                 b.ToTable("resume_versions", (string)null);
-            });
 
-        modelBuilder.Entity("CvStudio.Domain.Entities.Snapshot", b =>
-            {
                 b.HasOne("CvStudio.Domain.Entities.Resume", "Resume")
                     .WithMany("Versions")
                     .HasForeignKey("ResumeId")
