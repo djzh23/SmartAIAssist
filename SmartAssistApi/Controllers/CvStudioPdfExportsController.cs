@@ -28,6 +28,8 @@ public sealed class CvStudioPdfExportsController(ClerkAuthService clerkAuth, CvS
             FileLabel = x.FileLabel,
             CreatedAtUtc = x.CreatedAt,
             HasStoredFile = !string.IsNullOrEmpty(x.StorageObjectPath),
+            TargetCompany = x.TargetCompany,
+            TargetRole = x.TargetRole,
         }).ToList();
 
         Response.Headers.Append("X-Cv-Pdf-Quota-Limit", limit.ToString());

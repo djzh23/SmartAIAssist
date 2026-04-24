@@ -17,6 +17,11 @@ public sealed class ResumeDto
     public ResumeData ResumeData { get; set; } = new();
 
     public DateTime UpdatedAtUtc { get; set; }
+
+    public string? LinkedJobApplicationId { get; set; }
+    public string? TargetCompany { get; set; }
+    public string? TargetRole { get; set; }
+    public string? Notes { get; set; }
 }
 
 public sealed class ResumeSummaryDto
@@ -25,6 +30,10 @@ public sealed class ResumeSummaryDto
     public string Title { get; set; } = string.Empty;
     public string? TemplateKey { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
+    public string? LinkedJobApplicationId { get; set; }
+    public string? TargetCompany { get; set; }
+    public string? TargetRole { get; set; }
+    public string? Notes { get; set; }
 }
 
 public sealed class ResumeVersionDto
@@ -83,5 +92,24 @@ public sealed class UpdateVersionRequest
 {
     [MaxLength(120)]
     public string? Label { get; set; }
+}
+
+public sealed class LinkJobApplicationRequest
+{
+    /// <summary>Null to unlink. Must match an existing ApplicationId when set.</summary>
+    [MaxLength(80)]
+    public string? JobApplicationId { get; set; }
+
+    [MaxLength(300)]
+    public string? TargetCompany { get; set; }
+
+    [MaxLength(300)]
+    public string? TargetRole { get; set; }
+}
+
+public sealed class PatchResumeNotesRequest
+{
+    [MaxLength(2000)]
+    public string? Notes { get; set; }
 }
 

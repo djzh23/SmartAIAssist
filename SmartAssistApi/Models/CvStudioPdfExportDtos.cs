@@ -9,4 +9,6 @@ public sealed class CvStudioPdfExportRowDto
     public string FileLabel { get; init; } = "";
     public DateTime CreatedAtUtc { get; init; }
     public bool HasStoredFile { get; init; }
+    public string? TargetCompany { get; init; }
+    public string? TargetRole { get; init; }
 }

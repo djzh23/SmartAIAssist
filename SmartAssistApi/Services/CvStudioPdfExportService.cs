@@ -29,6 +29,8 @@ public sealed class CvStudioPdfExportService(SmartAssistDbContext db, UsageServi
         Guid? versionId,
         string design,
         string fileLabel,
+        string? targetCompany = null,
+        string? targetRole = null,
         CancellationToken cancellationToken = default)
     {
         var (limit, used) = await GetQuotaAsync(clerkUserId, cancellationToken).ConfigureAwait(false);
@@ -45,6 +47,8 @@ public sealed class CvStudioPdfExportService(SmartAssistDbContext db, UsageServi
             FileLabel = fileLabel,
             CreatedAt = DateTime.UtcNow,
             StorageObjectPath = null,
+            TargetCompany = string.IsNullOrWhiteSpace(targetCompany) ? null : targetCompany.Trim(),
+            TargetRole = string.IsNullOrWhiteSpace(targetRole) ? null : targetRole.Trim(),
         };
         db.CvPdfExports.Add(row);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

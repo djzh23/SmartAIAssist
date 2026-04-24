@@ -31,4 +31,12 @@ public sealed class CvPdfExportEntity
 
     [Column("storage_object_path")]
     public string? StorageObjectPath { get; set; }
+
+    [Column("target_company")]
+    [MaxLength(300)]
+    public string? TargetCompany { get; set; }
+
+    [Column("target_role")]
+    [MaxLength(300)]
+    public string? TargetRole { get; set; }
 }

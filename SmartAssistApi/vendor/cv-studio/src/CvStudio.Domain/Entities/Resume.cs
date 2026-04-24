@@ -36,4 +36,18 @@ public sealed class Resume
     /// Gets or sets all saved snapshots for this resume.
     /// </summary>
     public ICollection<Snapshot> Versions { get; set; } = new List<Snapshot>();
+
+    /// <summary>
+    /// Optional reference to a job application (cross-context string FK — no DB-level constraint).
+    /// </summary>
+    public string? LinkedJobApplicationId { get; set; }
+
+    /// <summary>Target company name — denormalized for display without a join.</summary>
+    public string? TargetCompany { get; set; }
+
+    /// <summary>Target role name — denormalized for display without a join.</summary>
+    public string? TargetRole { get; set; }
+
+    /// <summary>Internal working notes visible only to the owner (e.g. "Docker emphasized, Kubernetes dropped").</summary>
+    public string? Notes { get; set; }
 }

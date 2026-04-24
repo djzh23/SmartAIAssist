@@ -41,7 +41,26 @@ public static class CvStudioMapper
             Title = resume.Title,
             TemplateKey = resume.TemplateKey,
             ResumeData = Deserialize(resume.CurrentContentJson),
-            UpdatedAtUtc = resume.UpdatedAtUtc
+            UpdatedAtUtc = resume.UpdatedAtUtc,
+            LinkedJobApplicationId = resume.LinkedJobApplicationId,
+            TargetCompany = resume.TargetCompany,
+            TargetRole = resume.TargetRole,
+            Notes = resume.Notes
+        };
+    }
+
+    public static ResumeSummaryDto ToSummaryDto(Resume resume)
+    {
+        return new ResumeSummaryDto
+        {
+            Id = resume.Id,
+            Title = resume.Title,
+            TemplateKey = resume.TemplateKey,
+            UpdatedAtUtc = resume.UpdatedAtUtc,
+            LinkedJobApplicationId = resume.LinkedJobApplicationId,
+            TargetCompany = resume.TargetCompany,
+            TargetRole = resume.TargetRole,
+            Notes = resume.Notes
         };
     }
 

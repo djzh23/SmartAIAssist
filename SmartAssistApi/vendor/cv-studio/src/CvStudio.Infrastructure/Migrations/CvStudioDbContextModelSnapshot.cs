@@ -52,10 +52,33 @@ partial class CvStudioDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("timestamp with time zone")
                     .HasColumnName("updated_at_utc");
 
+                b.Property<string>("LinkedJobApplicationId")
+                    .HasMaxLength(80)
+                    .HasColumnType("character varying(80)")
+                    .HasColumnName("linked_job_application_id");
+
+                b.Property<string>("TargetCompany")
+                    .HasMaxLength(300)
+                    .HasColumnType("character varying(300)")
+                    .HasColumnName("target_company");
+
+                b.Property<string>("TargetRole")
+                    .HasMaxLength(300)
+                    .HasColumnType("character varying(300)")
+                    .HasColumnName("target_role");
+
+                b.Property<string>("Notes")
+                    .HasMaxLength(2000)
+                    .HasColumnType("character varying(2000)")
+                    .HasColumnName("notes");
+
                 b.HasKey("Id");
 
                 b.HasIndex("ClerkUserId", "UpdatedAtUtc")
                     .HasDatabaseName("IX_resumes_clerk_user_id_updated_at_utc");
+
+                b.HasIndex("LinkedJobApplicationId")
+                    .HasDatabaseName("IX_resumes_linked_job_application_id");
 
                 b.ToTable("resumes", (string)null);
             });

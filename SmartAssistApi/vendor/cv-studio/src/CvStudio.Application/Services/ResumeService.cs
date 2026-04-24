@@ -41,15 +41,7 @@ public sealed class ResumeService : IResumeService
     public async Task<IReadOnlyList<ResumeSummaryDto>> ListAsync(string clerkUserId, CancellationToken cancellationToken = default)
     {
         var resumes = await _resumeRepository.ListAsync(clerkUserId, cancellationToken);
-        return resumes
-            .Select(x => new ResumeSummaryDto
-            {
-                Id = x.Id,
-                Title = x.Title,
-                TemplateKey = x.TemplateKey,
-                UpdatedAtUtc = x.UpdatedAtUtc
-            })
-            .ToList();
+        return resumes.Select(CvStudioMapper.ToSummaryDto).ToList();
     }
 
     public async Task<ResumeDto> CreateFromTemplateAsync(string clerkUserId, string templateKey, CancellationToken cancellationToken = default)
@@ -123,6 +115,46 @@ public sealed class ResumeService : IResumeService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Updated resume {ResumeId}", resume.Id);
+
+        return CvStudioMapper.ToDto(resume);
+    }
+
+    public async Task<ResumeDto> LinkJobApplicationAsync(string clerkUserId, Guid id, LinkJobApplicationRequest request, CancellationToken cancellationToken = default)
+    {
+        var resume = await _resumeRepository.GetByIdAsync(id, clerkUserId, cancellationToken)
+            ?? throw new NotFoundException($"Resume '{id}' was not found.");
+
+        resume.LinkedJobApplicationId = string.IsNullOrWhiteSpace(request.JobApplicationId) ? null : request.JobApplicationId.Trim();
+        resume.TargetCompany = string.IsNullOrWhiteSpace(request.TargetCompany) ? null : request.TargetCompany.Trim();
+        resume.TargetRole = string.IsNullOrWhiteSpace(request.TargetRole) ? null : request.TargetRole.Trim();
+
+        // Auto-update title when linking to a job application if it still has the template default
+        if (resume.LinkedJobApplicationId is not null
+            && !string.IsNullOrWhiteSpace(resume.TargetCompany)
+            && !string.IsNullOrWhiteSpace(resume.TargetRole))
+        {
+            var autoTitle = $"{resume.TargetCompany} — {resume.TargetRole}";
+            if (autoTitle.Length <= 160)
+                resume.Title = autoTitle;
+        }
+
+        resume.UpdatedAtUtc = DateTime.UtcNow;
+        await _resumeRepository.UpdateAsync(resume, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Linked job application {AppId} to resume {ResumeId}", resume.LinkedJobApplicationId, id);
+        return CvStudioMapper.ToDto(resume);
+    }
+
+    public async Task<ResumeDto> PatchNotesAsync(string clerkUserId, Guid id, PatchResumeNotesRequest request, CancellationToken cancellationToken = default)
+    {
+        var resume = await _resumeRepository.GetByIdAsync(id, clerkUserId, cancellationToken)
+            ?? throw new NotFoundException($"Resume '{id}' was not found.");
+
+        resume.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        resume.UpdatedAtUtc = DateTime.UtcNow;
+        await _resumeRepository.UpdateAsync(resume, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return CvStudioMapper.ToDto(resume);
     }

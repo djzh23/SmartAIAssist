@@ -11,5 +11,7 @@ public interface IResumeService
     Task<ResumeDto> CreateAsync(string clerkUserId, CreateResumeRequest request, CancellationToken cancellationToken = default);
     Task<ResumeDto> GetCurrentAsync(string clerkUserId, Guid id, CancellationToken cancellationToken = default);
     Task<ResumeDto> UpdateAsync(string clerkUserId, Guid id, UpdateResumeRequest request, CancellationToken cancellationToken = default);
+    Task<ResumeDto> LinkJobApplicationAsync(string clerkUserId, Guid id, LinkJobApplicationRequest request, CancellationToken cancellationToken = default);
+    Task<ResumeDto> PatchNotesAsync(string clerkUserId, Guid id, PatchResumeNotesRequest request, CancellationToken cancellationToken = default);
 }
 

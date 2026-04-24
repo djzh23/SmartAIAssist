@@ -26,6 +26,10 @@ public sealed class CvStudioDbContext : DbContext, IApplicationDbContext
             entity.Property(x => x.TemplateKey).HasColumnName("template_key").HasMaxLength(80);
             entity.Property(x => x.CurrentContentJson).HasColumnName("current_content_json").HasColumnType("jsonb").IsRequired();
             entity.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired();
+            entity.Property(x => x.LinkedJobApplicationId).HasColumnName("linked_job_application_id").HasMaxLength(80);
+            entity.Property(x => x.TargetCompany).HasColumnName("target_company").HasMaxLength(300);
+            entity.Property(x => x.TargetRole).HasColumnName("target_role").HasMaxLength(300);
+            entity.Property(x => x.Notes).HasColumnName("notes").HasMaxLength(2000);
 
             entity.HasIndex(x => new { x.ClerkUserId, x.UpdatedAtUtc });
 
