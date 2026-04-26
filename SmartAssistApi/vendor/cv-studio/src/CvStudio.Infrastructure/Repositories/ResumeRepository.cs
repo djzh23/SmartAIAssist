@@ -35,10 +35,28 @@ public sealed class ResumeRepository : IResumeRepository
         await _dbContext.Resumes.AddAsync(resume, cancellationToken);
     }
 
-    public Task UpdateAsync(Resume resume, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Copies scalar fields onto the tracked entity if one with the same key is already in the change tracker
+    /// (e.g. right after <see cref="AddAsync"/> + SaveChanges). Using <c>Update(detached)</c> would throw
+    /// "another instance with the same key is already being tracked".
+    /// </summary>
+    public async Task UpdateAsync(Resume resume, CancellationToken cancellationToken = default)
     {
-        _dbContext.Resumes.Update(resume);
-        return Task.CompletedTask;
+        var tracked = await _dbContext.Resumes
+            .FirstOrDefaultAsync(x => x.Id == resume.Id && x.ClerkUserId == resume.ClerkUserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (tracked is null)
+            throw new InvalidOperationException($"Resume '{resume.Id}' was not found for update.");
+
+        tracked.Title = resume.Title;
+        tracked.TemplateKey = resume.TemplateKey;
+        tracked.CurrentContentJson = resume.CurrentContentJson;
+        tracked.UpdatedAtUtc = resume.UpdatedAtUtc;
+        tracked.LinkedJobApplicationId = resume.LinkedJobApplicationId;
+        tracked.TargetCompany = resume.TargetCompany;
+        tracked.TargetRole = resume.TargetRole;
+        tracked.Notes = resume.Notes;
     }
 
     public Task<int> DeleteAllAsync(string clerkUserId, CancellationToken cancellationToken = default)
