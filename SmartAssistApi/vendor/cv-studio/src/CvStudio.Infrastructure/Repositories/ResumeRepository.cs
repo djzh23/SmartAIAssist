@@ -35,19 +35,19 @@ public sealed class ResumeRepository : IResumeRepository
         return await _dbContext.Database
             .SqlQuery<ResumeSummaryProjection>($"""
                 SELECT
-                    id,
-                    title,
-                    template_key,
-                    updated_at_utc,
-                    linked_job_application_id,
-                    target_company,
-                    target_role,
-                    notes,
-                    current_content_json -> 'profile' ->> 'firstName' AS profile_first_name,
-                    current_content_json -> 'profile' ->> 'lastName'  AS profile_last_name,
-                    current_content_json -> 'profile' ->> 'headline'  AS profile_headline,
-                    current_content_json -> 'profile' ->> 'email'     AS profile_email,
-                    current_content_json -> 'profile' ->> 'location'  AS profile_location
+                    id                                                          AS "Id",
+                    title                                                       AS "Title",
+                    template_key                                                AS "TemplateKey",
+                    updated_at_utc                                              AS "UpdatedAtUtc",
+                    linked_job_application_id                                   AS "LinkedJobApplicationId",
+                    target_company                                              AS "TargetCompany",
+                    target_role                                                 AS "TargetRole",
+                    notes                                                       AS "Notes",
+                    current_content_json -> 'profile' ->> 'firstName'          AS "ProfileFirstName",
+                    current_content_json -> 'profile' ->> 'lastName'           AS "ProfileLastName",
+                    current_content_json -> 'profile' ->> 'headline'           AS "ProfileHeadline",
+                    current_content_json -> 'profile' ->> 'email'              AS "ProfileEmail",
+                    current_content_json -> 'profile' ->> 'location'           AS "ProfileLocation"
                 FROM resumes
                 WHERE clerk_user_id = {clerkUserId}
                 ORDER BY updated_at_utc DESC
