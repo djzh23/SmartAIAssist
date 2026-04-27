@@ -59,13 +59,23 @@ public sealed class SnapshotService : ISnapshotService
 
     public async Task<IReadOnlyList<ResumeVersionDto>> ListSnapshotsAsync(string clerkUserId, Guid resumeId, CancellationToken cancellationToken = default)
     {
-        var resume = await _resumeRepository.GetByIdAsync(resumeId, clerkUserId, cancellationToken)
+        _ = await _resumeRepository.GetByIdAsync(resumeId, clerkUserId, cancellationToken)
             ?? throw new NotFoundException($"Resume '{resumeId}' was not found.");
-
-        _ = resume;
 
         var versions = await _versionRepository.ListByResumeIdAsync(resumeId, cancellationToken);
         return versions.Select(CvStudioMapper.ToDto).ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ResumeVersionSummaryDto>> ListSnapshotsSummaryAsync(
+        string clerkUserId,
+        Guid resumeId,
+        CancellationToken cancellationToken = default)
+    {
+        _ = await _resumeRepository.GetByIdAsync(resumeId, clerkUserId, cancellationToken)
+            ?? throw new NotFoundException($"Resume '{resumeId}' was not found.");
+
+        return await _versionRepository.ListMetadataByResumeIdAsync(resumeId, cancellationToken);
     }
 
     public async Task<ResumeVersionDto> GetSnapshotAsync(string clerkUserId, Guid resumeId, Guid versionId, CancellationToken cancellationToken = default)

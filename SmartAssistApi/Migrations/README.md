@@ -12,6 +12,9 @@ Run SQL files **in order** (`001` → `008`) in the Supabase SQL Editor (or your
 | `006_learning_memory.sql` | `learning_memories` + FK to `app_users` |
 | `007_token_usage.sql` | Token usage aggregates (`token_usage_*`) + registered users |
 | `008_user_usage_plan.sql` | `user_usage_daily` + `user_plan` (daily limits + plan rows) |
+| `009_cv_pdf_exports.sql` | `cv_pdf_exports` (PDF download tracking + quota) |
+| `010_cv_pdf_exports_target_fields.sql` | Adds `target_company` / `target_role` to `cv_pdf_exports` |
+| `011_cv_resume_categories.sql` | `cv_user_categories` + `cv_resume_category_assignments` (server-side master CV categories, replaces localStorage) |
 
 ## Backfill chat notes from Redis (manual)
 

@@ -21,10 +21,15 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
         if (string.IsNullOrWhiteSpace(userId))
             return null;
 
+        // Project to only the columns needed for display — cv_raw_text (potentially 100 KB+
+        // of parsed PDF text) is excluded here because it is never needed for profile reads.
         var row = await db.CareerProfiles
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken)
+            .Where(x => x.ClerkUserId == userId)
+            .Select(x => new { x.ProfileJson, x.CreatedAt })
+            .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
+
         if (row is null)
             return null;
 

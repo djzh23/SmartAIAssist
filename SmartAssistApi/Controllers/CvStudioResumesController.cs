@@ -158,14 +158,15 @@ public sealed class CvStudioResumesController(
     }
 
     [HttpGet("{id:guid}/versions")]
-    [ProducesResponseType(typeof(IReadOnlyList<ResumeVersionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IReadOnlyList<ResumeVersionSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ListVersions(Guid id, CancellationToken cancellationToken)
     {
         var (uid, denied) = RequireUser();
         if (denied is not null) return denied;
-        var versions = await snapshotService.ListSnapshotsAsync(uid, id, cancellationToken);
+        // Use the summary endpoint — omits ContentJson so no large payloads for list views.
+        var versions = await snapshotService.ListSnapshotsSummaryAsync(uid, id, cancellationToken);
         return Ok(versions);
     }
 

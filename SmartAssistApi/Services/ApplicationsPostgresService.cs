@@ -84,24 +84,26 @@ public sealed class ApplicationsPostgresService(SmartAssistDbContext db, ILogger
 
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        var toRemove = await db.JobApplications
-            .Where(a => a.ClerkUserId == userId && !ids.Contains(a.ApplicationId))
-            .ToListAsync(cancellationToken)
+        // Load all existing rows for this user in one query, then work in-memory.
+        // Avoids N individual FirstOrDefaultAsync calls inside the loop below.
+        var existingByAppId = await db.JobApplications
+            .Where(a => a.ClerkUserId == userId)
+            .ToDictionaryAsync(a => a.ApplicationId, cancellationToken)
             .ConfigureAwait(false);
+
+        // Remove rows no longer in the incoming list.
+        var toRemove = existingByAppId.Values
+            .Where(e => !ids.Contains(e.ApplicationId))
+            .ToList();
         if (toRemove.Count > 0)
             db.JobApplications.RemoveRange(toRemove);
 
         foreach (var doc in apps)
         {
-            var existing = await db.JobApplications
-                .FirstOrDefaultAsync(
-                    a => a.ClerkUserId == userId && a.ApplicationId == doc.Id,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (existing is null)
-                db.JobApplications.Add(ToEntity(doc, userId));
-            else
+            if (existingByAppId.TryGetValue(doc.Id, out var existing))
                 CopyToEntity(existing, doc);
+            else
+                db.JobApplications.Add(ToEntity(doc, userId));
         }
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

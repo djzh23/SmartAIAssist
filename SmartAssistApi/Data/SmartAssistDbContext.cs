@@ -35,6 +35,10 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<CvPdfExportEntity> CvPdfExports => Set<CvPdfExportEntity>();
 
+    public DbSet<CvUserCategoryEntity> CvUserCategories => Set<CvUserCategoryEntity>();
+
+    public DbSet<CvResumeCategoryAssignmentEntity> CvResumeCategoryAssignments => Set<CvResumeCategoryAssignmentEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppUserEntity>(e =>
@@ -134,6 +138,28 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
             e.ToTable("cv_pdf_exports");
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.ClerkUserId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<CvUserCategoryEntity>(e =>
+        {
+            e.ToTable("cv_user_categories");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ClerkUserId).HasColumnName("clerk_user_id").HasMaxLength(128).IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(80).IsRequired();
+            e.Property(x => x.SortOrder).HasColumnName("sort_order");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.HasIndex(x => x.ClerkUserId);
+        });
+
+        modelBuilder.Entity<CvResumeCategoryAssignmentEntity>(e =>
+        {
+            e.ToTable("cv_resume_category_assignments");
+            e.HasKey(x => x.ResumeId);
+            e.Property(x => x.ResumeId).HasColumnName("resume_id");
+            e.Property(x => x.ClerkUserId).HasColumnName("clerk_user_id").HasMaxLength(128).IsRequired();
+            e.Property(x => x.CategoryId).HasColumnName("category_id");
+            e.HasIndex(x => x.ClerkUserId);
         });
     }
 }

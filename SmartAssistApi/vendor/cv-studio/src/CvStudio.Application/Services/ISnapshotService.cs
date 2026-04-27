@@ -6,6 +6,12 @@ public interface ISnapshotService
 {
     Task<ResumeVersionDto> CreateSnapshotAsync(string clerkUserId, Guid resumeId, CreateVersionRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ResumeVersionDto>> ListSnapshotsAsync(string clerkUserId, Guid resumeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Metadata-only list (no content payload). Use this for sidebar/list views where
+    /// the full resume data per snapshot is not needed.
+    /// </summary>
+    Task<IReadOnlyList<ResumeVersionSummaryDto>> ListSnapshotsSummaryAsync(string clerkUserId, Guid resumeId, CancellationToken cancellationToken = default);
     Task<ResumeVersionDto> GetSnapshotAsync(string clerkUserId, Guid resumeId, Guid versionId, CancellationToken cancellationToken = default);
     Task<ResumeVersionDto> UpdateSnapshotAsync(string clerkUserId, Guid resumeId, Guid versionId, UpdateVersionRequest request, CancellationToken cancellationToken = default);
     Task DeleteSnapshotAsync(string clerkUserId, Guid resumeId, Guid versionId, CancellationToken cancellationToken = default);

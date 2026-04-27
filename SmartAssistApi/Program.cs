@@ -116,6 +116,7 @@ if (registerPostgres)
     builder.Services.AddScoped<UsagePostgresService>();
     builder.Services.AddScoped<TokenTrackingPostgresService>();
     builder.Services.AddScoped<CvStudioPdfExportService>();
+    builder.Services.AddScoped<CvStudioCategoriesService>();
 }
 
 builder.Services.AddApplication();

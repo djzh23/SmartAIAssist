@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using CvStudio.Application.DTOs;
 using CvStudio.Application.Repositories;
 using CvStudio.Domain.Entities;
 using CvStudio.Infrastructure.Persistence;
@@ -20,6 +21,38 @@ public sealed class ResumeRepository : IResumeRepository
             .AsNoTracking()
             .Where(x => x.ClerkUserId == clerkUserId)
             .OrderByDescending(x => x.UpdatedAtUtc)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ResumeSummaryProjection>> ListSummariesAsync(
+        string clerkUserId,
+        CancellationToken cancellationToken = default)
+    {
+        // Use PostgreSQL JSONB operators to extract only the profile preview fields at the
+        // database level. The full current_content_json (potentially hundreds of KB) is never
+        // transmitted over the wire — only the small extracted scalar values are.
+        return await _dbContext.Database
+            .SqlQuery<ResumeSummaryProjection>($"""
+                SELECT
+                    id,
+                    title,
+                    template_key,
+                    updated_at_utc,
+                    linked_job_application_id,
+                    target_company,
+                    target_role,
+                    notes,
+                    current_content_json -> 'profile' ->> 'firstName' AS profile_first_name,
+                    current_content_json -> 'profile' ->> 'lastName'  AS profile_last_name,
+                    current_content_json -> 'profile' ->> 'headline'  AS profile_headline,
+                    current_content_json -> 'profile' ->> 'email'     AS profile_email,
+                    current_content_json -> 'profile' ->> 'location'  AS profile_location
+                FROM resumes
+                WHERE clerk_user_id = {clerkUserId}
+                ORDER BY updated_at_utc DESC
+                """)
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
     }
 

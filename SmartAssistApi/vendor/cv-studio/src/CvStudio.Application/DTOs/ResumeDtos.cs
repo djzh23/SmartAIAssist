@@ -34,6 +34,17 @@ public sealed class ResumeSummaryDto
     public string? TargetCompany { get; set; }
     public string? TargetRole { get; set; }
     public string? Notes { get; set; }
+    /// <summary>Lightweight profile fields for card previews — avoids a full resume fetch per card.</summary>
+    public ResumeSummaryProfilePreview? ProfilePreview { get; set; }
+}
+
+public sealed class ResumeSummaryProfilePreview
+{
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string Headline { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
 }
 
 public sealed class ResumeVersionDto
@@ -43,6 +54,19 @@ public sealed class ResumeVersionDto
     public int VersionNumber { get; set; }
     public string? Label { get; set; }
     public ResumeData ResumeData { get; set; } = new();
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// Lightweight version metadata for list endpoints — omits ResumeData so the large
+/// ContentJson column is never fetched or deserialized for a list request.
+/// </summary>
+public sealed class ResumeVersionSummaryDto
+{
+    public Guid Id { get; set; }
+    public Guid ResumeId { get; set; }
+    public int VersionNumber { get; set; }
+    public string? Label { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }
 

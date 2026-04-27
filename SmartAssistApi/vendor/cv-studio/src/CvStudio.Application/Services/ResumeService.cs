@@ -40,8 +40,11 @@ public sealed class ResumeService : IResumeService
 
     public async Task<IReadOnlyList<ResumeSummaryDto>> ListAsync(string clerkUserId, CancellationToken cancellationToken = default)
     {
-        var resumes = await _resumeRepository.ListAsync(clerkUserId, cancellationToken);
-        return resumes.Select(CvStudioMapper.ToSummaryDto).ToList();
+        // Use the optimised projection: JSONB fields are extracted at the DB level,
+        // so the full content document (potentially hundreds of KB per resume) is
+        // never loaded into memory for a list request.
+        var projections = await _resumeRepository.ListSummariesAsync(clerkUserId, cancellationToken);
+        return projections.Select(CvStudioMapper.ToSummaryDto).ToList();
     }
 
     public async Task<ResumeDto> CreateFromTemplateAsync(

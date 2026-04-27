@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using CvStudio.Application.DTOs;
 using CvStudio.Application.Repositories;
 using CvStudio.Domain.Entities;
 using CvStudio.Infrastructure.Persistence;
@@ -35,6 +36,28 @@ public sealed class SnapshotRepository : ISnapshotRepository
             .AsNoTracking()
             .Where(x => x.ResumeId == resumeId)
             .OrderByDescending(x => x.VersionNumber)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ResumeVersionSummaryDto>> ListMetadataByResumeIdAsync(
+        Guid resumeId,
+        CancellationToken cancellationToken = default)
+    {
+        // Project to a lightweight DTO — EF Core translates this to a SELECT that omits
+        // content_json entirely, so the large snapshot payloads are never sent over the wire.
+        return await _dbContext.ResumeVersions
+            .AsNoTracking()
+            .Where(x => x.ResumeId == resumeId)
+            .OrderByDescending(x => x.VersionNumber)
+            .Select(x => new ResumeVersionSummaryDto
+            {
+                Id = x.Id,
+                ResumeId = x.ResumeId,
+                VersionNumber = x.VersionNumber,
+                Label = x.Label,
+                CreatedAtUtc = x.CreatedAtUtc,
+            })
             .ToListAsync(cancellationToken);
     }
 
