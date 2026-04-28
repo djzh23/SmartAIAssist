@@ -59,6 +59,42 @@ public sealed class CvStudioCategoriesController(
         return CreatedAtAction(nameof(Get), dto);
     }
 
+    [HttpPatch("{id:guid}")]
+    [ProducesResponseType(typeof(CvCategoryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Rename(Guid id, [FromBody] RenameCategoryRequest request, CancellationToken cancellationToken)
+    {
+        var (uid, denied) = RequireUser();
+        if (denied is not null) return denied;
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { error = "Name darf nicht leer sein." });
+
+        var entity = await categoriesService.RenameAsync(uid, id, request.Name, cancellationToken);
+        if (entity is null) return NotFound();
+
+        return Ok(new CvCategoryDto { Id = entity.Id, Name = entity.Name, SortOrder = entity.SortOrder });
+    }
+
+    [HttpPut("order")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Reorder([FromBody] ReorderCategoriesRequest request, CancellationToken cancellationToken)
+    {
+        var (uid, denied) = RequireUser();
+        if (denied is not null) return denied;
+
+        var orders = request.Orders
+            .Where(o => Guid.TryParse(o.Id, out _))
+            .Select(o => (Guid.Parse(o.Id), o.SortOrder))
+            .ToList();
+
+        await categoriesService.ReorderAsync(uid, orders, cancellationToken);
+        return NoContent();
+    }
+
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -125,4 +161,20 @@ public sealed class CreateCvCategoryRequest
 public sealed class AssignCategoryRequest
 {
     public string? CategoryId { get; set; }
+}
+
+public sealed class RenameCategoryRequest
+{
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class ReorderCategoriesRequest
+{
+    public List<CategoryOrderItem> Orders { get; set; } = [];
+}
+
+public sealed class CategoryOrderItem
+{
+    public string Id { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
 }

@@ -60,6 +60,39 @@ public sealed class CvStudioCategoriesService(SmartAssistDbContext db)
         return true;
     }
 
+    public async Task<CvUserCategoryEntity?> RenameAsync(
+        string clerkUserId, Guid categoryId, string name, CancellationToken ct = default)
+    {
+        var trimmed = name.Trim();
+        if (string.IsNullOrEmpty(trimmed) || trimmed.Length > 80) return null;
+
+        var entity = await db.CvUserCategories
+            .FirstOrDefaultAsync(x => x.Id == categoryId && x.ClerkUserId == clerkUserId, ct);
+        if (entity is null) return null;
+
+        entity.Name = trimmed;
+        await db.SaveChangesAsync(ct);
+        return entity;
+    }
+
+    public async Task ReorderAsync(
+        string clerkUserId,
+        IReadOnlyList<(Guid Id, int SortOrder)> orders,
+        CancellationToken ct = default)
+    {
+        var ids = orders.Select(o => o.Id).ToList();
+        var entities = await db.CvUserCategories
+            .Where(x => x.ClerkUserId == clerkUserId && ids.Contains(x.Id))
+            .ToListAsync(ct);
+
+        foreach (var entity in entities)
+        {
+            var match = orders.FirstOrDefault(o => o.Id == entity.Id);
+            if (match != default) entity.SortOrder = match.SortOrder;
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task AssignAsync(string clerkUserId, Guid resumeId, Guid? categoryId, CancellationToken ct = default)
     {
         var existing = await db.CvResumeCategoryAssignments
