@@ -1,120 +1,171 @@
-# SmartAssist Backend
+# BetweenAtna — Backend
 
-ASP.NET Core 9 Backend für die SmartAssist KI Plattform.
-Gehostet auf: **[smartassist-api.onrender.com](https://smartassist-api.onrender.com)**
-Frontend Repo: [github.com/djzh23/SmartAssist-react](https://github.com/djzh23/SmartAssist-react)
+ASP.NET Core 9 backend for **BetweenAtna**, an AI-powered career platform for job seekers.
 
----
-
-## Was macht dieses Backend?
-
-Das Backend steuert die KI Logik, Nutzerverwaltung und alle externen Dienste.
-Es empfängt Nachrichten vom Frontend, wählt das passende Werkzeug aus,
-baut den System Prompt auf und streamt die Antwort von Anthropic Claude zurück.
+Hosted: **[smartassist-api.onrender.com](https://smartassist-api.onrender.com)**
+Frontend: [github.com/djzh23/SmartAssist-react](https://github.com/djzh23/SmartAssist-react)
 
 ---
 
-## API Endpunkte
+## What does this backend do?
 
-| Methode | Endpunkt | Beschreibung |
+Handles all business logic for the BetweenAtna platform:
+
+- **AI routing** — receives chat messages, selects the right tool/mode, builds system prompts, streams Claude responses back via SSE
+- **Job applications** — full CRUD for applications with pipeline stages and timeline tracking
+- **CV Studio** — resume storage, snapshot versioning, PDF/DOCX export, category management
+- **User management** — Clerk JWT auth, daily usage limits per subscription plan
+- **Payments** — Stripe checkout, webhook handling, customer portal
+
+---
+
+## API Overview
+
+### Agent / Chat
+| Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/agent/stream` | KI Antwort als SSE Stream |
-| POST | `/api/agent/ask` | KI Antwort als einfacher JSON Response |
-| POST | `/api/agent/speak` | Text zu Sprache via ElevenLabs |
-| GET | `/api/agent/usage` | Tagesverbrauch des Nutzers |
-| GET | `/api/agent/health` | Health Check |
-| POST | `/api/agent/context` | Sitzungskontext setzen (Stelle, Lebenslauf) |
-| POST | `/api/stripe/checkout` | Stripe Checkout Session erstellen |
-| POST | `/api/stripe/webhook` | Stripe Webhook für Abo Ereignisse |
-| GET | `/api/stripe/portal` | Stripe Kundenportal öffnen |
+| POST | `/api/agent/stream` | AI response as SSE stream |
+| POST | `/api/agent/ask` | AI response as JSON |
+| GET | `/api/agent/usage` | Current day usage for the authenticated user |
+| GET | `/api/agent/health` | Health check |
+
+### Job Applications
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/applications` | List all applications |
+| POST | `/api/applications` | Create application |
+| PATCH | `/api/applications/{id}` | Update status, notes, fields |
+| DELETE | `/api/applications/{id}` | Delete application |
+
+### CV Studio — Resumes
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/cv-studio/resumes` | List resume summaries |
+| POST | `/api/cv-studio/resumes` | Create resume |
+| GET | `/api/cv-studio/resumes/{id}` | Get full resume data |
+| PUT | `/api/cv-studio/resumes/{id}` | Update resume |
+| DELETE | `/api/cv-studio/resumes/{id}` | Delete resume |
+
+### CV Studio — Categories
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/cv-studio/categories` | List categories + assignments |
+| POST | `/api/cv-studio/categories` | Create category |
+| PATCH | `/api/cv-studio/categories/{id}` | Rename category |
+| PUT | `/api/cv-studio/categories/order` | Reorder categories |
+| DELETE | `/api/cv-studio/categories/{id}` | Delete category |
+| POST | `/api/cv-studio/categories/assign` | Assign resume to category |
+
+### CV Studio — Export
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/cv-studio/resumes/{id}/pdf` | Generate and download PDF |
+| GET | `/api/cv-studio/pdf-exports` | List PDF export history |
+| DELETE | `/api/cv-studio/pdf-exports/{id}` | Remove export entry |
+
+### Payments
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/stripe/checkout` | Create Stripe checkout session |
+| POST | `/api/stripe/webhook` | Handle Stripe subscription events |
+| GET | `/api/stripe/portal` | Open Stripe customer portal |
 
 ---
 
-## Architektur
+## Architecture
 
 ```
 SmartAssistApi/
 ├── Controllers/
-│   ├── AgentController.cs       KI Chat, Streaming, Usage, Kontext
-│   ├── SpeechController.cs      Text zu Sprache (ElevenLabs)
-│   └── StripeController.cs      Abonnement und Zahlung
+│   ├── AgentController.cs              Chat, streaming, usage
+│   ├── ApplicationsController.cs       Job application pipeline
+│   ├── CvStudioController.cs           Resume CRUD + PDF/DOCX export
+│   ├── CvStudioCategoriesController.cs Category management
+│   ├── CvStudioVersionsController.cs   Snapshot versioning
+│   └── StripeController.cs             Subscriptions and billing
 ├── Services/
-│   ├── AgentService.cs          Kernlogik: Tool Routing, Claude Aufruf, Streaming
-│   ├── SystemPromptBuilder.cs   Dynamische System Prompts je Werkzeug
-│   ├── ConversationService.cs   Gesprächsverlauf und Sitzungskontext (Redis)
-│   ├── UsageService.cs          Tägliche Nutzungslimits je Plan
-│   ├── ClerkAuthService.cs      JWT Authentifizierung via Clerk
-│   ├── ElevenLabsSpeechService  Text zu Sprache Synthese
-│   └── StripeService.cs         Abo Verwaltung
+│   ├── AgentService.cs                 AI tool routing, Claude orchestration, SSE streaming
+│   ├── SystemPromptBuilder.cs          Per-mode system prompt assembly
+│   ├── ApplicationsService.cs          Application pipeline logic + timeline
+│   ├── CvStudioService.cs              Resume storage, PDF generation (PdfPig)
+│   ├── CvStudioCategoriesService.cs    Category CRUD + assignment persistence
+│   ├── ConversationService.cs          Chat session state (Redis)
+│   ├── UsageService.cs                 Daily limits per plan (Redis counters)
+│   ├── ClerkAuthService.cs             JWT verification
+│   ├── ElevenLabsSpeechService.cs      Text-to-speech synthesis
+│   └── StripeService.cs                Plan management via webhooks
 ├── Services/Tools/
-│   ├── WeatherTool.cs           Wetter API
-│   ├── JokeTool.cs              Witze Generierung
-│   ├── TranslationTool.cs       Übersetzung
-│   └── LanguageLearningTool.cs  Strukturiertes Sprachlern Format
-└── Models/                      Request, Response und Kontext Typen
+│   ├── JobAnalysisTool.cs              Parses job descriptions, generates CV tips
+│   ├── InterviewPrepTool.cs            Personalized interview questions (STAR method)
+│   ├── LanguageLearningTool.cs         Structured multilingual responses
+│   └── TranslationTool.cs              Direct translation
+└── Models/                             All request/response/domain types
 ```
 
 ---
 
 ## Tech Stack
 
-| Bereich | Technologie |
+| Area | Technology |
 |---|---|
 | Framework | ASP.NET Core 9 |
-| Sprache | C# 13 |
-| KI Modell | Anthropic Claude (claude-sonnet) |
-| Datenbank | Upstash Redis (Gesprächsverlauf, Usage Tracking) |
-| Authentifizierung | Clerk JWT |
-| Zahlung | Stripe (Checkout, Webhook, Kundenportal) |
-| Sprachsynthese | ElevenLabs TTS |
-| Tests | xUnit (96 Tests) |
-| Hosting | Render |
+| Language | C# 13 |
+| AI Model | Anthropic Claude (Sonnet + Haiku) |
+| Database | Supabase PostgreSQL (applications, CVs, categories) |
+| Cache / Sessions | Upstash Redis (chat history, usage counters) |
+| Auth | Clerk JWT |
+| Payments | Stripe (Checkout, Webhooks, Customer Portal) |
+| TTS | ElevenLabs |
+| PDF Generation | PdfPig |
+| Tests | xUnit |
+| Hosting | Render (Docker, auto-deploy on push to `main`) |
 
 ---
 
-## Werkzeuge und Prompts
+## AI Modes
 
-Jedes Werkzeug hat einen eigenen System Prompt in `SystemPromptBuilder.cs`:
+Each mode has a dedicated system prompt built by `SystemPromptBuilder.cs`:
 
-| Werkzeug | Besonderheit |
+| Mode | Behaviour |
 |---|---|
-| Allgemein | Offene Konversation |
-| Sprachen lernen | Strukturiertes Format: `---ZIELSPRACHE---`, `---UEBERSETZUNG---`, `---TIPP---` |
-| Stellenanalyse | Liest Job Kontext aus Redis, gibt CV Tipps und Keywords |
-| Vorstellungsgespräch | STAR Methode, personalisierte Fragen basierend auf Lebenslauf |
-| Programmierung | Code Antworten mit Markdown Highlighting |
-| Wetter | Ruft externe Wetter API auf |
+| Career Coach | Open career advice, job search strategy |
+| Job Analysis | Reads pasted job description, returns key requirements, keywords, and tailored CV tips |
+| Interview Prep | Generates realistic questions using STAR method, personalised to the user's CV and target role |
+| Language Learning | Structured output: target language text + translation + learning tip |
+| Programming | Code answers with Markdown formatting, debugging focus |
 
 ---
 
-## Nutzerlimits
+## Subscription Plans
 
-| Plan | Nachrichten pro Tag |
+| Plan | Messages / day |
 |---|---|
-| Anonym | 3 |
-| Kostenlos (registriert) | 20 |
+| Anonymous | 3 |
+| Free (registered) | 20 |
 | Premium | 200 |
-| Pro | Unbegrenzt |
+| Pro | Unlimited |
 
 ---
 
-## Lokal starten
+## Local Development
 
-**Voraussetzungen:** .NET 9 SDK
+**Requirements:** .NET 9 SDK
 
 ```bash
 git clone https://github.com/djzh23/SmartAIAssist.git
 cd SmartAIAssist
 ```
 
-Umgebungsvariablen in `appsettings.Development.json` oder als Umgebungsvariablen setzen:
+Add secrets to `SmartAssistApi/appsettings.Development.json`:
 
 ```json
 {
   "Anthropic": { "ApiKey": "sk-ant-..." },
-  "Upstash": { "RestUrl": "...", "RestToken": "..." },
+  "ConnectionStrings": { "DefaultConnection": "Host=...;Database=...;Username=...;Password=..." },
+  "Upstash": { "RestUrl": "https://...", "RestToken": "..." },
   "Clerk": { "SecretKey": "sk_..." },
-  "ELEVENLABS_API_KEY": "sk_..."
+  "ElevenLabs": { "ApiKey": "sk_..." },
+  "Stripe": { "SecretKey": "sk_test_...", "WebhookSecret": "whsec_..." }
 }
 ```
 
@@ -122,20 +173,28 @@ Umgebungsvariablen in `appsettings.Development.json` oder als Umgebungsvariablen
 dotnet run --project SmartAssistApi
 ```
 
-API läuft unter `http://localhost:5194`.
+API runs at `http://localhost:5194`.
 
 ---
 
-## Tests ausführen
+## Run Tests
 
 ```bash
 dotnet test
 ```
 
-96 Unit Tests für Prompt Parsing, Tool Logik und Usage Service.
+---
+
+## Deployment
+
+Push to `main` — GitHub Actions runs build + tests, then triggers a Render deploy via deploy hook:
+
+```
+push to main → dotnet build + test → Render builds Docker image → live
+```
 
 ---
 
-## Lizenz
+## License
 
 MIT
