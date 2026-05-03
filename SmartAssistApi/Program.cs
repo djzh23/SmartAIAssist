@@ -167,7 +167,7 @@ builder.Services.AddScoped<ApplicationsRedisService>();
 builder.Services.AddScoped<ApplicationsService>();
 builder.Services.AddScoped<IApplicationService>(sp => sp.GetRequiredService<ApplicationsService>());
 builder.Services.AddScoped<CareerProfileService>();
-builder.Services.AddScoped<ClerkAuthService>();
+builder.Services.AddSingleton<ClerkAuthService>();
 builder.Services.AddScoped<AppUserContext>();
 builder.Services.AddScoped<IAppUserContext>(sp => sp.GetRequiredService<AppUserContext>());
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
