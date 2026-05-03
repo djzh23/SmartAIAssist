@@ -128,25 +128,14 @@ public class ClerkAuthService
                 return null;
             }
 
-            // Log token metadata for diagnostics (first failure only — avoid log spam)
-            try
-            {
-                var peek = new JwtSecurityTokenHandler().ReadJwtToken(token);
-                _logger.LogInformation("JWT peek: iss={Iss} kid={Kid} exp={Exp} nbf={Nbf} keys_available={Keys}",
-                    peek.Issuer, peek.Header.Kid,
-                    peek.ValidTo.ToString("o"), peek.ValidFrom.ToString("o"),
-                    oidcConfig.SigningKeys.Count());
-            }
-            catch { /* best-effort diagnostics */ }
-
             var validationParams = new TokenValidationParameters
             {
                 ValidateIssuer = true,
                 ValidIssuer = _issuer,
-                // Also accept issuer with trailing slash (Clerk inconsistency)
                 ValidIssuers = [_issuer!, $"{_issuer}/"],
                 ValidateAudience = false,
-                ValidateLifetime = false, // Clerk session tokens are short-lived (60s); frontend handles refresh via getToken()
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromMinutes(5),
                 IssuerSigningKeys = oidcConfig.SigningKeys,
                 ValidateIssuerSigningKey = true,
             };
@@ -160,36 +149,20 @@ public class ClerkAuthService
 
             return string.IsNullOrWhiteSpace(sub) ? null : sub;
         }
-        catch (SecurityTokenExpiredException ex)
+        catch (SecurityTokenExpiredException)
         {
-            _logger.LogWarning("JWT validation failed: token expired. Expiry={Exp} Detail={Detail}",
-                ex.Expires.ToString("o"), ex.Message);
+            _logger.LogDebug("JWT expired");
             return null;
         }
-        catch (SecurityTokenInvalidIssuerException ex)
+        catch (SecurityTokenSignatureKeyNotFoundException)
         {
-            string? tokenIss = null;
-            try
-            {
-                var raw = new JwtSecurityTokenHandler().ReadJwtToken(token);
-                tokenIss = raw.Issuer;
-            }
-            catch { /* ignore */ }
-
-            _logger.LogWarning(
-                "JWT validation failed: issuer mismatch. ConfiguredIssuer={Expected} TokenIssuer={TokenIss} Detail={Detail}",
-                _issuer, tokenIss ?? "<unreadable>", ex.Message);
-            return null;
-        }
-        catch (SecurityTokenSignatureKeyNotFoundException ex)
-        {
-            _logger.LogWarning("JWT validation failed: signing key not found (rotated?). Detail={Detail}", ex.Message);
+            _logger.LogWarning("JWT signing key not found in JWKS — requesting refresh");
             _oidcConfigManager!.RequestRefresh();
             return null;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "JWT validation failed: {ExType} — {Detail}", ex.GetType().Name, ex.Message);
+            _logger.LogWarning("JWT validation failed: {ExType}", ex.GetType().Name);
             return null;
         }
     }
