@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/cv-studio/resumes")]
 public sealed class CvStudioResumesController(
-    ClerkAuthService clerkAuth,
+    IAppUserContext userContext,
     IResumeService resumeService,
     ISnapshotService snapshotService,
     IPdfExportService pdfExportService,
@@ -26,8 +26,8 @@ public sealed class CvStudioResumesController(
 
     private (string userId, IActionResult? unauthorized) RequireUser()
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return (string.Empty, Unauthorized(new { error = "auth_required" }));
         return (userId, null);
     }

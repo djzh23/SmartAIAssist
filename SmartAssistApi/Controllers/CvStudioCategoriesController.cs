@@ -6,13 +6,13 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/cv-studio/categories")]
 public sealed class CvStudioCategoriesController(
-    ClerkAuthService clerkAuth,
+    IAppUserContext userContext,
     CvStudioCategoriesService categoriesService) : ControllerBase
 {
     private (string userId, IActionResult? unauthorized) RequireUser()
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return (string.Empty, Unauthorized(new { error = "auth_required" }));
         return (userId, null);
     }

@@ -18,7 +18,7 @@ public class AgentControllerTests
     private readonly Mock<IAgentService> _agentServiceMock = new();
     private readonly Mock<ILogger<AgentController>> _loggerMock = new();
     private readonly Mock<UsageService> _usageMock;
-    private readonly Mock<ClerkAuthService> _clerkMock = TestHelpers.MockClerkAuth();
+    private readonly Mock<IAppUserContext> _userContextMock = new();
     private readonly Mock<ISpeechService> _speechMock = new();
     private readonly Mock<TokenTrackingService> _tokenTrackingMock;
     private readonly ConversationService _conversationService = new();
@@ -74,7 +74,7 @@ public class AgentControllerTests
             _conversationService,
             _chatSessionService,
             _usageMock.Object,
-            _clerkMock.Object,
+            _userContextMock.Object,
             _tokenTrackingMock.Object,
             _speechMock.Object,
             _loggerMock.Object);
@@ -88,9 +88,10 @@ public class AgentControllerTests
     }
 
     /// <summary>SetContext/GetContext require a signed-in user (not anonymous).</summary>
-    private void SetupSignedInClerk(string userId = "user_agent_controller_tests")
+    private void SetupSignedInUser(string userId = "user_agent_controller_tests")
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns((userId, false));
+        _userContextMock.Setup(u => u.UserId).Returns(userId);
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
     }
 
     [Fact]
@@ -126,8 +127,8 @@ public class AgentControllerTests
     [Fact]
     public async Task Ask_ValidMessage_Returns200WithAgentResponse()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("user_abc", false));
+        _userContextMock.Setup(u => u.UserId).Returns("user_abc");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
 
         _usageMock.Setup(u => u.CheckAndIncrementAsync("user_abc", false))
             .ReturnsAsync(new UsageCheckResult
@@ -153,8 +154,8 @@ public class AgentControllerTests
     [Fact]
     public async Task Ask_AnonymousUser_Returns200WithAgentResponse()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("ip:127.0.0.1", true));
+        _userContextMock.Setup(u => u.UserId).Returns("ip:127.0.0.1");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(true);
 
         _usageMock.Setup(u => u.CheckAndIncrementAsync("ip:127.0.0.1", true))
             .ReturnsAsync(new UsageCheckResult
@@ -179,8 +180,8 @@ public class AgentControllerTests
     [Fact]
     public async Task Ask_AnonymousUsageLimitReached_Returns429()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("ip:127.0.0.1", true));
+        _userContextMock.Setup(u => u.UserId).Returns("ip:127.0.0.1");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(true);
 
         _usageMock.Setup(u => u.CheckAndIncrementAsync("ip:127.0.0.1", true))
             .ReturnsAsync(new UsageCheckResult
@@ -203,8 +204,8 @@ public class AgentControllerTests
     [Fact]
     public async Task Ask_UsageServiceThrows_Returns503()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("ip:127.0.0.1", true));
+        _userContextMock.Setup(u => u.UserId).Returns("ip:127.0.0.1");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(true);
 
         _usageMock.Setup(u => u.CheckAndIncrementAsync("ip:127.0.0.1", true))
             .ThrowsAsync(new InvalidOperationException("Upstash connection refused"));
@@ -219,7 +220,7 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_MissingSessionId_Returns400()
     {
-        SetupSignedInClerk();
+        SetupSignedInUser();
         var controller = CreateController();
 
         var result = await controller.SetContext(new SetContextRequest
@@ -239,7 +240,7 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ThenGetContext_ReturnsStoredValues()
     {
-        SetupSignedInClerk();
+        SetupSignedInUser();
         var controller = CreateController();
         var sessionId = "s-ctx-1";
 
@@ -268,7 +269,7 @@ public class AgentControllerTests
     [Fact]
     public async Task SetContext_ProgrammingLanguage_IsReturnedByGetContext()
     {
-        SetupSignedInClerk();
+        SetupSignedInUser();
         var controller = CreateController();
         var sessionId = "s-ctx-2";
 

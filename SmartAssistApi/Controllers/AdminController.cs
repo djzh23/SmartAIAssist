@@ -10,7 +10,7 @@ namespace SmartAssistApi.Controllers;
 [EnableRateLimiting("admin")]
 public class AdminController(
     TokenTrackingService tracking,
-    ClerkAuthService clerkAuth,
+    IAppUserContext userContext,
     IConfiguration configuration,
     ILogger<AdminController> logger) : ControllerBase
 {
@@ -290,7 +290,7 @@ public class AdminController(
 
     private bool IsAdmin()
     {
-        var (userId, _) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
         return AdminAuthorization.IsUserInAdminList(userId, configuration);
     }
 }

@@ -10,7 +10,7 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/sessions")]
 [EnableRateLimiting("sessions")]
-public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService chatSessions) : ControllerBase
+public class SessionsController(IAppUserContext userContext, ChatSessionService chatSessions) : ControllerBase
 {
     private void SetChatSessionStorageHeaders()
     {
@@ -25,17 +25,16 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
         }
     }
 
-    private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
+    private bool RequireSignedIn(out string userId)
     {
-        userId = auth.userId ?? string.Empty;
-        return !auth.isAnonymous && !string.IsNullOrWhiteSpace(userId);
+        userId = userContext.UserId;
+        return !userContext.IsAnonymous && !string.IsNullOrWhiteSpace(userId);
     }
 
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var rows = await chatSessions.LoadIndexAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -50,8 +49,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSessionBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var id = Guid.NewGuid().ToString("N")[..12];
@@ -80,8 +78,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
     [HttpPut("order")]
     public async Task<IActionResult> SaveOrder([FromBody] OrderBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await chatSessions.LoadIndexAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -108,8 +105,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
     [HttpGet("{sessionId}/transcript")]
     public async Task<IActionResult> GetTranscript(string sessionId, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var t = await chatSessions.GetTranscriptAsync(userId, sessionId, cancellationToken).ConfigureAwait(false);
@@ -137,8 +133,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
     [HttpPut("{sessionId}/transcript")]
     public async Task<IActionResult> PutTranscript(string sessionId, [FromBody] TranscriptPutBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var tool = string.IsNullOrWhiteSpace(body.ToolType) ? "general" : body.ToolType.Trim();
@@ -154,8 +149,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
     [HttpPatch("{sessionId}")]
     public async Task<IActionResult> PatchTitle(string sessionId, [FromBody] PatchSessionTitleBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var trimmed = (body.Title ?? string.Empty).Trim();
@@ -178,8 +172,7 @@ public class SessionsController(ClerkAuthService clerkAuth, ChatSessionService c
     [HttpDelete("{sessionId}")]
     public async Task<IActionResult> Delete(string sessionId, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await chatSessions.LoadIndexAsync(userId, cancellationToken).ConfigureAwait(false);

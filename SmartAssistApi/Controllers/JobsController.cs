@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/jobs")]
 public class JobsController(
-    ClerkAuthService clerkAuth,
+    IAppUserContext userContext,
     IJobContextExtractor jobContextExtractor,
     ILogger<JobsController> logger) : ControllerBase
 {
@@ -19,8 +19,8 @@ public class JobsController(
     [EnableRateLimiting("job_preview")]
     public async Task<IActionResult> Preview([FromBody] JobPreviewRequest? request)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized(new { error = "auth_required" });
 
         if (request is null || string.IsNullOrWhiteSpace(request.Input))

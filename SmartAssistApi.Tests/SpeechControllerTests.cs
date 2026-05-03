@@ -15,7 +15,7 @@ namespace SmartAssistApi.Tests;
 public class SpeechControllerTests
 {
     private readonly Mock<ISpeechService> _speechServiceMock = new();
-    private readonly Mock<ClerkAuthService> _clerkMock = TestHelpers.MockClerkAuth();
+    private readonly Mock<IAppUserContext> _userContextMock = new();
     private readonly Mock<UsageService> _usageMock;
     private readonly Mock<ILogger<SpeechController>> _loggerMock = new();
 
@@ -34,13 +34,13 @@ public class SpeechControllerTests
     }
 
     private SpeechController CreateController() =>
-        new(_speechServiceMock.Object, _clerkMock.Object, _usageMock.Object, _loggerMock.Object);
+        new(_speechServiceMock.Object, _userContextMock.Object, _usageMock.Object, _loggerMock.Object);
 
     [Fact]
     public async Task TextToSpeech_EmptyText_ReturnsBadRequest()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("user_x", false));
+        _userContextMock.Setup(u => u.UserId).Returns("user_x");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
 
         var controller = CreateController();
 
@@ -53,8 +53,8 @@ public class SpeechControllerTests
     [Fact]
     public async Task TextToSpeech_ValidRequest_ReturnsAudioFile()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("user_x", false));
+        _userContextMock.Setup(u => u.UserId).Returns("user_x");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
 
         var bytes = new byte[] { 1, 2, 3, 4 };
         _speechServiceMock
@@ -72,8 +72,8 @@ public class SpeechControllerTests
     [Fact]
     public async Task TextToSpeech_ProviderFailure_ReturnsBadGateway()
     {
-        _clerkMock.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("user_x", false));
+        _userContextMock.Setup(u => u.UserId).Returns("user_x");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
 
         _speechServiceMock
             .Setup(x => x.SynthesizeAsync(It.IsAny<SpeechRequest>(), It.IsAny<CancellationToken>()))

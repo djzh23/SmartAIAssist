@@ -10,7 +10,7 @@ namespace SmartAssistApi.Controllers;
 public class StripeController(
     StripeService stripeService,
     UsageService usageService,
-    ClerkAuthService clerkAuthService,
+    IAppUserContext userContext,
     IConfiguration config,
     ILogger<StripeController> logger) : ControllerBase
 {
@@ -18,9 +18,10 @@ public class StripeController(
     [EnableRateLimiting("stripe_write")]
     public async Task<IActionResult> CreateCheckout([FromBody] CheckoutRequest request)
     {
-        var (canonicalUserId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        var canonicalUserId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
 
-        if (isAnonymous || canonicalUserId is null)
+        if (isAnonymous || string.IsNullOrEmpty(canonicalUserId))
             return Unauthorized("You must be logged in to upgrade.");
 
         if (!string.IsNullOrWhiteSpace(request.UserId)
@@ -65,9 +66,9 @@ public class StripeController(
     [EnableRateLimiting("stripe_write")]
     public async Task<IActionResult> CreatePortal()
     {
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        var userId = userContext.UserId;
 
-        if (isAnonymous || userId is null)
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized("You must be logged in.");
 
         try
@@ -99,8 +100,8 @@ public class StripeController(
         if (string.IsNullOrWhiteSpace(sessionId))
             return BadRequest(new { error = "session_id query parameter is required." });
 
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrWhiteSpace(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrWhiteSpace(userId))
             return Unauthorized("You must be logged in.");
 
         try
@@ -129,8 +130,8 @@ public class StripeController(
     [EnableRateLimiting("stripe_write")]
     public async Task<IActionResult> SyncPlan([FromBody] SyncPlanRequest? body = null)
     {
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrWhiteSpace(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrWhiteSpace(userId))
             return Unauthorized("You must be logged in.");
 
         try
@@ -206,8 +207,8 @@ public class StripeController(
         if (!config.GetValue("Stripe:EnableDebugEndpoint", false))
             return NotFound(new { error = "debug_endpoint_disabled" });
 
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrWhiteSpace(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrWhiteSpace(userId))
             return Unauthorized("You must be logged in.");
 
         try

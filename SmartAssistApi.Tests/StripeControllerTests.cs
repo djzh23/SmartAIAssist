@@ -14,7 +14,7 @@ namespace SmartAssistApi.Tests;
 
 public class StripeControllerTests
 {
-    private readonly Mock<ClerkAuthService> _clerkAuthMock = TestHelpers.MockClerkAuth();
+    private readonly Mock<IAppUserContext> _userContextMock = new();
     private readonly Mock<UsageService> _usageServiceMock;
     private readonly Mock<ILogger<StripeController>> _controllerLoggerMock = new();
     private readonly StripeService _stripeService;
@@ -50,7 +50,7 @@ public class StripeControllerTests
         var controller = new StripeController(
             _stripeService,
             _usageServiceMock.Object,
-            _clerkAuthMock.Object,
+            _userContextMock.Object,
             _config,
             _controllerLoggerMock.Object);
 
@@ -65,9 +65,8 @@ public class StripeControllerTests
     [Fact]
     public async Task CreateCheckout_WithoutAuth_Returns401()
     {
-        _clerkAuthMock
-            .Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("ip:127.0.0.1", true));
+        _userContextMock.Setup(u => u.UserId).Returns("ip:127.0.0.1");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(true);
         var controller = CreateController();
 
         var result = await controller.CreateCheckout(new CheckoutRequest
@@ -84,9 +83,8 @@ public class StripeControllerTests
     [Fact]
     public async Task CreateCheckout_InvalidPlan_Returns400()
     {
-        _clerkAuthMock
-            .Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("user_123", false));
+        _userContextMock.Setup(u => u.UserId).Returns("user_123");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
         var controller = CreateController();
 
         var result = await controller.CreateCheckout(new CheckoutRequest
@@ -103,9 +101,8 @@ public class StripeControllerTests
     [Fact]
     public async Task CreateCheckout_UserIdMismatch_Returns403()
     {
-        _clerkAuthMock
-            .Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>()))
-            .Returns(("user_123", false));
+        _userContextMock.Setup(u => u.UserId).Returns("user_123");
+        _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
         var controller = CreateController();
 
         var result = await controller.CreateCheckout(new CheckoutRequest

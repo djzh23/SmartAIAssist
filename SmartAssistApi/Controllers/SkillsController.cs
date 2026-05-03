@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 [Route("api/[controller]")]
 [EnableRateLimiting("agent_read")]
 public class SkillsController(
-    ClerkAuthService clerkAuth,
+    IAppUserContext userContext,
     UsageService usageService,
     ILogger<SkillsController> logger) : ControllerBase
 {
@@ -18,8 +18,9 @@ public class SkillsController(
     {
         try
         {
-            var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
-            var plan = isAnonymous ? "anonymous" : await usageService.GetPlanAsync(userId!);
+            var userId = userContext.UserId;
+            var isAnonymous = userContext.IsAnonymous;
+            var plan = isAnonymous ? "anonymous" : await usageService.GetPlanAsync(userId);
 
             var skills = SkillRegistry.GetVisibleSkills().Select(s => new
             {

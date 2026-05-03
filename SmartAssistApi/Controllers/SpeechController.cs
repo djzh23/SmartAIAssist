@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 [Route("api/[controller]")]
 public class SpeechController(
     ISpeechService speechService,
-    ClerkAuthService clerkAuthService,
+    IAppUserContext userContext,
     UsageService usageService,
     ILogger<SpeechController> logger) : ControllerBase
 {
@@ -17,8 +17,7 @@ public class SpeechController(
     [EnableRateLimiting("agent_chat")]
     public async Task<IActionResult> TextToSpeech([FromBody] SpeechRequest request, CancellationToken cancellationToken)
     {
-        var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous)
+        if (userContext.IsAnonymous)
             return Unauthorized(new { error = "auth_required", message = "You must be signed in to use audio." });
 
         if (string.IsNullOrWhiteSpace(request.Text))

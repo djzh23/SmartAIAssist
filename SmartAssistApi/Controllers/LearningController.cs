@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [EnableRateLimiting("agent_read")]
-public class LearningController(LearningMemoryService learningMemory, ClerkAuthService clerkAuth) : ControllerBase
+public class LearningController(LearningMemoryService learningMemory, IAppUserContext userContext) : ControllerBase
 {
     private void SetLearningMemoryStorageHeaders()
     {
@@ -30,8 +30,8 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
         [FromQuery] bool includeResolved = false,
         CancellationToken cancellationToken = default)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
         var memory = await learningMemory.GetMemory(userId, cancellationToken).ConfigureAwait(false);
@@ -60,8 +60,8 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
     [HttpPatch("insights/{insightId}")]
     public async Task<IActionResult> PatchInsight(string insightId, [FromBody] PatchInsightBody body, CancellationToken cancellationToken)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
         await learningMemory
@@ -74,8 +74,8 @@ public class LearningController(LearningMemoryService learningMemory, ClerkAuthS
     [HttpPost("insights/{insightId}/resolve")]
     public async Task<IActionResult> ResolveInsight(string insightId, CancellationToken cancellationToken)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
         await learningMemory.ResolveInsight(userId, insightId, cancellationToken).ConfigureAwait(false);

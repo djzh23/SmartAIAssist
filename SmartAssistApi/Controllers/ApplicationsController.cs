@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/applications")]
 [EnableRateLimiting("applications")]
-public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationService applications) : ControllerBase
+public class ApplicationsController(IAppUserContext userContext, IApplicationService applications) : ControllerBase
 {
     private void SetJobApplicationsStorageHeaders()
     {
@@ -24,17 +24,16 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
         }
     }
 
-    private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
+    private bool RequireSignedIn(out string userId)
     {
-        userId = auth.userId ?? string.Empty;
-        return !auth.isAnonymous && !string.IsNullOrWhiteSpace(userId);
+        userId = userContext.UserId;
+        return !userContext.IsAnonymous && !string.IsNullOrWhiteSpace(userId);
     }
 
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var rows = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -51,8 +50,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateApplicationBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -83,8 +81,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(string id, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var doc = await applications.GetAsync(userId, id, cancellationToken).ConfigureAwait(false);
@@ -99,8 +96,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
     [HttpPut("{id}/status")]
     public async Task<IActionResult> UpdateStatus(string id, [FromBody] StatusBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -128,8 +124,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
     [HttpPut("{id}/cover-letter")]
     public async Task<IActionResult> SaveCoverLetter(string id, [FromBody] TextBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -147,8 +142,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
     [HttpPut("{id}/interview-notes")]
     public async Task<IActionResult> SaveInterviewNotes(string id, [FromBody] TextBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -170,8 +164,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
     [HttpPut("{id}/link-session")]
     public async Task<IActionResult> LinkSession(string id, [FromBody] LinkSessionBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -196,8 +189,7 @@ public class ApplicationsController(ClerkAuthService clerkAuth, IApplicationServ
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await applications.ListAsync(userId, cancellationToken).ConfigureAwait(false);

@@ -9,7 +9,7 @@ namespace SmartAssistApi.Controllers;
 [ApiController]
 [Route("api/chat-notes")]
 [EnableRateLimiting("sessions")]
-public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService chatNotes) : ControllerBase
+public class ChatNotesController(IAppUserContext userContext, ChatNotesService chatNotes) : ControllerBase
 {
     private void SetChatNotesStorageHeaders()
     {
@@ -24,17 +24,16 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
         }
     }
 
-    private static bool RequireSignedIn((string? userId, bool isAnonymous) auth, out string userId)
+    private bool RequireSignedIn(out string userId)
     {
-        userId = auth.userId ?? string.Empty;
-        return !auth.isAnonymous && !string.IsNullOrWhiteSpace(userId);
+        userId = userContext.UserId;
+        return !userContext.IsAnonymous && !string.IsNullOrWhiteSpace(userId);
     }
 
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var list = await chatNotes.ListAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -45,8 +44,7 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
     [HttpGet("{noteId}")]
     public async Task<IActionResult> Get(string noteId, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var note = await chatNotes.GetByIdAsync(userId, noteId, cancellationToken).ConfigureAwait(false);
@@ -70,8 +68,7 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateChatNoteBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         if (string.IsNullOrWhiteSpace(body.Title) || string.IsNullOrWhiteSpace(body.Body))
@@ -102,8 +99,7 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
     [HttpPut("{noteId}")]
     public async Task<IActionResult> Update(string noteId, [FromBody] UpdateChatNoteBody body, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         if (body.Title is not null && string.IsNullOrWhiteSpace(body.Title))
@@ -123,8 +119,7 @@ public class ChatNotesController(ClerkAuthService clerkAuth, ChatNotesService ch
     [HttpDelete("{noteId}")]
     public async Task<IActionResult> Delete(string noteId, CancellationToken cancellationToken)
     {
-        var auth = clerkAuth.ExtractUserId(Request);
-        if (!RequireSignedIn(auth, out var userId))
+        if (!RequireSignedIn(out var userId))
             return Unauthorized();
 
         var ok = await chatNotes.DeleteAsync(userId, noteId, cancellationToken).ConfigureAwait(false);

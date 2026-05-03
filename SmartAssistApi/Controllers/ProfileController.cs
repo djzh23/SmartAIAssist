@@ -11,7 +11,7 @@ namespace SmartAssistApi.Controllers;
 [Route("api/profile")]
 public class ProfileController(
     CareerProfileService profileService,
-    ClerkAuthService clerkAuth,
+    IAppUserContext userContext,
     ILlmSingleCompletionService llmSingleCompletion,
     CvParsingService cvParsingService,
     ILogger<ProfileController> logger) : ControllerBase
@@ -43,7 +43,8 @@ public class ProfileController(
     [EnableRateLimiting("agent_read")]
     public async Task<IActionResult> GetProfile()
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -68,7 +69,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> CompleteOnboarding([FromBody] OnboardingRequest request)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -89,7 +91,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> SkipOnboarding()
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -102,7 +105,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> UpdateSkills([FromBody] UpdateSkillsRequest request)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -118,7 +122,8 @@ public class ProfileController(
     [EnableRateLimiting("cv_summary")]
     public async Task<IActionResult> AnonymousCvSummary([FromBody] AnonymousCvSummaryRequest? request)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -298,7 +303,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> UploadCv([FromBody] UploadCvRequest request)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -317,7 +323,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> UploadCvPdf([FromBody] UploadCvPdfRequest request)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -367,7 +374,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> AddTargetJob([FromBody] AddTargetJobRequest request)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -387,7 +395,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> RemoveTargetJob(string jobId)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -400,7 +409,8 @@ public class ProfileController(
     [EnableRateLimiting("profile_writes")]
     public async Task<IActionResult> UpdateProfile([FromBody] CareerProfile profile)
     {
-        var (userId, isAnonymous) = clerkAuth.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
         if (isAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized();
 

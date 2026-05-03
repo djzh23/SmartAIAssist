@@ -34,15 +34,23 @@ public class AdminControllerTests
     private static IConfiguration ConfigWithAdmins(string csv) =>
         new ConfigurationBuilder().AddInMemoryCollection(BaseConfig(csv)).Build();
 
+    private static IAppUserContext MockUserContext(string userId, bool isAnonymous = false)
+    {
+        var mock = new Mock<IAppUserContext>();
+        mock.Setup(u => u.UserId).Returns(userId);
+        mock.Setup(u => u.IsAnonymous).Returns(isAnonymous);
+        mock.Setup(u => u.Plan).Returns("free");
+        return mock.Object;
+    }
+
     [Fact]
     public async Task GetDashboard_UserNotInAdminList_Returns403()
     {
         var config = ConfigWithAdmins("only-admin");
-        var clerk = TestHelpers.MockClerkAuth();
-        clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("normal-user", false));
+        var userCtx = MockUserContext("normal-user");
 
         var tracking = CreateTrackingMock(config);
-        var controller = new AdminController(tracking.Object, clerk.Object, config, Mock.Of<ILogger<AdminController>>())
+        var controller = new AdminController(tracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -58,15 +66,14 @@ public class AdminControllerTests
     public async Task GetDashboard_UserInAdminList_ReturnsOk()
     {
         var config = ConfigWithAdmins("normal-user,other");
-        var clerk = TestHelpers.MockClerkAuth();
-        clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("normal-user", false));
+        var userCtx = MockUserContext("normal-user");
 
         var tracking = CreateTrackingMock(config);
         tracking
             .Setup(t => t.GetDashboardDataAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AdminDashboardData());
 
-        var controller = new AdminController(tracking.Object, clerk.Object, config, Mock.Of<ILogger<AdminController>>())
+        var controller = new AdminController(tracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -82,11 +89,10 @@ public class AdminControllerTests
     public async Task GetDashboard_EmptyAdminList_Returns403()
     {
         var config = ConfigWithAdmins("");
-        var clerk = TestHelpers.MockClerkAuth();
-        clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("any-user", false));
+        var userCtx = MockUserContext("any-user");
 
         var tracking = CreateTrackingMock(config);
-        var controller = new AdminController(tracking.Object, clerk.Object, config, Mock.Of<ILogger<AdminController>>())
+        var controller = new AdminController(tracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

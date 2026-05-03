@@ -14,7 +14,7 @@ public class AgentController(
     ConversationService conversationService,
     ChatSessionService chatSessionService,
     UsageService usageService,
-    ClerkAuthService clerkAuthService,
+    IAppUserContext userContext,
     TokenTrackingService tokenTrackingService,
     ISpeechService speechService,
     ILogger<AgentController> logger) : ControllerBase
@@ -125,9 +125,10 @@ public class AgentController(
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return BadRequest(new { error = "session_id_required", message = "SessionId must not be empty." });
 
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
 
-        if (userId is null)
+        if (string.IsNullOrEmpty(userId))
             return Unauthorized(new { error = "auth_failed", message = "Invalid authentication token." });
 
         logger.LogInformation(
@@ -224,8 +225,9 @@ public class AgentController(
             return;
         }
 
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (userId is null)
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
+        if (string.IsNullOrEmpty(userId))
         {
             Response.StatusCode = 401;
             await Response.WriteAsync(JsonSerializer.Serialize(new { error = "auth_failed", message = "Invalid authentication token." }));
@@ -359,8 +361,9 @@ public class AgentController(
     [EnableRateLimiting("agent_read")]
     public async Task<IActionResult> GetUsage()
     {
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (userId is null) return Unauthorized();
+        var userId = userContext.UserId;
+        var isAnonymous = userContext.IsAnonymous;
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
         try
         {
@@ -474,8 +477,7 @@ public class AgentController(
     [EnableRateLimiting("agent_chat")]
     public async Task<IActionResult> Speak([FromBody] SpeechRequest request, CancellationToken cancellationToken)
     {
-        var (_, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous)
+        if (userContext.IsAnonymous)
             return Unauthorized(new { error = "auth_required", message = "You must be signed in to use audio." });
 
         if (string.IsNullOrWhiteSpace(request.Text))
@@ -513,8 +515,8 @@ public class AgentController(
     [EnableRateLimiting("agent_chat")]
     public async Task<IActionResult> SetContext([FromBody] SetContextRequest request)
     {
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized(new { error = "auth_required", message = "You must be signed in to set context." });
 
         if (string.IsNullOrWhiteSpace(request.SessionId))
@@ -568,8 +570,8 @@ public class AgentController(
         if (string.IsNullOrWhiteSpace(sessionId))
             return BadRequest(new { error = "SessionId required." });
 
-        var (userId, isAnonymous) = clerkAuthService.ExtractUserId(Request);
-        if (isAnonymous || string.IsNullOrEmpty(userId))
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
             return Unauthorized(new { error = "auth_required", message = "You must be signed in to read context." });
 
         var normalizedToolType = string.IsNullOrWhiteSpace(toolType)

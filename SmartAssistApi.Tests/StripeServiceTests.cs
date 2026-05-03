@@ -199,9 +199,10 @@ public class StripeServiceTests
         await stripeService.HandleStripeEventAsync(stripeEvent);
 
         var agentServiceMock = new Mock<IAgentService>();
-        var clerkMock = TestHelpers.MockClerkAuth();
+        var userContextMock = new Mock<IAppUserContext>();
         var agentLoggerMock = new Mock<ILogger<AgentController>>();
-        clerkMock.Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("user_flow", false));
+        userContextMock.Setup(u => u.UserId).Returns("user_flow");
+        userContextMock.Setup(u => u.IsAnonymous).Returns(false);
 
         var speechMock = new Mock<ISpeechService>();
         var tokenCfg = new ConfigurationBuilder()
@@ -247,7 +248,7 @@ public class StripeServiceTests
             new ConversationService(),
             chatSessions,
             usage,
-            clerkMock.Object,
+            userContextMock.Object,
             tokenTrackingMock.Object,
             speechMock.Object,
             agentLoggerMock.Object)
