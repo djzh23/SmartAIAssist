@@ -18,7 +18,7 @@ public class AgentControllerTests
     private readonly Mock<IAgentService> _agentServiceMock = new();
     private readonly Mock<ILogger<AgentController>> _loggerMock = new();
     private readonly Mock<UsageService> _usageMock;
-    private readonly Mock<ClerkAuthService> _clerkMock = new();
+    private readonly Mock<ClerkAuthService> _clerkMock = TestHelpers.MockClerkAuth();
     private readonly Mock<ISpeechService> _speechMock = new();
     private readonly Mock<TokenTrackingService> _tokenTrackingMock;
     private readonly ConversationService _conversationService = new();

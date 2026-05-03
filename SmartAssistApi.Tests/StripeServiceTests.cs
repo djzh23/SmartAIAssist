@@ -133,6 +133,13 @@ public class StripeServiceTests
             .Setup(x => x.TryAcquireStripeEventAsync("evt_dupe"))
             .ReturnsAsync(false);
 
+        // Duplicate events are now processed (handlers are idempotent).
+        // Set up GetPlanAsync so the rank guard can evaluate.
+        usageMock.Setup(x => x.GetPlanAsync("user_abc")).ReturnsAsync("free");
+        usageMock.Setup(x => x.SetPlanAsync(It.IsAny<string>(), It.IsAny<string>())).Returns(Task.CompletedTask);
+        usageMock.Setup(x => x.SetStripeCustomerIdAsync(It.IsAny<string>(), It.IsAny<string>())).Returns(Task.CompletedTask);
+        usageMock.Setup(x => x.RecordStripeWebhookAuditAsync(It.IsAny<StripeWebhookAuditRecord>())).Returns(Task.CompletedTask);
+
         var service = new StripeService(config, usageMock.Object, apiMock.Object, loggerMock.Object);
 
         var stripeEvent = new Event
@@ -155,8 +162,10 @@ public class StripeServiceTests
 
         await service.HandleStripeEventAsync(stripeEvent);
 
-        usageMock.Verify(x => x.SetPlanAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-        usageMock.Verify(x => x.RecordStripeWebhookAuditAsync(It.IsAny<StripeWebhookAuditRecord>()), Times.Never);
+        // With the idempotency fix, duplicates ARE processed — handlers use rank guard
+        // to avoid downgrades, making re-processing safe.
+        usageMock.Verify(x => x.SetPlanAsync("user_abc", "premium"), Times.Once);
+        usageMock.Verify(x => x.RecordStripeWebhookAuditAsync(It.IsAny<StripeWebhookAuditRecord>()), Times.Once);
     }
 
     [Fact]
@@ -190,7 +199,7 @@ public class StripeServiceTests
         await stripeService.HandleStripeEventAsync(stripeEvent);
 
         var agentServiceMock = new Mock<IAgentService>();
-        var clerkMock = new Mock<ClerkAuthService>();
+        var clerkMock = TestHelpers.MockClerkAuth();
         var agentLoggerMock = new Mock<ILogger<AgentController>>();
         clerkMock.Setup(x => x.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("user_flow", false));
 

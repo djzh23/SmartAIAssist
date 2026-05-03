@@ -64,14 +64,34 @@ public class UsageService(
     public virtual Task SetPlanAsync(string userId, string plan) =>
         UsePostgres ? Postgres!.SetPlanAsync(userId, plan) : redis.SetPlanAsync(userId, plan);
 
-    public virtual Task SetStripeCustomerIdAsync(string userId, string customerId) =>
-        redis.SetStripeCustomerIdAsync(userId, customerId);
+    public virtual async Task SetStripeCustomerIdAsync(string userId, string customerId)
+    {
+        // Always write to Redis (for backward compat and idempotency lookups)
+        await redis.SetStripeCustomerIdAsync(userId, customerId);
+        // Also persist in Postgres if available
+        if (UsePostgres)
+            await Postgres!.SetStripeCustomerIdAsync(userId, customerId);
+    }
 
-    public virtual Task<string?> GetUserIdByStripeCustomerIdAsync(string customerId) =>
-        redis.GetUserIdByStripeCustomerIdAsync(customerId);
+    public virtual async Task<string?> GetUserIdByStripeCustomerIdAsync(string customerId)
+    {
+        if (UsePostgres)
+        {
+            var fromPg = await Postgres!.GetUserIdByStripeCustomerIdAsync(customerId);
+            if (!string.IsNullOrWhiteSpace(fromPg)) return fromPg;
+        }
+        return await redis.GetUserIdByStripeCustomerIdAsync(customerId);
+    }
 
-    public virtual Task<string?> GetStripeCustomerIdAsync(string userId) =>
-        redis.GetStripeCustomerIdAsync(userId);
+    public virtual async Task<string?> GetStripeCustomerIdAsync(string userId)
+    {
+        if (UsePostgres)
+        {
+            var fromPg = await Postgres!.GetStripeCustomerIdAsync(userId);
+            if (!string.IsNullOrWhiteSpace(fromPg)) return fromPg;
+        }
+        return await redis.GetStripeCustomerIdAsync(userId);
+    }
 
     public virtual Task<bool> TryAcquireStripeEventAsync(string eventId) =>
         redis.TryAcquireStripeEventAsync(eventId);

@@ -41,7 +41,6 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
 
-        await EnsureAppUserAsync(userId, cancellationToken).ConfigureAwait(false);
 
         var existing = await db.CareerProfiles
             .FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken)
@@ -132,7 +131,6 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
             : cvText;
         profile.CvUploadedAt = DateTime.UtcNow;
 
-        await EnsureAppUserAsync(userId, cancellationToken).ConfigureAwait(false);
 
         var existing = await db.CareerProfiles
             .FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken)
@@ -212,7 +210,6 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
         if (string.IsNullOrWhiteSpace(userId))
             return;
 
-        await EnsureAppUserAsync(userId, cancellationToken).ConfigureAwait(false);
 
         var row = await db.CareerProfiles
             .FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken)
@@ -251,7 +248,6 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
 
-        await EnsureAppUserAsync(userId, cancellationToken).ConfigureAwait(false);
 
         profile.UserId = userId;
         profile.CvRawText = Truncate(profile.CvRawText, CareerProfileStorageLimits.CvRawTextInProfileMax);
@@ -302,30 +298,6 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task EnsureAppUserAsync(string userId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (await db.AppUsers.AsNoTracking().AnyAsync(u => u.ClerkUserId == userId, cancellationToken).ConfigureAwait(false))
-                return;
-
-            var now = DateTime.UtcNow;
-            db.AppUsers.Add(new AppUserEntity { ClerkUserId = userId, CreatedAt = now, UpdatedAt = now });
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (DbUpdateException ex)
-        {
-            if (await db.AppUsers.AsNoTracking().AnyAsync(u => u.ClerkUserId == userId, cancellationToken).ConfigureAwait(false))
-                return;
-            logger.LogError(ex, "Failed to ensure app_users row for {UserId}", userId);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to ensure app_users row for {UserId}", userId);
-            throw;
-        }
-    }
 
     private static CareerProfile DeserializeProfile(string profileJson, string userId)
     {

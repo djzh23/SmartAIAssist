@@ -59,7 +59,6 @@ public sealed class ChatNotesPostgresService(SmartAssistDbContext db, ILogger<Ch
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
 
         var (t, b, tagList) = ChatNotesValidation.Normalize(title, body, tags);
-        await EnsureAppUserAsync(userId, cancellationToken).ConfigureAwait(false);
 
         var now = DateTime.UtcNow;
         var id = Guid.NewGuid().ToString("N");
@@ -133,24 +132,6 @@ public sealed class ChatNotesPostgresService(SmartAssistDbContext db, ILogger<Ch
         return true;
     }
 
-    private async Task EnsureAppUserAsync(string userId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await db.Database
-                .ExecuteSqlInterpolatedAsync(
-                    $"""
-                     INSERT INTO app_users (clerk_user_id) VALUES ({userId}) ON CONFLICT (clerk_user_id) DO NOTHING
-                     """,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to ensure app_users row for {UserId}", userId);
-            throw;
-        }
-    }
 
     private async Task TrimOverflowAsync(string userId, CancellationToken cancellationToken)
     {

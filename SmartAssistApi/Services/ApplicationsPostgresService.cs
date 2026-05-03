@@ -78,8 +78,6 @@ public sealed class ApplicationsPostgresService(SmartAssistDbContext db, ILogger
 
     private async Task ReplaceAllCoreAsync(string userId, List<JobApplicationDocument> apps, CancellationToken cancellationToken)
     {
-        await EnsureAppUserAsync(userId, cancellationToken).ConfigureAwait(false);
-
         var ids = apps.Select(a => a.Id).ToList();
 
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -110,30 +108,6 @@ public sealed class ApplicationsPostgresService(SmartAssistDbContext db, ILogger
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task EnsureAppUserAsync(string userId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (await db.AppUsers.AsNoTracking().AnyAsync(u => u.ClerkUserId == userId, cancellationToken).ConfigureAwait(false))
-                return;
-
-            var now = DateTime.UtcNow;
-            db.AppUsers.Add(new AppUserEntity { ClerkUserId = userId, CreatedAt = now, UpdatedAt = now });
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (DbUpdateException ex)
-        {
-            if (await db.AppUsers.AsNoTracking().AnyAsync(u => u.ClerkUserId == userId, cancellationToken).ConfigureAwait(false))
-                return;
-            logger.LogError(ex, "Failed to ensure app_users row for {UserId}", userId);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to ensure app_users row for {UserId}", userId);
-            throw;
-        }
-    }
 
     private static JobApplicationDocument ToDocument(JobApplicationEntity e)
     {

@@ -15,7 +15,7 @@ namespace SmartAssistApi.Tests;
 public class SpeechControllerTests
 {
     private readonly Mock<ISpeechService> _speechServiceMock = new();
-    private readonly Mock<ClerkAuthService> _clerkMock = new();
+    private readonly Mock<ClerkAuthService> _clerkMock = TestHelpers.MockClerkAuth();
     private readonly Mock<UsageService> _usageMock;
     private readonly Mock<ILogger<SpeechController>> _loggerMock = new();
 

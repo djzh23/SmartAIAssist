@@ -49,10 +49,12 @@ public sealed class UsagePostgresService(SmartAssistDbContext db)
 
     public async Task<string> GetPlanAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var row = await db.UserPlans.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken)
+        var plan = await db.AppUsers.AsNoTracking()
+            .Where(x => x.ClerkUserId == userId)
+            .Select(x => x.Plan)
+            .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
-        return string.IsNullOrWhiteSpace(row?.Plan) ? "free" : row!.Plan;
+        return string.IsNullOrWhiteSpace(plan) ? "free" : plan;
     }
 
     public Task<string> GetPlanStrictAsync(string userId, CancellationToken cancellationToken = default) =>
@@ -63,19 +65,56 @@ public sealed class UsagePostgresService(SmartAssistDbContext db)
         if (string.IsNullOrWhiteSpace(plan))
             throw new ArgumentException("Plan must not be empty.", nameof(plan));
 
-        var row = await db.UserPlans.FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken).ConfigureAwait(false);
         var now = DateTime.UtcNow;
+        var row = await db.AppUsers.FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken).ConfigureAwait(false);
         if (row is null)
         {
-            db.UserPlans.Add(new UserPlanEntity { ClerkUserId = userId, Plan = plan.Trim(), UpdatedAt = now });
+            // User doesn't exist yet — provision and set plan atomically
+            db.AppUsers.Add(new AppUserEntity
+            {
+                ClerkUserId = userId,
+                Plan = plan.Trim(),
+                PlanUpdatedAt = now,
+                CreatedAt = now,
+                UpdatedAt = now,
+                LastActiveAt = now,
+            });
         }
         else
         {
             row.Plan = plan.Trim();
+            row.PlanUpdatedAt = now;
             row.UpdatedAt = now;
         }
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetStripeCustomerIdAsync(string userId, string customerId, CancellationToken cancellationToken = default)
+    {
+        var row = await db.AppUsers.FirstOrDefaultAsync(x => x.ClerkUserId == userId, cancellationToken).ConfigureAwait(false);
+        if (row is null) return; // User must be provisioned first
+        row.StripeCustomerId = customerId;
+        row.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string?> GetStripeCustomerIdAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return await db.AppUsers.AsNoTracking()
+            .Where(x => x.ClerkUserId == userId)
+            .Select(x => x.StripeCustomerId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<string?> GetUserIdByStripeCustomerIdAsync(string customerId, CancellationToken cancellationToken = default)
+    {
+        return await db.AppUsers.AsNoTracking()
+            .Where(x => x.StripeCustomerId == customerId)
+            .Select(x => x.ClerkUserId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<UsageCheckResult> CheckAndIncrementAsync(string userId, bool isAnonymous, CancellationToken cancellationToken = default)

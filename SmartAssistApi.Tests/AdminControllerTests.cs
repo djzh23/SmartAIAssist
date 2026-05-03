@@ -38,7 +38,7 @@ public class AdminControllerTests
     public async Task GetDashboard_UserNotInAdminList_Returns403()
     {
         var config = ConfigWithAdmins("only-admin");
-        var clerk = new Mock<ClerkAuthService>();
+        var clerk = TestHelpers.MockClerkAuth();
         clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("normal-user", false));
 
         var tracking = CreateTrackingMock(config);
@@ -57,7 +57,7 @@ public class AdminControllerTests
     public async Task GetDashboard_UserInAdminList_ReturnsOk()
     {
         var config = ConfigWithAdmins("normal-user,other");
-        var clerk = new Mock<ClerkAuthService>();
+        var clerk = TestHelpers.MockClerkAuth();
         clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("normal-user", false));
 
         var tracking = CreateTrackingMock(config);
@@ -81,7 +81,7 @@ public class AdminControllerTests
     public async Task GetDashboard_EmptyAdminList_Returns403()
     {
         var config = ConfigWithAdmins("");
-        var clerk = new Mock<ClerkAuthService>();
+        var clerk = TestHelpers.MockClerkAuth();
         clerk.Setup(c => c.ExtractUserId(It.IsAny<HttpRequest>())).Returns(("any-user", false));
 
         var tracking = CreateTrackingMock(config);

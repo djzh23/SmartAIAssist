@@ -35,6 +35,10 @@ var frontendFromEnv = Environment.GetEnvironmentVariable("FRONTEND__BASEURL")?.T
 if (!string.IsNullOrWhiteSpace(frontendFromEnv))
     builder.Configuration["Frontend:BaseUrl"] = frontendFromEnv;
 
+var clerkIssuer = Environment.GetEnvironmentVariable("CLERK__ISSUER")
+    ?? Environment.GetEnvironmentVariable("CLERK_ISSUER");
+if (!string.IsNullOrWhiteSpace(clerkIssuer)) builder.Configuration["Clerk:Issuer"] = clerkIssuer;
+
 var groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
 if (!string.IsNullOrWhiteSpace(groqKey)) builder.Configuration["Groq:ApiKey"] = groqKey;
 var groqModel = Environment.GetEnvironmentVariable("GROQ_MODEL");
@@ -164,6 +168,8 @@ builder.Services.AddScoped<ApplicationsService>();
 builder.Services.AddScoped<IApplicationService>(sp => sp.GetRequiredService<ApplicationsService>());
 builder.Services.AddScoped<CareerProfileService>();
 builder.Services.AddScoped<ClerkAuthService>();
+builder.Services.AddScoped<AppUserContext>();
+builder.Services.AddScoped<IAppUserContext>(sp => sp.GetRequiredService<AppUserContext>());
 builder.Services.AddScoped<IStripeApiClient, StripeApiClient>();
 builder.Services.AddScoped<StripeService>();
 builder.Services.AddHostedService<ConversationCleanupService>();
@@ -385,6 +391,7 @@ app.Use(async (context, next) =>
 
 app.UseRateLimiter();
 app.UseSmartAssistApiSecurityHeaders();
+app.UseMiddleware<SmartAssistApi.Middleware.UserResolutionMiddleware>();
 
 app.UseWhen(
     static ctx => ctx.Request.Path.StartsWithSegments("/api/cv-studio"),

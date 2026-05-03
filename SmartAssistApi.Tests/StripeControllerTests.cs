@@ -14,7 +14,7 @@ namespace SmartAssistApi.Tests;
 
 public class StripeControllerTests
 {
-    private readonly Mock<ClerkAuthService> _clerkAuthMock = new();
+    private readonly Mock<ClerkAuthService> _clerkAuthMock = TestHelpers.MockClerkAuth();
     private readonly Mock<UsageService> _usageServiceMock;
     private readonly Mock<ILogger<StripeController>> _controllerLoggerMock = new();
     private readonly StripeService _stripeService;

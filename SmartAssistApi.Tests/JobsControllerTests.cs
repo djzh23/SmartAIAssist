@@ -10,7 +10,7 @@ namespace SmartAssistApi.Tests;
 
 public class JobsControllerTests
 {
-    private readonly Mock<ClerkAuthService> _clerkMock = new();
+    private readonly Mock<ClerkAuthService> _clerkMock = TestHelpers.MockClerkAuth();
     private readonly Mock<IJobContextExtractor> _extractorMock = new();
     private readonly JobsController _controller;
 
