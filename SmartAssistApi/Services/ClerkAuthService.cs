@@ -8,32 +8,59 @@ namespace SmartAssistApi.Services;
 
 /// <summary>
 /// Extracts and verifies the Clerk userId from the JWT Bearer token using JWKS.
-/// Falls back to unverified payload parsing when JWKS is unavailable or not configured
-/// (e.g. local development without Clerk:Issuer set).
+/// Falls back to unverified payload parsing when JWKS is unavailable or not configured.
 /// </summary>
 public class ClerkAuthService
 {
-    private readonly IConfiguration _config;
     private readonly ILogger<ClerkAuthService> _logger;
     private readonly ConfigurationManager<OpenIdConnectConfiguration>? _oidcConfigManager;
     private readonly string? _issuer;
     private readonly bool _jwksEnabled;
 
+    // Cached OIDC config — fetched once at startup, refreshed automatically by ConfigurationManager
+    private OpenIdConnectConfiguration? _cachedOidcConfig;
+
     public ClerkAuthService(IConfiguration config, ILogger<ClerkAuthService> logger)
     {
-        _config = config;
         _logger = logger;
 
-        _issuer = config["Clerk:Issuer"]?.Trim();
+        _issuer = config["Clerk:Issuer"]?.Trim().TrimEnd('/');
 
         if (!string.IsNullOrWhiteSpace(_issuer))
         {
-            var jwksUrl = $"{_issuer.TrimEnd('/')}/.well-known/openid-configuration";
+            var jwksUrl = $"{_issuer}/.well-known/openid-configuration";
             _oidcConfigManager = new ConfigurationManager<OpenIdConnectConfiguration>(
                 jwksUrl,
                 new OpenIdConnectConfigurationRetriever(),
-                new HttpDocumentRetriever { RequireHttps = true });
+                new HttpDocumentRetriever { RequireHttps = _issuer.StartsWith("https", StringComparison.OrdinalIgnoreCase) });
             _jwksEnabled = true;
+
+            logger.LogInformation("ClerkAuthService: JWKS enabled. Issuer={Issuer} OIDC={OidcUrl}", _issuer, jwksUrl);
+        }
+        else
+        {
+            logger.LogWarning("ClerkAuthService: No Clerk:Issuer configured. JWT verification DISABLED (unverified parsing only).");
+        }
+    }
+
+    /// <summary>
+    /// Pre-fetches JWKS keys during application startup so that subsequent
+    /// synchronous ExtractUserId calls never block on a network request.
+    /// Call this from Program.cs after building the app.
+    /// </summary>
+    public async Task WarmupAsync()
+    {
+        if (!_jwksEnabled || _oidcConfigManager is null) return;
+        try
+        {
+            _cachedOidcConfig = await _oidcConfigManager.GetConfigurationAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+            _logger.LogInformation("ClerkAuthService: JWKS keys pre-fetched successfully. Keys={KeyCount}",
+                _cachedOidcConfig.SigningKeys?.Count ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ClerkAuthService: Failed to pre-fetch JWKS keys. JWT verification will retry on first request.");
         }
     }
 
@@ -50,39 +77,72 @@ public class ClerkAuthService
 
         if (_jwksEnabled)
         {
-            var userId = ValidateTokenWithJwks(token);
+            var userId = ValidateTokenWithJwksAsync(token).GetAwaiter().GetResult();
             if (userId is not null)
                 return (userId, false);
 
-            // JWKS validation failed — reject as anonymous (do NOT fall through to unverified parsing)
             _logger.LogWarning("JWT signature verification failed. Treating as anonymous.");
             return AnonymousFallback(request);
         }
 
-        // Fallback: no Clerk:Issuer configured — parse without verification (dev only)
+        // No Clerk:Issuer configured — parse without verification (dev only)
         return ExtractUnverified(token, request);
     }
 
-    private string? ValidateTokenWithJwks(string token)
+    /// <summary>Async version for use in middleware or async contexts.</summary>
+    public virtual async Task<(string? userId, bool isAnonymous)> ExtractUserIdAsync(HttpRequest request)
+    {
+        var authHeader = request.Headers.Authorization.FirstOrDefault();
+
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return AnonymousFallback(request);
+        }
+
+        var token = authHeader["Bearer ".Length..];
+
+        if (_jwksEnabled)
+        {
+            var userId = await ValidateTokenWithJwksAsync(token);
+            if (userId is not null)
+                return (userId, false);
+
+            _logger.LogWarning("JWT signature verification failed. Treating as anonymous.");
+            return AnonymousFallback(request);
+        }
+
+        return ExtractUnverified(token, request);
+    }
+
+    private async Task<string?> ValidateTokenWithJwksAsync(string token)
     {
         try
         {
-            var oidcConfig = _oidcConfigManager!.GetConfigurationAsync(CancellationToken.None)
-                .ConfigureAwait(false).GetAwaiter().GetResult();
+            var oidcConfig = _cachedOidcConfig
+                ?? await _oidcConfigManager!.GetConfigurationAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+
+            if (oidcConfig.SigningKeys == null || !oidcConfig.SigningKeys.Any())
+            {
+                _logger.LogError("JWKS returned no signing keys from {Issuer}", _issuer);
+                return null;
+            }
 
             var validationParams = new TokenValidationParameters
             {
                 ValidateIssuer = true,
                 ValidIssuer = _issuer,
-                ValidateAudience = false, // Clerk JWTs don't always include aud
+                // Also accept issuer with trailing slash (Clerk inconsistency)
+                ValidIssuers = [_issuer!, $"{_issuer}/"],
+                ValidateAudience = false,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.FromSeconds(30),
+                ClockSkew = TimeSpan.FromSeconds(60),
                 IssuerSigningKeys = oidcConfig.SigningKeys,
                 ValidateIssuerSigningKey = true,
             };
 
             var handler = new JwtSecurityTokenHandler();
-            var principal = handler.ValidateToken(token, validationParams, out _);
+            var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
 
             var sub = principal.FindFirst("sub")?.Value
                    ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
@@ -94,9 +154,22 @@ public class ClerkAuthService
             _logger.LogDebug("JWT expired.");
             return null;
         }
+        catch (SecurityTokenInvalidIssuerException ex)
+        {
+            _logger.LogError("JWT issuer mismatch. Expected={Expected} Actual token issuer does not match. Detail: {Detail}",
+                _issuer, ex.Message);
+            return null;
+        }
+        catch (SecurityTokenSignatureKeyNotFoundException ex)
+        {
+            _logger.LogError("JWT signing key not found in JWKS. The token may use a rotated key. Detail: {Detail}", ex.Message);
+            // Force refresh of JWKS keys
+            _oidcConfigManager!.RequestRefresh();
+            return null;
+        }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "JWT JWKS validation failed.");
+            _logger.LogError(ex, "JWT JWKS validation failed unexpectedly.");
             return null;
         }
     }

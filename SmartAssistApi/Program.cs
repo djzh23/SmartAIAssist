@@ -245,6 +245,13 @@ if (registerPostgres)
     }
 }
 
+// Pre-fetch JWKS keys so sync ExtractUserId never blocks on network I/O
+using (var warmupScope = app.Services.CreateScope())
+{
+    var clerkAuth = warmupScope.ServiceProvider.GetRequiredService<ClerkAuthService>();
+    await clerkAuth.WarmupAsync();
+}
+
 var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 startupLogger.LogInformation("CORS allowed origins: {Origins}", string.Join(", ", allowedOrigins));
 if (supabaseConnectionString is not null)

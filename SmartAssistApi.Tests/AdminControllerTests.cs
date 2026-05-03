@@ -49,7 +49,8 @@ public class AdminControllerTests
 
         var result = await controller.GetDashboard(CancellationToken.None);
 
-        Assert.IsType<ForbidResult>(result);
+        var obj = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(403, obj.StatusCode);
         tracking.Verify(t => t.GetDashboardDataAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -92,6 +93,7 @@ public class AdminControllerTests
 
         var result = await controller.GetDashboard(CancellationToken.None);
 
-        Assert.IsType<ForbidResult>(result);
+        var obj = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(403, obj.StatusCode);
     }
 }

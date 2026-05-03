@@ -26,7 +26,7 @@ public class AdminController(
         CancellationToken cancellationToken)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "userId_required" });
@@ -68,7 +68,7 @@ public class AdminController(
         CancellationToken cancellationToken)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "userId_required" });
@@ -117,7 +117,7 @@ public class AdminController(
         CancellationToken cancellationToken)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "userId_required" });
@@ -158,7 +158,7 @@ public class AdminController(
         CancellationToken cancellationToken)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "userId_required" });
@@ -192,7 +192,7 @@ public class AdminController(
     public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         try
         {
@@ -214,7 +214,7 @@ public class AdminController(
         CancellationToken cancellationToken)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         var startDate = from ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
         var endDate = to ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
@@ -244,7 +244,7 @@ public class AdminController(
         CancellationToken cancellationToken = default)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         try
         {
@@ -274,7 +274,7 @@ public class AdminController(
     public async Task<IActionResult> GetDailyStats([FromQuery] int days = 30, CancellationToken cancellationToken = default)
     {
         if (!IsAdmin())
-            return Forbid();
+            return StatusCode(403, new { error = "forbidden" });
 
         try
         {
