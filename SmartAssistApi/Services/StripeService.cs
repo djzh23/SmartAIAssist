@@ -142,14 +142,18 @@ public class StripeService
         if (string.IsNullOrWhiteSpace(stripeEvent.Id))
             throw new InvalidOperationException("Stripe event id is missing.");
 
+        // Check idempotency but do NOT short-circuit yet — the handlers are safely
+        // re-entrant (rank guard + upsert), so processing a retry is harmless.
+        // We mark the event as processed AFTER successful handling to avoid the
+        // scenario where a transient failure (e.g. DB timeout) permanently locks
+        // out Stripe retries.
         var isFirstDelivery = await _usageService.TryAcquireStripeEventAsync(stripeEvent.Id);
         if (!isFirstDelivery)
         {
             _logger.LogInformation(
-                "Duplicate Stripe webhook event ignored. EventId {StripeEventId} Type {StripeEventType}",
+                "Duplicate Stripe webhook event received — processing anyway (handlers are idempotent). EventId {StripeEventId} Type {StripeEventType}",
                 stripeEvent.Id,
                 stripeEvent.Type);
-            return;
         }
 
         switch (stripeEvent.Type)
