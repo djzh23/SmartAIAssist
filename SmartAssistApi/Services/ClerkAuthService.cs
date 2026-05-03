@@ -156,8 +156,18 @@ public class ClerkAuthService
         }
         catch (SecurityTokenInvalidIssuerException ex)
         {
-            _logger.LogError("JWT issuer mismatch. Expected={Expected} Actual token issuer does not match. Detail: {Detail}",
-                _issuer, ex.Message);
+            // Read the iss claim directly so the mismatch is immediately visible in logs
+            string? tokenIss = null;
+            try
+            {
+                var raw = new JwtSecurityTokenHandler().ReadJwtToken(token);
+                tokenIss = raw.Issuer;
+            }
+            catch { /* ignore parse errors — log what we have */ }
+
+            _logger.LogError(
+                "JWT issuer mismatch. ConfiguredIssuer={Expected} TokenIssuer={TokenIss} Detail: {Detail}",
+                _issuer, tokenIss ?? "<unreadable>", ex.Message);
             return null;
         }
         catch (SecurityTokenSignatureKeyNotFoundException ex)
