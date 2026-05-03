@@ -67,8 +67,8 @@ public class SystemPromptBuilderTests
 
         var parts = _sut.BuildPromptParts("programming", context, request);
 
-        Assert.DoesNotContain("PROGRAMMIER-KONTEXT", parts.CachedPrefix);
-        Assert.Contains("PROGRAMMIER-KONTEXT: Sprache/Stack: csharp", parts.UncachedSystemBlock);
+        Assert.DoesNotContain("PROGRAMMING CONTEXT", parts.CachedPrefix);
+        Assert.Contains("PROGRAMMING CONTEXT: Language/Stack: csharp", parts.UncachedSystemBlock);
         Assert.Contains("var x = 1;", parts.DynamicToolSuffix);
         Assert.Contains("var x = 1;", parts.UncachedSystemBlock);
         Assert.Equal(_sut.BuildPrompt("programming", context, request), parts.ToCombinedPrompt());
