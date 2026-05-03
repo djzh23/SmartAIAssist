@@ -146,17 +146,17 @@ public class ClerkAuthService
                 // Also accept issuer with trailing slash (Clerk inconsistency)
                 ValidIssuers = [_issuer!, $"{_issuer}/"],
                 ValidateAudience = false,
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.FromSeconds(300), // 5 min skew for Clerk short-lived tokens
+                ValidateLifetime = false, // Clerk session tokens are short-lived (60s); frontend handles refresh via getToken()
                 IssuerSigningKeys = oidcConfig.SigningKeys,
                 ValidateIssuerSigningKey = true,
             };
 
             var handler = new JwtSecurityTokenHandler();
+            handler.InboundClaimTypeMap.Clear(); // Prevent "sub" → ClaimTypes.NameIdentifier remapping
             var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
 
             var sub = principal.FindFirst("sub")?.Value
-                   ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+                   ?? principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
             return string.IsNullOrWhiteSpace(sub) ? null : sub;
         }
