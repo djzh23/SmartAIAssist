@@ -108,6 +108,7 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
         profile.CurrentRole = currentRole;
         profile.Goals = goals;
         profile.OnboardingCompleted = true;
+        profile.OnboardingDraft = null; // clear draft after completion
         await SaveProfile(userId, profile, cancellationToken).ConfigureAwait(false);
     }
 
@@ -201,6 +202,29 @@ public sealed class CareerProfilePostgresService(SmartAssistDbContext db, ILogge
         var profile = await GetProfile(userId, cancellationToken).ConfigureAwait(false)
             ?? new CareerProfile { UserId = userId, CreatedAt = DateTime.UtcNow };
         profile.TargetJobs.RemoveAll(j => j.Id == jobId);
+        await SaveProfile(userId, profile, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<OnboardingDraft?> GetOnboardingDraftAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var profile = await GetProfile(userId, cancellationToken).ConfigureAwait(false);
+        return profile?.OnboardingDraft;
+    }
+
+    public async Task SaveOnboardingDraftAsync(string userId, OnboardingDraft draft, CancellationToken cancellationToken = default)
+    {
+        var profile = await GetProfile(userId, cancellationToken).ConfigureAwait(false)
+            ?? new CareerProfile { UserId = userId, CreatedAt = DateTime.UtcNow };
+        draft.UpdatedAt = DateTime.UtcNow;
+        profile.OnboardingDraft = draft;
+        await SaveProfile(userId, profile, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetCoachTourCompletedAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var profile = await GetProfile(userId, cancellationToken).ConfigureAwait(false)
+            ?? new CareerProfile { UserId = userId, CreatedAt = DateTime.UtcNow };
+        profile.OnboardingCoachTourCompleted = true;
         await SaveProfile(userId, profile, cancellationToken).ConfigureAwait(false);
     }
 

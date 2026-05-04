@@ -92,6 +92,21 @@ public sealed class CareerProfileService(
             ? Postgres!.RemoveTargetJob(userId, jobId)
             : redis.RemoveTargetJob(userId, jobId);
 
+    public Task<OnboardingDraft?> GetOnboardingDraftAsync(string userId) =>
+        UsePostgres
+            ? Postgres!.GetOnboardingDraftAsync(userId)
+            : redis.GetOnboardingDraftAsync(userId);
+
+    public Task SaveOnboardingDraftAsync(string userId, OnboardingDraft draft) =>
+        UsePostgres
+            ? Postgres!.SaveOnboardingDraftAsync(userId, draft)
+            : redis.SaveOnboardingDraftAsync(userId, draft);
+
+    public Task SetCoachTourCompletedAsync(string userId) =>
+        UsePostgres
+            ? Postgres!.SetCoachTourCompletedAsync(userId)
+            : redis.SetCoachTourCompletedAsync(userId);
+
     public string BuildProfileContext(CareerProfile profile, ProfileContextToggles toggles) =>
         CareerProfileContextBuilder.Build(profile, toggles);
 

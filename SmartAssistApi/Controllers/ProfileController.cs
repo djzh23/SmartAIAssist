@@ -86,6 +86,57 @@ public class ProfileController(
         return Ok(new { success = true });
     }
 
+    /// <summary>Onboarding-Entwurf abrufen — gibt leeres Objekt zurück wenn kein Entwurf existiert.</summary>
+    [HttpGet("onboarding/draft")]
+    [EnableRateLimiting("agent_read")]
+    public async Task<IActionResult> GetOnboardingDraft()
+    {
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var draft = await profileService.GetOnboardingDraftAsync(userId);
+        SetCareerProfileStorageHeaders();
+        return Ok(draft ?? new OnboardingDraft());
+    }
+
+    /// <summary>Onboarding-Entwurf speichern — setzt onboarding_completed NICHT.</summary>
+    [HttpPut("onboarding/draft")]
+    [EnableRateLimiting("profile_writes")]
+    public async Task<IActionResult> SaveOnboardingDraft([FromBody] SaveOnboardingDraftRequest request)
+    {
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var draft = new OnboardingDraft
+        {
+            Field = request.Field?.Trim(),
+            Level = request.Level?.Trim(),
+            CurrentRole = request.CurrentRole?.Trim(),
+            Goals = request.Goals,
+            LastStep = request.LastStep,
+        };
+
+        await profileService.SaveOnboardingDraftAsync(userId, draft);
+        SetCareerProfileStorageHeaders();
+        return NoContent();
+    }
+
+    /// <summary>Coach-Tour als abgeschlossen markieren — Flag wird einmalig gesetzt.</summary>
+    [HttpPost("onboarding/coach-tour/done")]
+    [EnableRateLimiting("profile_writes")]
+    public async Task<IActionResult> CompleteCoachTour()
+    {
+        var userId = userContext.UserId;
+        if (userContext.IsAnonymous || string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        await profileService.SetCoachTourCompletedAsync(userId);
+        SetCareerProfileStorageHeaders();
+        return NoContent();
+    }
+
     /// <summary>Onboarding überspringen — markiert das Profil als abgeschlossen ohne Pflichtdaten.</summary>
     [HttpPost("onboarding/skip")]
     [EnableRateLimiting("profile_writes")]
@@ -492,4 +543,21 @@ public class AddTargetJobRequest
 
     [StringLength(12_000)]
     public string? Description { get; set; }
+}
+
+public class SaveOnboardingDraftRequest
+{
+    [StringLength(80)]
+    public string? Field { get; set; }
+
+    [StringLength(80)]
+    public string? Level { get; set; }
+
+    [StringLength(200)]
+    public string? CurrentRole { get; set; }
+
+    [MaxLength(20)]
+    public List<string>? Goals { get; set; }
+
+    public int? LastStep { get; set; }
 }

@@ -230,6 +230,7 @@ public sealed class CareerProfileRedisService(
         profile.CurrentRole = currentRole;
         profile.Goals = goals;
         profile.OnboardingCompleted = true;
+        profile.OnboardingDraft = null; // clear draft after completion
         await SaveProfile(userId, profile);
     }
 
@@ -285,6 +286,27 @@ public sealed class CareerProfileRedisService(
     {
         var profile = await GetProfile(userId) ?? new CareerProfile { UserId = userId, CreatedAt = DateTime.UtcNow };
         profile.TargetJobs.RemoveAll(j => j.Id == jobId);
+        await SaveProfile(userId, profile);
+    }
+
+    public async Task<OnboardingDraft?> GetOnboardingDraftAsync(string userId)
+    {
+        var profile = await GetProfile(userId);
+        return profile?.OnboardingDraft;
+    }
+
+    public async Task SaveOnboardingDraftAsync(string userId, OnboardingDraft draft)
+    {
+        var profile = await GetProfile(userId) ?? new CareerProfile { UserId = userId, CreatedAt = DateTime.UtcNow };
+        draft.UpdatedAt = DateTime.UtcNow;
+        profile.OnboardingDraft = draft;
+        await SaveProfile(userId, profile);
+    }
+
+    public async Task SetCoachTourCompletedAsync(string userId)
+    {
+        var profile = await GetProfile(userId) ?? new CareerProfile { UserId = userId, CreatedAt = DateTime.UtcNow };
+        profile.OnboardingCoachTourCompleted = true;
         await SaveProfile(userId, profile);
     }
 

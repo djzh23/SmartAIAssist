@@ -35,8 +35,27 @@ public class CareerProfile
 
     // === METADATEN ===
     public bool OnboardingCompleted { get; set; }
+    public bool OnboardingCoachTourCompleted { get; set; }
+
+    // === ONBOARDING DRAFT (Zwischenstand; wird nach completeOnboarding gelöscht) ===
+    public OnboardingDraft? OnboardingDraft { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Zwischenstand des Onboarding-Formulars — wird nach completeOnboarding auf null gesetzt.
+/// Alle Felder optional; wird in profile_json serialisiert (keine eigene Spalte nötig).
+/// </summary>
+public class OnboardingDraft
+{
+    public string? Field { get; set; }
+    public string? Level { get; set; }
+    public string? CurrentRole { get; set; }
+    public List<string>? Goals { get; set; }
+    public int? LastStep { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 }
 
 public class WorkExperience
