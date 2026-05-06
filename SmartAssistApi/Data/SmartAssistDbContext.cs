@@ -42,6 +42,8 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<CareerMemoryChunkEntity> CareerMemory => Set<CareerMemoryChunkEntity>();
 
+    public DbSet<UsageRecordEntity> UsageRecords => Set<UsageRecordEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("vector");
@@ -174,6 +176,16 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
             e.Property(x => x.Embedding).HasColumnType("vector(384)");
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => new { x.UserId, x.ContentHash }).IsUnique();
+        });
+
+        modelBuilder.Entity<UsageRecordEntity>(e =>
+        {
+            e.ToTable("usage_records");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.EstimatedCostUsd).HasPrecision(10, 6);
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+            e.HasIndex(x => x.CreatedAt);
+            e.HasIndex(x => new { x.ToolType, x.CreatedAt });
         });
     }
 }

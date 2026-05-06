@@ -10,6 +10,7 @@ namespace SmartAssistApi.Controllers;
 [EnableRateLimiting("admin")]
 public class AdminController(
     TokenTrackingService tracking,
+    IUsageTrackingService usageTracking,
     IAppUserContext userContext,
     IConfiguration configuration,
     ILogger<AdminController> logger) : ControllerBase
@@ -285,6 +286,68 @@ public class AdminController(
         {
             logger.LogError(ex, "Admin daily stats read failed");
             return StatusCode(503, new { error = "daily_stats_unavailable", message = "Could not load daily stats." });
+        }
+    }
+
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetStats(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var stats = await usageTracking.GetStatsAsync(monthStart, now.AddDays(1), cancellationToken).ConfigureAwait(false);
+            return Ok(stats);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Admin stats read failed");
+            return StatusCode(503, new { error = "stats_unavailable", message = "Could not load stats data." });
+        }
+    }
+
+    [HttpGet("usage/recent")]
+    public async Task<IActionResult> GetRecentUsage([FromQuery] int limit = 50, CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+
+        try
+        {
+            var rows = await usageTracking.GetRecentAsync(limit, cancellationToken).ConfigureAwait(false);
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Admin recent usage read failed");
+            return StatusCode(503, new { error = "usage_recent_unavailable", message = "Could not load recent usage." });
+        }
+    }
+
+    [HttpGet("users/active")]
+    public async Task<IActionResult> GetActiveUsers(
+        [FromQuery] int days = 7,
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+
+        try
+        {
+            var safeDays = Math.Clamp(days, 1, 30);
+            var now = DateTime.UtcNow;
+            var from = now.Date.AddDays(-(safeDays - 1));
+            var rows = await usageTracking.GetActiveUsersAsync(from, now.AddDays(1), limit, cancellationToken).ConfigureAwait(false);
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Admin active users read failed");
+            return StatusCode(503, new { error = "active_users_unavailable", message = "Could not load active users." });
         }
     }
 

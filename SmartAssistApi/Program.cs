@@ -126,6 +126,7 @@ if (registerPostgres)
     builder.Services.AddScoped<LearningMemoryPostgresService>();
     builder.Services.AddScoped<UsagePostgresService>();
     builder.Services.AddScoped<TokenTrackingPostgresService>();
+    builder.Services.AddScoped<IUsageTrackingService, UsageTrackingService>();
     builder.Services.AddScoped<CvStudioPdfExportService>();
     builder.Services.AddScoped<CvStudioCategoriesService>();
 }
@@ -166,6 +167,7 @@ builder.Services.AddHttpClient<CareerProfileRedisService>();
 builder.Services.AddScoped<CareerProfileRedisService>();
 builder.Services.AddHttpClient<TokenTrackingRedisService>();
 builder.Services.AddScoped<TokenTrackingService>();
+builder.Services.AddScoped<IUsageTrackingService, NoopUsageTrackingService>();
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
 builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<UpstashRedisStringStore>());
 builder.Services.AddScoped<LearningMemoryRedisService>();
