@@ -351,6 +351,99 @@ public class AdminController(
         }
     }
 
+    [HttpGet("tokens/summary")]
+    public async Task<IActionResult> GetTokensSummary(
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+
+        if (!TryParseRange(from, to, out var start, out var end, out var error))
+            return BadRequest(new { error = "invalid_args", message = error });
+
+        var data = await usageTracking.GetTokenSummaryAsync(start, end, cancellationToken).ConfigureAwait(false);
+        return Ok(data);
+    }
+
+    [HttpGet("tokens/by-tool")]
+    public async Task<IActionResult> GetTokensByTool(
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+
+        if (!TryParseRange(from, to, out var start, out var end, out var error))
+            return BadRequest(new { error = "invalid_args", message = error });
+
+        var data = await usageTracking.GetTokenByToolAsync(start, end, cancellationToken).ConfigureAwait(false);
+        return Ok(data);
+    }
+
+    [HttpGet("tokens/by-model")]
+    public async Task<IActionResult> GetTokensByModel(
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+
+        if (!TryParseRange(from, to, out var start, out var end, out var error))
+            return BadRequest(new { error = "invalid_args", message = error });
+
+        var data = await usageTracking.GetTokenByModelAsync(start, end, cancellationToken).ConfigureAwait(false);
+        return Ok(data);
+    }
+
+    [HttpGet("tokens/daily")]
+    public async Task<IActionResult> GetTokensDaily([FromQuery] int days = 30, CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+        var data = await usageTracking.GetTokenDailyAsync(days, cancellationToken).ConfigureAwait(false);
+        return Ok(data);
+    }
+
+    [HttpGet("tokens/recent")]
+    public async Task<IActionResult> GetTokensRecent([FromQuery] int limit = 20, CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+        var data = await usageTracking.GetRecentAsync(limit, cancellationToken).ConfigureAwait(false);
+        return Ok(data);
+    }
+
+    private static bool TryParseRange(
+        string? from,
+        string? to,
+        out DateTime start,
+        out DateTime endExclusive,
+        out string? error)
+    {
+        var fromRaw = string.IsNullOrWhiteSpace(from) ? DateTime.UtcNow.Date.AddDays(-6).ToString("yyyy-MM-dd") : from.Trim();
+        var toRaw = string.IsNullOrWhiteSpace(to) ? DateTime.UtcNow.Date.ToString("yyyy-MM-dd") : to.Trim();
+        if (!DateTime.TryParseExact(fromRaw, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var fromDt)
+            || !DateTime.TryParseExact(toRaw, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var toDt))
+        {
+            start = default;
+            endExclusive = default;
+            error = "Use yyyy-MM-dd format for from/to.";
+            return false;
+        }
+
+        start = DateTime.SpecifyKind(fromDt.Date, DateTimeKind.Utc);
+        var endDate = DateTime.SpecifyKind(toDt.Date, DateTimeKind.Utc);
+        if (endDate < start)
+            (start, endDate) = (endDate, start);
+        endExclusive = endDate.AddDays(1);
+        error = null;
+        return true;
+    }
+
     private bool IsAdmin()
     {
         var userId = userContext.UserId;

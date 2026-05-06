@@ -16,4 +16,16 @@ public sealed class NoopUsageTrackingService : IUsageTrackingService
 
     public Task<List<ActiveUserUsage>> GetActiveUsersAsync(DateTime from, DateTime to, int limit = 50, CancellationToken ct = default) =>
         Task.FromResult(new List<ActiveUserUsage>());
+
+    public Task<TokenSummary> GetTokenSummaryAsync(DateTime from, DateTime to, CancellationToken ct = default) =>
+        Task.FromResult(new TokenSummary());
+
+    public Task<List<TokenByToolRow>> GetTokenByToolAsync(DateTime from, DateTime to, CancellationToken ct = default) =>
+        Task.FromResult(new List<TokenByToolRow>());
+
+    public Task<List<TokenByModelRow>> GetTokenByModelAsync(DateTime from, DateTime to, CancellationToken ct = default) =>
+        Task.FromResult(new List<TokenByModelRow>());
+
+    public Task<List<TokenDailyRow>> GetTokenDailyAsync(int days = 30, CancellationToken ct = default) =>
+        Task.FromResult(new List<TokenDailyRow>());
 }

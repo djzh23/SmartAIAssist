@@ -34,3 +34,42 @@ public sealed class ActiveUserUsage
     public DateTime LastSeenAt { get; set; }
     public decimal TotalEstimatedCostUsd { get; set; }
 }
+
+public sealed class TokenSummary
+{
+    public long TotalInputTokens { get; set; }
+    public long TotalOutputTokens { get; set; }
+    public long TotalCacheReadTokens { get; set; }
+    public long TotalCacheCreationTokens { get; set; }
+    public decimal CacheHitRate { get; set; }
+    public decimal TotalEstimatedCostUsd { get; set; }
+    public int TotalTurns { get; set; }
+    public decimal AvgInputTokensPerTurn { get; set; }
+    public decimal AvgOutputTokensPerTurn { get; set; }
+    public decimal AvgResponseTimeMs { get; set; }
+    public decimal GroqTurnPercent { get; set; }
+}
+
+public sealed class TokenByToolRow
+{
+    public string ToolType { get; set; } = string.Empty;
+    public int Turns { get; set; }
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public decimal CostUsd { get; set; }
+}
+
+public sealed class TokenByModelRow
+{
+    public string Model { get; set; } = string.Empty;
+    public int Turns { get; set; }
+    public decimal CostUsd { get; set; }
+}
+
+public sealed class TokenDailyRow
+{
+    public string Date { get; set; } = string.Empty;
+    public int Turns { get; set; }
+    public long InputTokens { get; set; }
+    public decimal CostUsd { get; set; }
+}
