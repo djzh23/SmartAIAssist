@@ -153,6 +153,19 @@ public static class SupabaseConnectionString
 
         if (builder.CommandTimeout > 0 && builder.CommandTimeout > 600)
             builder.CommandTimeout = 300;
+
+        // Supabase pooler can expose small session-mode limits (e.g. 15 clients).
+        // Keep local Npgsql pool below that ceiling to avoid EMAXCONNSESSION bursts under request fan-out.
+        if (builder.MaxPoolSize <= 0 || builder.MaxPoolSize > 10)
+            builder.MaxPoolSize = 10;
+        if (builder.MinPoolSize < 0 || builder.MinPoolSize > builder.MaxPoolSize)
+            builder.MinPoolSize = 0;
+
+        // Reclaim idle pooled connections faster so short spikes don't keep all session slots occupied.
+        if (builder.ConnectionIdleLifetime <= 0 || builder.ConnectionIdleLifetime > 60)
+            builder.ConnectionIdleLifetime = 30;
+        if (builder.ConnectionPruningInterval <= 0 || builder.ConnectionPruningInterval > 30)
+            builder.ConnectionPruningInterval = 10;
     }
 
     /// <summary>
