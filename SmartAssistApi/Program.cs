@@ -7,7 +7,9 @@ using CvStudio.Infrastructure.Persistence;
 using SmartAssistApi.Configuration;
 using SmartAssistApi.Data;
 using SmartAssistApi.Services;
+using SmartAssistApi.Services.Embeddings;
 using SmartAssistApi.Services.Groq;
+using SmartAssistApi.Services.VectorStore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, services, configuration) =>
@@ -43,6 +45,14 @@ var groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
 if (!string.IsNullOrWhiteSpace(groqKey)) builder.Configuration["Groq:ApiKey"] = groqKey;
 var groqModel = Environment.GetEnvironmentVariable("GROQ_MODEL");
 if (!string.IsNullOrWhiteSpace(groqModel)) builder.Configuration["Groq:Model"] = groqModel;
+var openAiApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+if (!string.IsNullOrWhiteSpace(openAiApiKey)) builder.Configuration["Embeddings:OpenAiApiKey"] = openAiApiKey;
+var openAiEmbeddingModel = Environment.GetEnvironmentVariable("OPENAI_EMBEDDING_MODEL");
+if (!string.IsNullOrWhiteSpace(openAiEmbeddingModel)) builder.Configuration["Embeddings:Model"] = openAiEmbeddingModel;
+var qdrantUrl = Environment.GetEnvironmentVariable("QDRANT_URL") ?? Environment.GetEnvironmentVariable("QDRANT__BASEURL");
+if (!string.IsNullOrWhiteSpace(qdrantUrl)) builder.Configuration["Qdrant:BaseUrl"] = qdrantUrl;
+var qdrantApiKey = Environment.GetEnvironmentVariable("QDRANT_API_KEY") ?? Environment.GetEnvironmentVariable("QDRANT__APIKEY");
+if (!string.IsNullOrWhiteSpace(qdrantApiKey)) builder.Configuration["Qdrant:ApiKey"] = qdrantApiKey;
 
 var renderPort = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(renderPort))
@@ -90,6 +100,8 @@ var allowedOrigins = localOrigins
     .ToArray();
 
 builder.Services.AddControllers();
+builder.Services.Configure<EmbeddingOptions>(builder.Configuration.GetSection(EmbeddingOptions.SectionName));
+builder.Services.Configure<QdrantOptions>(builder.Configuration.GetSection(QdrantOptions.SectionName));
 
 builder.Services.Configure<DatabaseFeatureOptions>(builder.Configuration.GetSection(DatabaseFeatureOptions.SectionName));
 builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<DatabaseFeatureOptions>, DatabaseFeatureOptionsValidator>();
@@ -139,6 +151,20 @@ builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
     // LLM calls: avoid holding sockets for two minutes on stalled responses (was 120s).
     client.Timeout = TimeSpan.FromSeconds(90);
 });
+builder.Services.AddHttpClient<IEmbeddingService, OpenAiEmbeddingService>((sp, client) =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmbeddingOptions>>().Value;
+    client.Timeout = TimeSpan.FromSeconds(Math.Clamp(opts.TimeoutSeconds, 5, 120));
+});
+builder.Services.AddHttpClient("qdrant", (sp, client) =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<QdrantOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "http://localhost:6333" : opts.BaseUrl;
+    client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddSingleton<QdrantCollectionInitializer>();
+builder.Services.AddHostedService<QdrantCollectionInitializerHostedService>();
 builder.Services.AddSingleton<ConversationService>();
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddScoped<PromptComposer>();
