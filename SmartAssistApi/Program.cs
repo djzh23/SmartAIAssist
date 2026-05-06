@@ -165,6 +165,7 @@ builder.Services.AddHttpClient("qdrant", (sp, client) =>
 });
 builder.Services.AddSingleton<QdrantCollectionInitializer>();
 builder.Services.AddHostedService<QdrantCollectionInitializerHostedService>();
+builder.Services.AddScoped<ICareerMemoryIngester, CareerMemoryIngester>();
 builder.Services.AddSingleton<ConversationService>();
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddScoped<PromptComposer>();

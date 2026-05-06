@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services.Groq;
 using SmartAssistApi.Services.Tools;
+using SmartAssistApi.Services.VectorStore;
 using Tool = Anthropic.SDK.Common.Tool;
 
 namespace SmartAssistApi.Services;
@@ -18,6 +19,7 @@ public class AgentService(
     IJobContextExtractor jobExtractor,
     GroqChatCompletionService groqChat,
     LearningMemoryService learningMemoryService,
+    IServiceScopeFactory scopeFactory,
     IOptions<GroqOptions> groqOptions,
     ILogger<AgentService> logger) : IAgentService
 {
@@ -119,6 +121,14 @@ public class AgentService(
                     await AppendConversationSummaryAsync(scopeUserId, sessionId, toolType, primaryUserMessage, groqReply)
                         .ConfigureAwait(false);
                     QueueInsightExtraction(scopeUserId, toolType, primaryUserMessage, groqReply, request.JobApplicationId);
+                    QueueMemoryIngestion(
+                        scopeUserId,
+                        toolType,
+                        sessionId,
+                        primaryUserMessage,
+                        groqReply,
+                        CloneContext(context),
+                        request.JobApplicationId);
                     var groqModelLabel = $"groq/{groqResult.Model}";
                     return new AgentResponse(
                         groqReply,
@@ -223,6 +233,14 @@ public class AgentService(
             .ConfigureAwait(false);
 
         QueueInsightExtraction(scopeUserId, toolType, primaryUserMessage, finalReply, request.JobApplicationId);
+        QueueMemoryIngestion(
+            scopeUserId,
+            toolType,
+            sessionId,
+            primaryUserMessage,
+            finalReply,
+            CloneContext(context),
+            request.JobApplicationId);
 
         return new AgentResponse(
             finalReply,
@@ -261,6 +279,106 @@ public class AgentService(
             }
         });
     }
+
+    private void QueueMemoryIngestion(
+        string scopeUserId,
+        string toolType,
+        string sessionId,
+        string userMessage,
+        string assistantReply,
+        SessionContext context,
+        string? jobApplicationId)
+    {
+        if (!ShouldQueueMemoryIngestion(toolType, userMessage, assistantReply, context))
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var ingester = scope.ServiceProvider.GetRequiredService<ICareerMemoryIngester>();
+                await ingester
+                    .IngestConversationAsync(
+                        scopeUserId,
+                        toolType,
+                        sessionId,
+                        userMessage,
+                        assistantReply,
+                        context,
+                        jobApplicationId,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                if (toolType == "jobanalyzer" && context.Job is not null)
+                {
+                    await ingester
+                        .IngestJobAnalysisAsync(
+                            scopeUserId,
+                            context.Job,
+                            assistantReply,
+                            jobApplicationId,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Career memory ingestion task failed for user {UserId}", scopeUserId);
+            }
+        });
+    }
+
+    private static bool ShouldQueueMemoryIngestion(
+        string toolType,
+        string userMessage,
+        string assistantReply,
+        SessionContext context)
+    {
+        if (userMessage.Trim().Length > 80 && assistantReply.Trim().Length > 200)
+            return true;
+
+        return toolType == "jobanalyzer" && context.Job is not null;
+    }
+
+    private static SessionContext CloneContext(SessionContext source) =>
+        new()
+        {
+            SessionId = source.SessionId,
+            ToolType = source.ToolType,
+            ConversationLanguage = source.ConversationLanguage,
+            CreatedAt = source.CreatedAt,
+            LastActivity = source.LastActivity,
+            UserCV = source.UserCV,
+            InterviewJobTitle = source.InterviewJobTitle,
+            InterviewCompany = source.InterviewCompany,
+            ConversationSummary = source.ConversationSummary,
+            ProgrammingLanguage = source.ProgrammingLanguage,
+            CurrentCodeContext = source.CurrentCodeContext,
+            Job = source.Job is null
+                ? null
+                : new JobContext
+                {
+                    IsAnalyzed = source.Job.IsAnalyzed,
+                    JobTitle = source.Job.JobTitle,
+                    CompanyName = source.Job.CompanyName,
+                    Location = source.Job.Location,
+                    KeyRequirements = [.. source.Job.KeyRequirements],
+                    Keywords = [.. source.Job.Keywords],
+                    RawJobText = source.Job.RawJobText,
+                },
+            Language = source.Language is null
+                ? null
+                : new LanguageContext
+                {
+                    NativeLanguageCode = source.Language.NativeLanguageCode,
+                    TargetLanguageCode = source.Language.TargetLanguageCode,
+                    Level = source.Language.Level,
+                    LearningGoal = source.Language.LearningGoal,
+                },
+            UserFacts = [.. source.UserFacts],
+            PractisedQuestions = [.. source.PractisedQuestions],
+        };
 
     private async Task ExtractAndSaveInsightsAsync(
         string userId,

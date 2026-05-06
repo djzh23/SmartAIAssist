@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services;
+using SmartAssistApi.Services.VectorStore;
 
 namespace SmartAssistApi.Controllers;
 
@@ -13,9 +14,32 @@ public class ProfileController(
     CareerProfileService profileService,
     IAppUserContext userContext,
     ILlmSingleCompletionService llmSingleCompletion,
+    ICareerMemoryIngester careerMemoryIngester,
     CvParsingService cvParsingService,
     ILogger<ProfileController> logger) : ControllerBase
 {
+    private static void QueueCvIngestion(
+        ICareerMemoryIngester ingester,
+        ILogger logger,
+        string userId,
+        string cvText)
+    {
+        if (string.IsNullOrWhiteSpace(cvText))
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ingester.IngestCvAsync(userId, cvText, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "CV memory ingestion failed for user {UserId}", userId);
+            }
+        });
+    }
+
     private void SetCareerProfileStorageHeaders()
     {
         var info = profileService.GetBackendInfo();
@@ -363,6 +387,7 @@ public class ProfileController(
             return BadRequest(new { error = "CV-Text darf nicht leer sein." });
 
         await profileService.SetCvText(userId, request.Text);
+        QueueCvIngestion(careerMemoryIngester, logger, userId, request.Text);
         SetCareerProfileStorageHeaders();
         return Ok(new { success = true, length = request.Text.Length });
     }
@@ -405,6 +430,7 @@ public class ProfileController(
                 .ConfigureAwait(false);
 
             await profileService.SetCvText(userId, rawText).ConfigureAwait(false);
+            QueueCvIngestion(careerMemoryIngester, logger, userId, rawText);
 
             SetCareerProfileStorageHeaders();
             return Ok(new
