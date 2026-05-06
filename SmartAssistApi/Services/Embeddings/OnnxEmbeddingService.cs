@@ -19,6 +19,8 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
     private readonly int _clsId;
     private readonly int _sepId;
     private readonly int _padId;
+    private readonly bool _isReady;
+    private readonly string? _initError;
 
     public int Dimension => _options.Dimension;
 
@@ -32,13 +34,41 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 
         var vocabPath = ResolvePath(env.ContentRootPath, _options.VocabPath);
         if (!File.Exists(vocabPath))
-            throw new FileNotFoundException($"Embedding vocab file not found: {vocabPath}");
+        {
+            _isReady = false;
+            _initError = $"Embedding vocab file not found: {vocabPath}";
+            _logger.LogError(
+                "ONNX embeddings disabled. {Error} Configure EMBEDDINGS__VOCABPATH or deploy Models/* files.",
+                _initError);
+            _unkId = 100;
+            _clsId = 101;
+            _sepId = 102;
+            _padId = 0;
+            _session = new Lazy<InferenceSession>(() => throw new InvalidOperationException(_initError));
+            return;
+        }
 
-        LoadVocab(vocabPath);
-        _unkId = ResolveTokenId("[UNK]", 100);
-        _clsId = ResolveTokenId("[CLS]", 101);
-        _sepId = ResolveTokenId("[SEP]", 102);
-        _padId = ResolveTokenId("[PAD]", 0);
+        try
+        {
+            LoadVocab(vocabPath);
+            _unkId = ResolveTokenId("[UNK]", 100);
+            _clsId = ResolveTokenId("[CLS]", 101);
+            _sepId = ResolveTokenId("[SEP]", 102);
+            _padId = ResolveTokenId("[PAD]", 0);
+            _isReady = true;
+        }
+        catch (Exception ex)
+        {
+            _isReady = false;
+            _initError = $"Failed to initialize ONNX embeddings from vocab '{vocabPath}': {ex.Message}";
+            _logger.LogError(ex, "ONNX embeddings disabled during initialization.");
+            _unkId = 100;
+            _clsId = 101;
+            _sepId = 102;
+            _padId = 0;
+            _session = new Lazy<InferenceSession>(() => throw new InvalidOperationException(_initError));
+            return;
+        }
 
         _session = new Lazy<InferenceSession>(() =>
         {
@@ -61,6 +91,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 
     public Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
     {
+        EnsureReady();
         if (string.IsNullOrWhiteSpace(text))
             throw new ArgumentException("Embedding input text must not be empty.", nameof(text));
         ct.ThrowIfCancellationRequested();
@@ -69,6 +100,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 
     public Task<float[][]> EmbedBatchAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
     {
+        EnsureReady();
         if (texts.Count == 0)
             return Task.FromResult(Array.Empty<float[]>());
         ct.ThrowIfCancellationRequested();
@@ -86,6 +118,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 
     private float[] EmbedSingle(string text)
     {
+        EnsureReady();
         var session = _session.Value;
         var tokenIds = TokenizeWordPiece(text);
         var seqLen = tokenIds.Count;
@@ -213,6 +246,13 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
         if (_vocab.TryGetValue(token, out var value))
             return value;
         return fallback;
+    }
+
+    private void EnsureReady()
+    {
+        if (_isReady)
+            return;
+        throw new InvalidOperationException(_initError ?? "ONNX embeddings are not initialized.");
     }
 
     private static float[] MeanPool(Tensor<float> output, Tensor<long> mask, int seqLen, int dim)
