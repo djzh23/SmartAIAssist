@@ -28,4 +28,7 @@ public sealed class NoopUsageTrackingService : IUsageTrackingService
 
     public Task<List<TokenDailyRow>> GetTokenDailyAsync(int days = 30, CancellationToken ct = default) =>
         Task.FromResult(new List<TokenDailyRow>());
+
+    public Task<RagSummary> GetRagSummaryAsync(DateTime from, DateTime to, CancellationToken ct = default) =>
+        Task.FromResult(new RagSummary());
 }

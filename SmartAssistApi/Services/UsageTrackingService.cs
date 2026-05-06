@@ -24,6 +24,9 @@ public sealed class UsageTrackingService(SmartAssistDbContext db) : IUsageTracki
             Model = string.IsNullOrWhiteSpace(record.Model) ? null : record.Model.Trim(),
             ResponseTimeMs = record.ResponseTimeMs,
             EstimatedCostUsd = record.EstimatedCostUsd,
+            RagChunksRetrieved = Math.Max(0, record.RagChunksRetrieved),
+            RagTopScore = Math.Max(0, record.RagTopScore),
+            RagLatencyMs = Math.Max(0, record.RagLatencyMs),
         };
 
         db.UsageRecords.Add(entity);
@@ -62,6 +65,9 @@ public sealed class UsageTrackingService(SmartAssistDbContext db) : IUsageTracki
                 Model = x.Model,
                 ResponseTimeMs = x.ResponseTimeMs,
                 EstimatedCostUsd = x.EstimatedCostUsd,
+                RagChunksRetrieved = x.RagChunksRetrieved,
+                RagTopScore = x.RagTopScore,
+                RagLatencyMs = x.RagLatencyMs,
             })
             .ToListAsync(ct);
     }
@@ -259,5 +265,33 @@ public sealed class UsageTrackingService(SmartAssistDbContext db) : IUsageTracki
         if (endExclusive <= start)
             endExclusive = start.AddDays(1);
         return (start, endExclusive);
+    }
+
+    public async Task<RagSummary> GetRagSummaryAsync(DateTime from, DateTime to, CancellationToken ct = default)
+    {
+        var (start, endExclusive) = NormalizeRange(from, to);
+        var rows = await db.UsageRecords.AsNoTracking()
+            .Where(x => x.CreatedAt >= start && x.CreatedAt < endExclusive)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        var totalTurns = rows.Count;
+        var withRag = rows.Where(x => x.RagChunksRetrieved > 0).ToList();
+        var turnsWithRag = withRag.Count;
+        var turnsWithoutRag = Math.Max(0, totalTurns - turnsWithRag);
+        var avgChunks = turnsWithRag == 0 ? 0 : (decimal)withRag.Average(x => x.RagChunksRetrieved);
+        var avgTopScore = turnsWithRag == 0 ? 0 : withRag.Average(x => x.RagTopScore);
+        var avgLatency = turnsWithRag == 0 ? 0 : (decimal)withRag.Average(x => x.RagLatencyMs);
+        var adoption = totalTurns == 0 ? 0 : (decimal)turnsWithRag / totalTurns;
+
+        return new RagSummary
+        {
+            TurnsWithRag = turnsWithRag,
+            TurnsWithoutRag = turnsWithoutRag,
+            AvgChunksRetrieved = avgChunks,
+            AvgTopScore = avgTopScore,
+            AvgRagLatencyMs = avgLatency,
+            RagAdoptionPercent = adoption,
+        };
     }
 }

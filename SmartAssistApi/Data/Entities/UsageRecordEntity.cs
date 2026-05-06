@@ -40,4 +40,13 @@ public sealed class UsageRecordEntity
 
     [Column("estimated_cost_usd", TypeName = "numeric(10,6)")]
     public decimal? EstimatedCostUsd { get; set; }
+
+    [Column("rag_chunks_retrieved")]
+    public int RagChunksRetrieved { get; set; }
+
+    [Column("rag_top_score", TypeName = "numeric(5,4)")]
+    public decimal RagTopScore { get; set; }
+
+    [Column("rag_latency_ms")]
+    public int RagLatencyMs { get; set; }
 }

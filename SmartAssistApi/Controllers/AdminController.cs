@@ -417,6 +417,22 @@ public class AdminController(
         return Ok(data);
     }
 
+    [HttpGet("rag/summary")]
+    public async Task<IActionResult> GetRagSummary(
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsAdmin())
+            return StatusCode(403, new { error = "forbidden" });
+
+        if (!TryParseRange(from, to, out var start, out var end, out var error))
+            return BadRequest(new { error = "invalid_args", message = error });
+
+        var data = await usageTracking.GetRagSummaryAsync(start, end, cancellationToken).ConfigureAwait(false);
+        return Ok(data);
+    }
+
     private static bool TryParseRange(
         string? from,
         string? to,

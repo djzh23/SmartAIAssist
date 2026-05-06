@@ -1,0 +1,3 @@
+ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS rag_chunks_retrieved INT DEFAULT 0;
+ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS rag_top_score NUMERIC(5,4) DEFAULT 0;
+ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS rag_latency_ms INT DEFAULT 0;

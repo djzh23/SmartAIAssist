@@ -13,4 +13,5 @@ public interface IUsageTrackingService
     Task<List<TokenByToolRow>> GetTokenByToolAsync(DateTime from, DateTime to, CancellationToken ct = default);
     Task<List<TokenByModelRow>> GetTokenByModelAsync(DateTime from, DateTime to, CancellationToken ct = default);
     Task<List<TokenDailyRow>> GetTokenDailyAsync(int days = 30, CancellationToken ct = default);
+    Task<RagSummary> GetRagSummaryAsync(DateTime from, DateTime to, CancellationToken ct = default);
 }

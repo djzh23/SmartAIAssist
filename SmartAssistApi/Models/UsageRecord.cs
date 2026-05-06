@@ -16,6 +16,9 @@ public sealed class UsageRecord
 
     public int? ResponseTimeMs { get; set; }
     public decimal? EstimatedCostUsd { get; set; }
+    public int RagChunksRetrieved { get; set; }
+    public decimal RagTopScore { get; set; }
+    public int RagLatencyMs { get; set; }
 }
 
 public sealed class UsageStats
@@ -72,4 +75,14 @@ public sealed class TokenDailyRow
     public int Turns { get; set; }
     public long InputTokens { get; set; }
     public decimal CostUsd { get; set; }
+}
+
+public sealed class RagSummary
+{
+    public int TurnsWithRag { get; set; }
+    public int TurnsWithoutRag { get; set; }
+    public decimal AvgChunksRetrieved { get; set; }
+    public decimal AvgTopScore { get; set; }
+    public decimal AvgRagLatencyMs { get; set; }
+    public decimal RagAdoptionPercent { get; set; }
 }
