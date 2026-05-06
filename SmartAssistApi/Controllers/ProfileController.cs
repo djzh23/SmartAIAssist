@@ -40,6 +40,25 @@ public class ProfileController(
         });
     }
 
+    private static void QueueProfileIngestion(
+        ICareerMemoryIngester ingester,
+        ILogger logger,
+        string userId,
+        CareerProfile profile)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ingester.IngestProfileAsync(userId, profile, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Profile memory ingestion failed for user {UserId}", userId);
+            }
+        });
+    }
+
     private void SetCareerProfileStorageHeaders()
     {
         var info = profileService.GetBackendInfo();
@@ -106,6 +125,9 @@ public class ProfileController(
             request.LevelLabel,
             request.CurrentRole,
             request.Goals ?? new List<string>());
+        var onboardingProfile = await profileService.GetProfile(userId).ConfigureAwait(false);
+        if (onboardingProfile is not null)
+            QueueProfileIngestion(careerMemoryIngester, logger, userId, onboardingProfile);
         SetCareerProfileStorageHeaders();
         return Ok(new { success = true });
     }
@@ -186,6 +208,9 @@ public class ProfileController(
             return Unauthorized();
 
         await profileService.SetSkills(userId, request.Skills ?? new List<string>());
+        var skillsProfile = await profileService.GetProfile(userId).ConfigureAwait(false);
+        if (skillsProfile is not null)
+            QueueProfileIngestion(careerMemoryIngester, logger, userId, skillsProfile);
         SetCareerProfileStorageHeaders();
         return Ok(new { success = true });
     }
@@ -502,6 +527,7 @@ public class ProfileController(
         try
         {
             await profileService.SaveProfile(userId, profile);
+            QueueProfileIngestion(careerMemoryIngester, logger, userId, profile);
             SetCareerProfileStorageHeaders();
             return Ok(new { success = true });
         }

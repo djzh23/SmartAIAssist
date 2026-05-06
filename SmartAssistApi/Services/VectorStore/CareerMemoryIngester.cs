@@ -104,6 +104,89 @@ public sealed class CareerMemoryIngester(
         await UpsertChunksAsync(userId, "jobanalyzer", chunks, ct).ConfigureAwait(false);
     }
 
+    public async Task IngestInsightAsync(string userId, LearningInsight insight, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(insight.Content))
+            return;
+
+        var chunkType = insight.Category switch
+        {
+            "skill_gap" => "skill_gap",
+            "action_item" => "action_item",
+            _ => "conversation_insight",
+        };
+        var content = string.IsNullOrWhiteSpace(insight.Title)
+            ? insight.Content.Trim()
+            : $"{insight.Title.Trim()}: {insight.Content.Trim()}";
+
+        var chunks = new List<MemoryChunk>
+        {
+            new(
+                ChunkType: chunkType,
+                Content: content,
+                JobTitle: null,
+                Company: null,
+                SessionId: "learning_insight",
+                JobApplicationId: NormalizeNullable(insight.JobApplicationId),
+                CreatedAt: insight.CreatedAt == default ? DateTimeOffset.UtcNow : insight.CreatedAt),
+        };
+        await UpsertChunksAsync(userId, NormalizeToolType(insight.SourceTool ?? "general"), chunks, ct).ConfigureAwait(false);
+    }
+
+    public async Task IngestProfileAsync(string userId, CareerProfile profile, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+            return;
+
+        await db.CareerMemory
+            .Where(x => x.UserId == userId && x.SourceTool == "career_profile")
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(false);
+
+        var chunks = new List<MemoryChunk>();
+        if (profile.Skills.Count > 0)
+            chunks.Add(new MemoryChunk(
+                ChunkType: "cv_section",
+                Content: $"Skills: {string.Join(", ", profile.Skills.Take(40))}",
+                JobTitle: null,
+                Company: null,
+                SessionId: "profile",
+                JobApplicationId: null,
+                CreatedAt: DateTimeOffset.UtcNow));
+
+        foreach (var exp in profile.Experience.Take(10))
+        {
+            var line = string.Join(" — ", new[] { exp.Title, exp.Company, exp.Summary }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            if (line.Trim().Length < 24)
+                continue;
+            chunks.Add(new MemoryChunk(
+                ChunkType: "cv_section",
+                Content: $"Erfahrung: {line.Trim()}",
+                JobTitle: null,
+                Company: null,
+                SessionId: "profile",
+                JobApplicationId: null,
+                CreatedAt: DateTimeOffset.UtcNow));
+        }
+
+        if (profile.Goals.Count > 0)
+        {
+            chunks.Add(new MemoryChunk(
+                ChunkType: "action_item",
+                Content: $"Karriereziele: {string.Join(", ", profile.Goals.Take(12))}",
+                JobTitle: null,
+                Company: null,
+                SessionId: "profile",
+                JobApplicationId: null,
+                CreatedAt: DateTimeOffset.UtcNow));
+        }
+
+        if (chunks.Count == 0)
+            return;
+
+        await UpsertChunksAsync(userId, "career_profile", chunks, ct).ConfigureAwait(false);
+    }
+
     private static bool ShouldIngest(string userId, string userMessage, string assistantReply) =>
         !string.IsNullOrWhiteSpace(userId)
         && userMessage.Trim().Length >= 80

@@ -25,4 +25,10 @@ public interface ICareerMemoryIngester
         string analysisReply,
         string? jobApplicationId = null,
         CancellationToken ct = default);
+
+    /// <summary>Speichert LearningInsights zusätzlich im Career-Memory-Store.</summary>
+    Task IngestInsightAsync(string userId, LearningInsight insight, CancellationToken ct = default);
+
+    /// <summary>Speichert strukturierte Profil-Chunks für späteres Retrieval.</summary>
+    Task IngestProfileAsync(string userId, CareerProfile profile, CancellationToken ct = default);
 }

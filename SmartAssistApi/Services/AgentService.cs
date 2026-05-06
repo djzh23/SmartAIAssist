@@ -467,7 +467,19 @@ public class AgentService(
         }
 
         foreach (var insight in insights.Take(2))
+        {
             await learningMemoryService.AddInsight(userId, insight, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var ingester = scope.ServiceProvider.GetRequiredService<ICareerMemoryIngester>();
+                await ingester.IngestInsightAsync(userId, insight, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to ingest insight into career memory for user {UserId}", userId);
+            }
+        }
     }
 
     /// <summary>
