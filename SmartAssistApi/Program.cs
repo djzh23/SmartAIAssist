@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Pgvector.EntityFrameworkCore;
 using Serilog;
 using CvStudio.Application;
 using CvStudio.Infrastructure;
@@ -118,7 +119,7 @@ var registerPostgres = !string.IsNullOrWhiteSpace(supabaseConnectionString);
 if (registerPostgres)
 {
     builder.Services.AddDbContext<SmartAssistDbContext>(options =>
-        options.UseNpgsql(supabaseConnectionString));
+        options.UseNpgsql(supabaseConnectionString, npgsql => npgsql.UseVector()));
     builder.Services.AddScoped<ChatNotesPostgresService>();
     builder.Services.AddScoped<ApplicationsPostgresService>();
     builder.Services.AddScoped<CareerProfilePostgresService>();
@@ -167,7 +168,10 @@ builder.Services.AddHttpClient<CareerProfileRedisService>();
 builder.Services.AddScoped<CareerProfileRedisService>();
 builder.Services.AddHttpClient<TokenTrackingRedisService>();
 builder.Services.AddScoped<TokenTrackingService>();
-builder.Services.AddScoped<IUsageTrackingService, NoopUsageTrackingService>();
+if (!registerPostgres)
+{
+    builder.Services.AddScoped<IUsageTrackingService, NoopUsageTrackingService>();
+}
 builder.Services.AddHttpClient<UpstashRedisStringStore>();
 builder.Services.AddScoped<IRedisStringStore>(sp => sp.GetRequiredService<UpstashRedisStringStore>());
 builder.Services.AddScoped<LearningMemoryRedisService>();
