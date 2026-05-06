@@ -60,4 +60,18 @@ public sealed record SystemPromptParts(string CachedPrefix, string DynamicToolSu
         var newDynamic = string.IsNullOrEmpty(d) ? block.TrimEnd() : $"{block}{d}";
         return this with { DynamicToolSuffix = newDynamic };
     }
+
+    /// <summary>Appends dynamic RAG context to the uncached system block.</summary>
+    public SystemPromptParts WithRagContext(string ragBlock)
+    {
+        if (string.IsNullOrWhiteSpace(ragBlock))
+            return this;
+
+        var dynamic = DynamicToolSuffix ?? string.Empty;
+        var merged = string.IsNullOrWhiteSpace(dynamic)
+            ? ragBlock.Trim()
+            : $"{dynamic}\n\n{ragBlock.Trim()}";
+
+        return this with { DynamicToolSuffix = merged };
+    }
 }

@@ -19,6 +19,7 @@ public class AgentService(
     IJobContextExtractor jobExtractor,
     GroqChatCompletionService groqChat,
     LearningMemoryService learningMemoryService,
+    ICareerMemoryRetriever memoryRetriever,
     IServiceScopeFactory scopeFactory,
     IOptions<GroqOptions> groqOptions,
     ILogger<AgentService> logger) : IAgentService
@@ -91,6 +92,24 @@ public class AgentService(
         var promptWithSummary = string.IsNullOrWhiteSpace(context.ConversationSummary)
             ? promptParts
             : promptParts.WithConversationSummary(context.ConversationSummary);
+
+        var ragContext = string.Empty;
+        try
+        {
+            var (queryText, filter, topK) = RetrievalStrategyFactory.BuildStrategy(toolType, primaryUserMessage, context);
+            var ragMemories = await memoryRetriever
+                .RetrieveAsync(scopeUserId, queryText, filter, topK, 0.55f, CancellationToken.None)
+                .ConfigureAwait(false);
+            ragContext = RagContextFormatter.FormatForSystemPrompt(ragMemories);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "RAG retrieval failed; proceeding without memory context. SessionId {SessionId}", sessionId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(ragContext))
+            promptWithSummary = promptWithSummary.WithRagContext(ragContext);
+
         LogCachedPrefixEffectiveness(toolType, request.SessionId, promptWithSummary);
 
         var history = await conversationService.GetHistoryAsync(scopeUserId, sessionId, toolType);
