@@ -6,7 +6,7 @@ public sealed class EmbeddingOptions
 
     public string Provider { get; set; } = "onnx";
 
-    public string ModelPath { get; set; } = "Models/model.onnx";
+    public string ModelPath { get; set; } = "Models/model-2.onnx";
 
     public string VocabPath { get; set; } = "Models/vocab.txt";
 
