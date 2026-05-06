@@ -21,7 +21,6 @@ public class AgentService(
     GroqChatCompletionService groqChat,
     LearningMemoryService learningMemoryService,
     ICareerMemoryRetriever memoryRetriever,
-    IUsageTrackingService usageTracking,
     IServiceScopeFactory scopeFactory,
     IOptions<GroqOptions> groqOptions,
     ILogger<AgentService> logger) : IAgentService
@@ -313,6 +312,8 @@ public class AgentService(
         {
             try
             {
+                using var scope = scopeFactory.CreateScope();
+                var usageTracking = scope.ServiceProvider.GetRequiredService<IUsageTrackingService>();
                 var record = new UsageRecord
                 {
                     UserId = userId,
