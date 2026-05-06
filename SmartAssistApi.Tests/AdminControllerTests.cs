@@ -43,6 +43,11 @@ public class AdminControllerTests
         return mock.Object;
     }
 
+    private static Mock<IUsageTrackingService> CreateUsageTrackingMock()
+    {
+        return new Mock<IUsageTrackingService>();
+    }
+
     [Fact]
     public async Task GetDashboard_UserNotInAdminList_Returns403()
     {
@@ -50,7 +55,8 @@ public class AdminControllerTests
         var userCtx = MockUserContext("normal-user");
 
         var tracking = CreateTrackingMock(config);
-        var controller = new AdminController(tracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
+        var usageTracking = CreateUsageTrackingMock();
+        var controller = new AdminController(tracking.Object, usageTracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -73,7 +79,8 @@ public class AdminControllerTests
             .Setup(t => t.GetDashboardDataAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AdminDashboardData());
 
-        var controller = new AdminController(tracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
+        var usageTracking = CreateUsageTrackingMock();
+        var controller = new AdminController(tracking.Object, usageTracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -92,7 +99,8 @@ public class AdminControllerTests
         var userCtx = MockUserContext("any-user");
 
         var tracking = CreateTrackingMock(config);
-        var controller = new AdminController(tracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
+        var usageTracking = CreateUsageTrackingMock();
+        var controller = new AdminController(tracking.Object, usageTracking.Object, userCtx, config, Mock.Of<ILogger<AdminController>>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
