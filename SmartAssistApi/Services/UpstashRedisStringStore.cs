@@ -10,30 +10,37 @@ public class UpstashRedisStringStore(
     IConfiguration config,
     HttpClient http) : IRedisStringStore
 {
-    private readonly string _restUrl = RequireUrl(config["Upstash:RestUrl"]);
-    private readonly string _restToken = RequireToken(config["Upstash:RestToken"]);
+    private readonly string? _restUrl = NormalizeUrl(config["Upstash:RestUrl"]);
+    private readonly string? _restToken = NormalizeToken(config["Upstash:RestToken"]);
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private static string RequireUrl(string? url)
+    private static string? NormalizeUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))
-            throw new InvalidOperationException("Upstash:RestUrl is missing.");
+            return null;
         return url.Trim().TrimEnd('/');
     }
 
-    private static string RequireToken(string? token)
+    private static string? NormalizeToken(string? token)
     {
         if (string.IsNullOrWhiteSpace(token))
-            throw new InvalidOperationException("Upstash:RestToken is missing.");
+            return null;
         return token.Trim();
+    }
+
+    private void EnsureConfigured()
+    {
+        if (string.IsNullOrWhiteSpace(_restUrl) || string.IsNullOrWhiteSpace(_restToken))
+            throw new InvalidOperationException("Upstash Redis is not configured. Set Upstash:RestUrl and Upstash:RestToken.");
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
+        EnsureConfigured();
         var relative = path.StartsWith('/') ? path : "/" + path;
         var combined = $"{_restUrl}{relative}";
         var req = new HttpRequestMessage(method, combined);

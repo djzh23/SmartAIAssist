@@ -10,8 +10,8 @@ namespace SmartAssistApi.Services;
 /// <summary>Token usage metrics in Redis (Upstash REST pipeline).</summary>
 public class TokenTrackingRedisService(IConfiguration config, HttpClient http, ILogger<TokenTrackingRedisService> logger)
 {
-    private readonly string _restUrl = config["Upstash:RestUrl"] ?? throw new InvalidOperationException("Upstash:RestUrl missing");
-    private readonly string _restToken = config["Upstash:RestToken"] ?? throw new InvalidOperationException("Upstash:RestToken missing");
+    private readonly string? _restUrl = Normalize(config["Upstash:RestUrl"]);
+    private readonly string? _restToken = Normalize(config["Upstash:RestToken"]);
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -563,6 +563,7 @@ public class TokenTrackingRedisService(IConfiguration config, HttpClient http, I
 
     private async Task PipelineAsync(object[][] commands, string operation)
     {
+        EnsureConfigured();
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{_restUrl}/pipeline")
         {
             Content = new StringContent(JsonSerializer.Serialize(commands, JsonOpts), System.Text.Encoding.UTF8, "application/json"),
@@ -668,9 +669,19 @@ public class TokenTrackingRedisService(IConfiguration config, HttpClient http, I
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
+        EnsureConfigured();
         var req = new HttpRequestMessage(method, $"{_restUrl}{path}");
         req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_restToken}");
         return req;
+    }
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private void EnsureConfigured()
+    {
+        if (string.IsNullOrWhiteSpace(_restUrl) || string.IsNullOrWhiteSpace(_restToken))
+            throw new InvalidOperationException("Upstash Redis is not configured. Set Upstash:RestUrl and Upstash:RestToken.");
     }
 
     private static long ParseLong(object? result, string operation)

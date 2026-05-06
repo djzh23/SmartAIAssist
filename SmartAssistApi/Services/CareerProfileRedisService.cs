@@ -16,8 +16,8 @@ public sealed class CareerProfileRedisService(
     HttpClient http,
     ILogger<CareerProfileRedisService> logger)
 {
-    private readonly string _restUrl = RequireUpstashRestUrl(config["Upstash:RestUrl"]);
-    private readonly string _restToken = RequireUpstashRestToken(config["Upstash:RestToken"]);
+    private readonly string? _restUrl = NormalizeUpstashRestUrl(config["Upstash:RestUrl"]);
+    private readonly string? _restToken = NormalizeUpstashRestToken(config["Upstash:RestToken"]);
 
     public static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
@@ -28,13 +28,10 @@ public sealed class CareerProfileRedisService(
     private static string CvRawKey(string userId) => $"profile:{userId}:cv_raw";
     private static string ProfileVersionKey(string userId) => $"profile_version:{userId}";
 
-    private static string RequireUpstashRestUrl(string? url)
+    private static string? NormalizeUpstashRestUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))
-        {
-            throw new InvalidOperationException(
-                "Upstash:RestUrl is missing or empty. Set Upstash:RestUrl (or UPSTASH_REDIS_REST_URL) in user secrets, appsettings, or environment.");
-        }
+            return null;
 
         var trimmed = url.Trim().TrimEnd('/');
         if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute)
@@ -47,21 +44,27 @@ public sealed class CareerProfileRedisService(
         return trimmed;
     }
 
-    private static string RequireUpstashRestToken(string? token)
+    private static string? NormalizeUpstashRestToken(string? token)
     {
         if (string.IsNullOrWhiteSpace(token))
-        {
-            throw new InvalidOperationException(
-                "Upstash:RestToken is missing or empty. Set Upstash:RestToken (or UPSTASH_REDIS_REST_TOKEN) in user secrets, appsettings, or environment.");
-        }
+            return null;
 
         return token.Trim();
     }
 
+    private void EnsureConfigured()
+    {
+        if (string.IsNullOrWhiteSpace(_restUrl) || string.IsNullOrWhiteSpace(_restToken))
+            throw new InvalidOperationException("Upstash Redis is not configured. Set Upstash:RestUrl and Upstash:RestToken.");
+    }
+
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
+        EnsureConfigured();
+        var restUrl = _restUrl!;
+        var restToken = _restToken!;
         var relative = path.StartsWith('/') ? path : "/" + path;
-        var combined = $"{_restUrl.TrimEnd('/')}{relative}";
+        var combined = $"{restUrl.TrimEnd('/')}{relative}";
         if (!Uri.TryCreate(combined, UriKind.Absolute, out _))
         {
             throw new InvalidOperationException(
@@ -69,7 +72,7 @@ public sealed class CareerProfileRedisService(
         }
 
         var req = new HttpRequestMessage(method, combined);
-        req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_restToken}");
+        req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {restToken}");
         return req;
     }
 

@@ -6,8 +6,8 @@ namespace SmartAssistApi.Services;
 /// <summary>Usage limits and Stripe-related keys in Redis (Upstash).</summary>
 public class UsageRedisService(IConfiguration config, HttpClient http)
 {
-    private readonly string _restUrl = config["Upstash:RestUrl"] ?? throw new InvalidOperationException("Upstash:RestUrl missing");
-    private readonly string _restToken = config["Upstash:RestToken"] ?? throw new InvalidOperationException("Upstash:RestToken missing");
+    private readonly string? _restUrl = Normalize(config["Upstash:RestUrl"]);
+    private readonly string? _restToken = Normalize(config["Upstash:RestToken"]);
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -53,9 +53,19 @@ public class UsageRedisService(IConfiguration config, HttpClient http)
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
+        EnsureConfigured();
         var req = new HttpRequestMessage(method, $"{_restUrl}{path}");
         req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_restToken}");
         return req;
+    }
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private void EnsureConfigured()
+    {
+        if (string.IsNullOrWhiteSpace(_restUrl) || string.IsNullOrWhiteSpace(_restToken))
+            throw new InvalidOperationException("Upstash Redis is not configured. Set Upstash:RestUrl and Upstash:RestToken.");
     }
 
     private async Task<string> SendAsync(HttpRequestMessage request, string operation)
