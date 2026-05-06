@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using System.Diagnostics;
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
 using Anthropic.SDK.Messaging;
@@ -20,6 +21,7 @@ public class AgentService(
     GroqChatCompletionService groqChat,
     LearningMemoryService learningMemoryService,
     ICareerMemoryRetriever memoryRetriever,
+    IUsageTrackingService usageTracking,
     IServiceScopeFactory scopeFactory,
     IOptions<GroqOptions> groqOptions,
     ILogger<AgentService> logger) : IAgentService
@@ -29,6 +31,7 @@ public class AgentService(
 
     public async Task<AgentResponse> RunAsync(AgentRequest request)
     {
+        var responseStopwatch = Stopwatch.StartNew();
         var sessionId = request.SessionId
             ?? throw new ArgumentException("SessionId is required", nameof(request.SessionId));
         var scopeUserId = string.IsNullOrWhiteSpace(request.ConversationScopeUserId)
@@ -149,6 +152,17 @@ public class AgentService(
                         CloneContext(context),
                         request.JobApplicationId);
                     var groqModelLabel = $"groq/{groqResult.Model}";
+                    responseStopwatch.Stop();
+                    QueueUsageRecording(
+                        scopeUserId,
+                        toolType,
+                        sessionId,
+                        groqResult.InputTokens,
+                        groqResult.OutputTokens,
+                        0,
+                        0,
+                        groqModelLabel,
+                        responseStopwatch.ElapsedMilliseconds);
                     return new AgentResponse(
                         groqReply,
                         null,
@@ -261,6 +275,18 @@ public class AgentService(
             CloneContext(context),
             request.JobApplicationId);
 
+        responseStopwatch.Stop();
+        QueueUsageRecording(
+            scopeUserId,
+            toolType,
+            sessionId,
+            inputTokens,
+            outputTokens,
+            cacheCreationInputTokens,
+            cacheReadInputTokens,
+            modelUsed,
+            responseStopwatch.ElapsedMilliseconds);
+
         return new AgentResponse(
             finalReply,
             toolUsed,
@@ -270,6 +296,48 @@ public class AgentService(
             modelUsed,
             cacheCreationInputTokens,
             cacheReadInputTokens);
+    }
+
+    private void QueueUsageRecording(
+        string userId,
+        string toolType,
+        string sessionId,
+        int inputTokens,
+        int outputTokens,
+        int cacheCreation,
+        int cacheRead,
+        string? model,
+        long responseTimeMs)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var record = new UsageRecord
+                {
+                    UserId = userId,
+                    ToolType = string.IsNullOrWhiteSpace(toolType) ? "general" : toolType,
+                    SessionId = sessionId,
+                    InputTokens = inputTokens,
+                    OutputTokens = outputTokens,
+                    CacheCreationTokens = cacheCreation,
+                    CacheReadTokens = cacheRead,
+                    Model = model,
+                    ResponseTimeMs = (int)Math.Clamp(responseTimeMs, 0, int.MaxValue),
+                    EstimatedCostUsd = TokenCostCalculator.Estimate(
+                        inputTokens,
+                        outputTokens,
+                        cacheCreation,
+                        cacheRead,
+                        model),
+                };
+                await usageTracking.RecordUsageAsync(record).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Usage recording failed for user {UserId}", userId);
+            }
+        });
     }
 
     private void QueueInsightExtraction(
