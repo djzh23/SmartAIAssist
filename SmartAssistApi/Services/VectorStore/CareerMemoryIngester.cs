@@ -1,23 +1,20 @@
-using System.Text;
-using System.Text.Json;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Options;
-using SmartAssistApi.Configuration;
+using Microsoft.EntityFrameworkCore;
+using Pgvector;
+using SmartAssistApi.Data;
+using SmartAssistApi.Data.Entities;
 using SmartAssistApi.Models;
 using SmartAssistApi.Services.Embeddings;
 
 namespace SmartAssistApi.Services.VectorStore;
 
 public sealed class CareerMemoryIngester(
-    IHttpClientFactory httpClientFactory,
+    SmartAssistDbContext db,
     IEmbeddingService embeddings,
     ILlmSingleCompletionService singleCompletion,
-    IOptions<QdrantOptions> qdrantOptions,
     ILogger<CareerMemoryIngester> logger) : ICareerMemoryIngester
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly QdrantOptions _qdrant = qdrantOptions.Value;
-
     public async Task IngestConversationAsync(
         string userId,
         string toolType,
@@ -30,8 +27,6 @@ public sealed class CareerMemoryIngester(
     {
         if (!ShouldIngest(userId, userMessage, assistantReply))
             return;
-        if (!_qdrant.Enabled)
-            return;
 
         var nuggets = await ExtractNuggetsAsync(userMessage, assistantReply, ct).ConfigureAwait(false);
         if (nuggets.Count == 0)
@@ -43,7 +38,7 @@ public sealed class CareerMemoryIngester(
 
         var chunks = nuggets
             .Select(content => new MemoryChunk(
-                ChunkType: "conversation_summary",
+                ChunkType: DetermineChunkType(content, toolType),
                 Content: content,
                 JobTitle: NormalizeNullable(jobTitle),
                 Company: NormalizeNullable(company),
@@ -57,8 +52,13 @@ public sealed class CareerMemoryIngester(
 
     public async Task IngestCvAsync(string userId, string cvText, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(cvText) || !_qdrant.Enabled)
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(cvText))
             return;
+
+        await db.CareerMemory
+            .Where(x => x.UserId == userId && x.SourceTool == "cv_upload")
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(false);
 
         var chunks = BuildCvChunks(cvText)
             .Select(text => new MemoryChunk(
@@ -84,7 +84,7 @@ public sealed class CareerMemoryIngester(
         string? jobApplicationId = null,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(analysisReply) || !_qdrant.Enabled)
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(analysisReply))
             return;
 
         var chunks = BuildJobAnalysisChunks(analysisReply)
@@ -106,8 +106,8 @@ public sealed class CareerMemoryIngester(
 
     private static bool ShouldIngest(string userId, string userMessage, string assistantReply) =>
         !string.IsNullOrWhiteSpace(userId)
-        && userMessage.Trim().Length >= 40
-        && assistantReply.Trim().Length >= 80;
+        && userMessage.Trim().Length >= 80
+        && assistantReply.Trim().Length >= 200;
 
     private async Task<List<string>> ExtractNuggetsAsync(string userMessage, string assistantReply, CancellationToken ct)
     {
@@ -158,42 +158,39 @@ public sealed class CareerMemoryIngester(
             .EmbedBatchAsync(chunks.Select(c => c.Content).ToArray(), ct)
             .ConfigureAwait(false);
 
-        var points = chunks.Select((chunk, idx) => new
+        var entities = new List<CareerMemoryChunkEntity>();
+        for (var idx = 0; idx < chunks.Count; idx++)
         {
-            id = Guid.NewGuid().ToString("D"),
-            vector = vectors[idx],
-            payload = new
+            var chunk = chunks[idx];
+            var hash = ComputeHash(chunk.Content);
+            var exists = await db.CareerMemory
+                .AnyAsync(x => x.UserId == userId && x.ContentHash == hash, ct)
+                .ConfigureAwait(false);
+            if (exists)
+                continue;
+
+            entities.Add(new CareerMemoryChunkEntity
             {
-                user_id = userId,
-                source_tool = sourceTool,
-                chunk_type = chunk.ChunkType,
-                content = chunk.Content,
-                metadata = new
-                {
-                    session_id = chunk.SessionId,
-                    job_title = chunk.JobTitle,
-                    company = chunk.Company,
-                    created_at = chunk.CreatedAt.ToString("O"),
-                    job_application_id = chunk.JobApplicationId,
-                },
-            },
-        }).ToArray();
-
-        var body = JsonSerializer.Serialize(new { points }, JsonOptions);
-        var client = httpClientFactory.CreateClient("qdrant");
-        using var req = new HttpRequestMessage(HttpMethod.Put, $"/collections/{_qdrant.CollectionName}/points?wait=false")
-        {
-            Content = new StringContent(body, Encoding.UTF8, "application/json"),
-        };
-        if (!string.IsNullOrWhiteSpace(_qdrant.ApiKey))
-            req.Headers.Add("api-key", _qdrant.ApiKey);
-
-        using var res = await client.SendAsync(req, ct).ConfigureAwait(false);
-        if (!res.IsSuccessStatusCode)
-        {
-            var err = await res.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            throw new InvalidOperationException($"Qdrant upsert failed ({(int)res.StatusCode}): {err}");
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                SourceTool = sourceTool,
+                ChunkType = chunk.ChunkType,
+                Content = chunk.Content,
+                Embedding = new Vector(vectors[idx]),
+                SessionId = chunk.SessionId,
+                JobTitle = chunk.JobTitle,
+                Company = chunk.Company,
+                JobApplicationId = chunk.JobApplicationId,
+                CreatedAt = chunk.CreatedAt.UtcDateTime,
+                ContentHash = hash,
+            });
         }
+
+        if (entities.Count == 0)
+            return;
+
+        db.CareerMemory.AddRange(entities);
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
     private static IEnumerable<string> BuildCvChunks(string cvText)
@@ -240,6 +237,25 @@ public sealed class CareerMemoryIngester(
 
     private static string NormalizeToolType(string toolType) =>
         string.IsNullOrWhiteSpace(toolType) ? "general" : toolType.Trim().ToLowerInvariant();
+
+    private static string DetermineChunkType(string content, string toolType)
+    {
+        var lower = content.ToLowerInvariant();
+        if (lower.Contains("lücke") || lower.Contains("fehlt") || lower.Contains("gap"))
+            return "skill_gap";
+        if (lower.Contains("nächster schritt") || lower.Contains("aktion") || lower.Contains("todo"))
+            return "action_item";
+        if (NormalizeToolType(toolType) == "jobanalyzer")
+            return "job_analysis";
+        return "conversation_insight";
+    }
+
+    private static string ComputeHash(string content)
+    {
+        var normalized = content.Trim().ToLowerInvariant();
+        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(bytes)[..16];
+    }
 
     private static string? NormalizeNullable(string? value)
     {

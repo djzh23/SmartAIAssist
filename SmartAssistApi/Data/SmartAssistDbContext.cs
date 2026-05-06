@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pgvector.EntityFrameworkCore;
 using SmartAssistApi.Data.Entities;
 
 namespace SmartAssistApi.Data;
@@ -39,8 +40,12 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
 
     public DbSet<CvResumeCategoryAssignmentEntity> CvResumeCategoryAssignments => Set<CvResumeCategoryAssignmentEntity>();
 
+    public DbSet<CareerMemoryChunkEntity> CareerMemory => Set<CareerMemoryChunkEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasPostgresExtension("vector");
+
         modelBuilder.Entity<AppUserEntity>(e =>
         {
             e.ToTable("app_users");
@@ -160,6 +165,15 @@ public sealed class SmartAssistDbContext(DbContextOptions<SmartAssistDbContext> 
             e.Property(x => x.ClerkUserId).HasColumnName("clerk_user_id").HasMaxLength(128).IsRequired();
             e.Property(x => x.CategoryId).HasColumnName("category_id");
             e.HasIndex(x => x.ClerkUserId);
+        });
+
+        modelBuilder.Entity<CareerMemoryChunkEntity>(e =>
+        {
+            e.ToTable("career_memory");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Embedding).HasColumnType("vector(384)");
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => new { x.UserId, x.ContentHash }).IsUnique();
         });
     }
 }
