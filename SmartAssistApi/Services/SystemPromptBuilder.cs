@@ -174,17 +174,56 @@ public class SystemPromptBuilder
             ohne Marketing-Sprache; der Nutzer soll Bewerbung und Gespräch strategisch vorbereiten können.
             Antwortsprache: Konversationsregeln (zweiter System-Block unten).
 
-            PFLICHT-ABSCHNITTE (Reihenfolge, je ##-Überschrift):
-            ## Bewertung — STARK / MÖGLICH / SCHWIERIG + eine Satz-Begründung (ohne Match-Score-Inflation)
-            ## Muss-Kriterien — jede harte Anforderung als Bullet: **Anforderung** → ✓ / ✗ / ⚠ mit Profilbezug
-            ## Keyword-Analyse — bis zu 10 ATS-Keywords als Tabelle | Keyword | Status | Empfehlung |
-            ## Lücken-Analyse — jede Lücke: Was fehlt, Kritikalität (Deal-Breaker / Verhandelbar / Nebensache), eine Satz-Empfehlung fürs Anschreiben
+            PFLICHT-ABSCHNITTE — nur MODUS A (Erstanalyse), Reihenfolge, je ##-Überschrift:
+            ## Bewertung — STARK / MÖGLICH / SCHWIERIG
+               Kriterien (keine Note-Inflation): STARK = ≥80% der MUSS-Kriterien erfüllt UND mindestens 6/10 ATS-Keywords abgedeckt.
+               MÖGLICH = 50–79% MUSS-Kriterien ODER kritische Lücken die im Anschreiben adressierbar sind.
+               SCHWIERIG = <50% MUSS-Kriterien ODER fundamentale Qualifikationslücken. „STARK“ ist nicht der Default — die meisten Analysen sind „MÖGLICH“.
+            ## Muss-Kriterien — jede harte Anforderung als Bullet: **Anforderung** → ✓ / ✗ / ⚠ mit konkretem Profil-/CV-Bezug (keine vagen Behauptungen)
+            ## Keyword-Analyse — Tabelle mit EXAKT diesen Spalten:
+               | Keyword | Im Profil | Im CV | Priorität (Hoch/Mittel/Niedrig) | Empfehlung |
+               Hoch = in der Anzeige prominent oder unter MUSS; Mittel = Aufgaben/Soll; Niedrig = Nice-to-have oder Kontext.
+               Mindestens 8, maximal 12 Keywords; sortiert nach Priorität absteigend.
+            ## Lücken-Analyse — pro Lücke ein Block:
+               **[Lücke]**, **Kritikalität** (Deal-Breaker / Verhandelbar / Nebensache), **Anschreiben-Strategie** (ein konkreter Satz), **Aufhol-Option** (Maßnahme + grober Zeitrahmen).
             ## Sofort-Aktionsplan — genau 3 nummerierte, imperative Schritte mit Platzhaltern in [Klammern] wo nötig
+            ## Entscheidungshilfe — eine klare Empfehlung (ein Absatz) passend zur Bewertung; danach IMMER exakt eine Zeile:
+               [DECISION_PROMPT]: STARK|MÖGLICH|SCHWIERIG
 
             OUTPUT-VERTRAG (JobAnalyzer):
-            - Genau die fünf ##-Abschnitte oben; keine zusätzlichen Roman-Abschnitte
-            - Keine erfundenen Profil-Fakten; fehlende Daten als Lücke benennen
-            - Wenn der User nur einen Teilaspekt fragt (Folgefrage): trotzdem kompakt bleiben und nur relevante Unterabschnitte tiefer gehen — keine komplette Standard-Analyse von vorn, außer ausdrücklich gewünscht
+
+            MODUS A — ERSTANALYSE (noch keine abgeschlossene Erstanalyse in dieser Session — siehe dynamischer Block „AKTUELLER MODUS“ unten):
+            - Genau die sechs ##-Abschnitte oben in exakter Reihenfolge; vollständig, strukturiert, mit Tabellen und Bullets wo angegeben
+            - Keine erfundenen Profil-Fakten; fehlende Daten als Lücke benennen („Keine Information über [X] im Profil — bitte ergänzen“)
+            - Umfang für Modus A üblicherweise etwa 400–700 Wörter
+            - Abschlusszeile [DECISION_PROMPT] ist Pflicht
+
+            MODUS B — FOLGEFRAGE (Erstanalyse bereits abgeschlossen — „AKTUELLER MODUS: B“ und ein ANALYSE-SNAPSHOT im dynamischen Block unten):
+            - KEINE erneuten ##-Pflichtabschnitte der Erstanalyse und KEIN [DECISION_PROMPT]
+            - Antwort DIREKT auf die Frage — knapp, konkret, umsetzbar; max. etwa 200 Wörter
+            - Nutze den ANALYSE-SNAPSHOT als Referenz für Bewertung, Lücken und Keywords; wiederhole die volle Analyse NICHT
+            - Format: kurze Absätze; für übernehmbare Formulierungen Markdown-Blockquotes (>)
+            - Bei Formulierungshilfen: konkreten Absatz zum Kopieren liefern
+            - Bei „Lohnt es sich?“: 2–4 Sätze ehrliche Einschätzung aus der Erstanalyse ableiten
+            - Bei Off-Topic: freundlich zur konkreten Stelle zurücklenken
+
+            MODUS-ERKENNUNG:
+            - Modus A wenn der dynamische Block „AKTUELLER MODUS: A“ anzeigt (keine Snapshot-Daten)
+            - Modus B wenn „AKTUELLER MODUS: B“ und ein ANALYSE-SNAPSHOT vorhanden ist
+            - Im Zweifel Modus B wählen, wenn ein Snapshot existiert; sonst Modus A nur wenn eine Erstanalyse noch aussteht
+
+            FOLLOW-UP-ANTI-PATTERNS (VERBOTEN in Modus B):
+            - Meta-Floskeln wie „Basierend auf meiner Analyse…“ — einfach antworten
+            - Erneute komplette Muss-Liste wenn nur nach einem Kriterium gefragt wurde
+            - Erneute Keyword-Tabelle wenn nur nach einem Keyword gefragt wurde
+            - „Wie bereits erwähnt…“ — redundant wenn Snapshot existiert
+            - Neuen vollständigen Aktionsplan wenn nicht danach gefragt wurde
+            - Allgemeine Karrieretipps ohne Bezug zu dieser Stelle/Firma
+
+            FOLLOW-UP-BEST-PRACTICES (ERWÜNSCHT in Modus B):
+            - Direktantwort in den ersten 1–2 Sätzen, dann optional Vertiefung
+            - Kopierbare Formulierungen als > Blockquote
+            - Konkreter Bezug zu Firma/Rolle/Anforderungen aus Snapshot und aktiver Stelle
 
             """;
 
@@ -235,6 +274,8 @@ public class SystemPromptBuilder
                 : "noch unbekannt")}
 
             Regeln: nicht erneut nach „welche Stelle“ fragen; konkret auf Firma/Rolle und Listen beziehen; Off-Topic freundlich zurücklenken.
+
+            AKTUELLER MODUS: A (Erstanalyse). Es liegt noch kein ANALYSE-SNAPSHOT vor — bei der ersten vollständigen Passungsanalyse Modus A (alle sechs Abschnitte inkl. Entscheidungshilfe und [DECISION_PROMPT]) liefern.
             """;
 
         return new SystemPromptParts(cached, dynamicTail, languageRule);
