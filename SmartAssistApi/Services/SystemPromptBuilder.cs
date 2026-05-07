@@ -250,6 +250,20 @@ public class SystemPromptBuilder
               {context.UserCV[..Math.Min(context.UserCV.Length, 2000)]}
               """;
 
+        var snapshotSection = context.HasCompletedAnalysis && !string.IsNullOrWhiteSpace(context.AnalysisSnapshot)
+            ? $"""
+
+                [ANALYSE-SNAPSHOT — ERGEBNISSE DER ERSTANALYSE]
+                {context.AnalysisSnapshot.Trim()}
+                [ENDE ANALYSE-SNAPSHOT]
+
+                AKTUELLER MODUS: B (Follow-Up). Nutze den Snapshot als Referenz. Wiederhole NICHT die volle Analyse.
+                """
+            : """
+
+                AKTUELLER MODUS: A (Erstanalyse). Liefere die vollständige Analyse mit allen sechs Pflichtabschnitten inkl. Entscheidungshilfe und Zeile [DECISION_PROMPT], sobald du die erste vollständige Passungsanalyse ausführst.
+                """;
+
         var dynamicTail = $"""
 
             AKTIVE STELLE (immer verwenden):
@@ -275,7 +289,7 @@ public class SystemPromptBuilder
 
             Regeln: nicht erneut nach „welche Stelle“ fragen; konkret auf Firma/Rolle und Listen beziehen; Off-Topic freundlich zurücklenken.
 
-            AKTUELLER MODUS: A (Erstanalyse). Es liegt noch kein ANALYSE-SNAPSHOT vor — bei der ersten vollständigen Passungsanalyse Modus A (alle sechs Abschnitte inkl. Entscheidungshilfe und [DECISION_PROMPT]) liefern.
+            {snapshotSection}
             """;
 
         return new SystemPromptParts(cached, dynamicTail, languageRule);

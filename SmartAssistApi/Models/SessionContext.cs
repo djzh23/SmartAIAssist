@@ -20,6 +20,12 @@ public class SessionContext
     /// <summary>Kompakte Anti-Wiederholungs-Notizen aus früheren Turns (nicht prompt-gecacht).</summary>
     public string? ConversationSummary { get; set; }
 
+    /// <summary>Kompakter Snapshot der letzten vollständigen Stellenanalyse (uncached; überlebt History-Trimming).</summary>
+    public string? AnalysisSnapshot { get; set; }
+
+    /// <summary>True sobald eine vollständige Erstanalyse erkannt und in <see cref="AnalysisSnapshot"/> übernommen wurde.</summary>
+    public bool HasCompletedAnalysis { get; set; }
+
     // Programming context
     public string? ProgrammingLanguage { get; set; }
     public string? CurrentCodeContext { get; set; }

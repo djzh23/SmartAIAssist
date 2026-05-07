@@ -102,6 +102,33 @@ public class SystemPromptBuilderTests
     }
 
     [Fact]
+    public void BuildPromptParts_JobAnalyzer_WithAnalysisSnapshot_ShowsModusBInUncached()
+    {
+        var context = new SessionContext
+        {
+            ConversationLanguage = "de",
+            HasCompletedAnalysis = true,
+            AnalysisSnapshot = "DECISION: MÖGLICH\nBEWERTUNG: Test.",
+            Job = new JobContext
+            {
+                IsAnalyzed = true,
+                JobTitle = "Dev",
+                CompanyName = "Acme",
+                Location = "Berlin",
+                KeyRequirements = ["C#"],
+                Keywords = ["dotnet"],
+                RawJobText = "We need a developer."
+            }
+        };
+        var request = new AgentRequest("Follow-up", SessionId: "s1", ToolType: "jobanalyzer");
+        var parts = _sut.BuildPromptParts("jobanalyzer", context, request);
+
+        Assert.Contains("ANALYSE-SNAPSHOT", parts.UncachedSystemBlock);
+        Assert.Contains("AKTUELLER MODUS: B", parts.UncachedSystemBlock);
+        Assert.DoesNotContain("AKTUELLER MODUS: A", parts.UncachedSystemBlock);
+    }
+
+    [Fact]
     public void BuildPromptParts_LanguageLearning_CacheableBlockIncludesLanguagePair()
     {
         var context = new SessionContext { ConversationLanguage = "de" };

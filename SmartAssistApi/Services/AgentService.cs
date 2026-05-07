@@ -139,6 +139,14 @@ public class AgentService(
                 {
                     history.Add(new Message(RoleType.Assistant, groqReply));
                     await PostProcessInterviewPrepAsync(scopeUserId, sessionId, toolType, groqReply);
+                    await TryCaptureJobAnalysisSnapshotAsync(
+                            scopeUserId,
+                            sessionId,
+                            toolType,
+                            groqReply,
+                            context.HasCompletedAnalysis)
+                        .ConfigureAwait(false);
+                    context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
                     await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
                     await AppendConversationSummaryAsync(scopeUserId, sessionId, toolType, primaryUserMessage, groqReply)
                         .ConfigureAwait(false);
@@ -291,6 +299,15 @@ public class AgentService(
         }
 
         await PostProcessInterviewPrepAsync(scopeUserId, sessionId, toolType, finalReply);
+
+        await TryCaptureJobAnalysisSnapshotAsync(
+                scopeUserId,
+                sessionId,
+                toolType,
+                finalReply,
+                context.HasCompletedAnalysis)
+            .ConfigureAwait(false);
+        context = await conversationService.GetContextAsync(scopeUserId, sessionId, toolType);
 
         await conversationService.SaveHistoryAsync(scopeUserId, sessionId, toolType, history);
 
@@ -474,6 +491,8 @@ public class AgentService(
             InterviewJobTitle = source.InterviewJobTitle,
             InterviewCompany = source.InterviewCompany,
             ConversationSummary = source.ConversationSummary,
+            AnalysisSnapshot = source.AnalysisSnapshot,
+            HasCompletedAnalysis = source.HasCompletedAnalysis,
             ProgrammingLanguage = source.ProgrammingLanguage,
             CurrentCodeContext = source.CurrentCodeContext,
             Job = source.Job is null
@@ -851,6 +870,29 @@ public class AgentService(
                 primaryUserQuestion,
                 assistantReply);
         }).ConfigureAwait(false);
+    }
+
+    private async Task TryCaptureJobAnalysisSnapshotAsync(
+        string scopeUserId,
+        string sessionId,
+        string toolType,
+        string assistantReply,
+        bool alreadyHasCompletedAnalysis)
+    {
+        if (toolType != "jobanalyzer" || alreadyHasCompletedAnalysis)
+            return;
+
+        var snapshot = JobAnalysisSnapshotExtractor.TryBuild(assistantReply);
+        if (string.IsNullOrEmpty(snapshot))
+            return;
+
+        await conversationService
+            .UpdateContextAsync(scopeUserId, sessionId, toolType, ctx =>
+            {
+                ctx.AnalysisSnapshot = snapshot;
+                ctx.HasCompletedAnalysis = true;
+            })
+            .ConfigureAwait(false);
     }
 
     private static bool ShouldRejectGroqReply(string reply, string toolType)
