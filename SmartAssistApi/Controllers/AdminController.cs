@@ -199,7 +199,98 @@ public class AdminController(
 
         try
         {
-            var data = await tracking.GetDashboardDataAsync(cancellationToken).ConfigureAwait(false);
+            var now = DateTime.UtcNow;
+            var todayStart = now.Date;
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+            var todaySummary = await usageTracking.GetTokenSummaryAsync(todayStart, todayStart.AddDays(1), cancellationToken)
+                .ConfigureAwait(false);
+            var monthSummary = await usageTracking.GetTokenSummaryAsync(monthStart, now.AddDays(1), cancellationToken)
+                .ConfigureAwait(false);
+            var byToolRows = await usageTracking.GetTokenByToolAsync(todayStart, todayStart.AddDays(1), cancellationToken)
+                .ConfigureAwait(false);
+            var byModelRows = await usageTracking.GetTokenByModelAsync(todayStart, todayStart.AddDays(1), cancellationToken)
+                .ConfigureAwait(false);
+            var dailyRows = await usageTracking.GetTokenDailyAsync(30, cancellationToken).ConfigureAwait(false);
+            var activeUsers = await usageTracking.GetActiveUsersAsync(todayStart.AddDays(-6), todayStart.AddDays(1), 50, cancellationToken)
+                .ConfigureAwait(false);
+
+            var byTool = byToolRows.ToDictionary(
+                x => x.ToolType,
+                x => new ToolUsage
+                {
+                    Tool = x.ToolType,
+                    Messages = x.Turns,
+                    InputTokens = (int)Math.Clamp(x.InputTokens, 0, int.MaxValue),
+                    OutputTokens = (int)Math.Clamp(x.OutputTokens, 0, int.MaxValue),
+                    CostUsd = x.CostUsd,
+                },
+                StringComparer.OrdinalIgnoreCase);
+
+            var byModel = byModelRows.ToDictionary(
+                x => x.Model,
+                x => new ModelUsage
+                {
+                    Model = x.Model,
+                    Provider = x.Model.Contains("groq", StringComparison.OrdinalIgnoreCase) ? "Groq" : "Anthropic",
+                    Messages = x.Turns,
+                    InputTokens = 0,
+                    OutputTokens = 0,
+                    CostUsd = x.CostUsd,
+                },
+                StringComparer.OrdinalIgnoreCase);
+
+            var groqMessagesToday = byModelRows
+                .Where(x => x.Model.Contains("groq", StringComparison.OrdinalIgnoreCase))
+                .Sum(x => x.Turns);
+            var allModelMessagesToday = byModelRows.Sum(x => x.Turns);
+
+            var topUsers = activeUsers
+                .OrderByDescending(x => x.TurnsCount)
+                .Take(50)
+                .Select(x => new UserUsageSummary
+                {
+                    UserId = x.UserId,
+                    Plan = "free",
+                    TotalMessages = x.TurnsCount,
+                    TotalInputTokens = 0,
+                    TotalOutputTokens = 0,
+                    TotalCostUsd = x.TotalEstimatedCostUsd,
+                    ByModel = new Dictionary<string, ModelUsage>(),
+                    ByTool = new Dictionary<string, ToolUsage>(),
+                })
+                .ToList();
+
+            var data = new AdminDashboardData
+            {
+                TotalCostToday = todaySummary.TotalEstimatedCostUsd,
+                TotalCostThisMonth = monthSummary.TotalEstimatedCostUsd,
+                TotalMessagesToday = todaySummary.TotalTurns,
+                TotalMessagesThisMonth = monthSummary.TotalTurns,
+                TotalInputTokensToday = (int)Math.Clamp(todaySummary.TotalInputTokens, 0, int.MaxValue),
+                TotalOutputTokensToday = (int)Math.Clamp(todaySummary.TotalOutputTokens, 0, int.MaxValue),
+                GroqMessagesToday = groqMessagesToday,
+                OtherLlmMessagesToday = Math.Max(0, allModelMessagesToday - groqMessagesToday),
+                ActiveUsersToday = activeUsers.Count(x => x.LastSeenAt >= todayStart),
+                TotalRegisteredUsers = activeUsers.Count,
+                PayingUsers = 0,
+                MonthlyRevenue = 0,
+                MonthlyProfit = 0,
+                TopUsers = topUsers,
+                ByModel = byModel,
+                ByTool = byTool,
+                Last30Days = dailyRows.Select(x => new DailyUsage
+                {
+                    Date = x.Date,
+                    Messages = x.Turns,
+                    InputTokens = (int)Math.Clamp(x.InputTokens, 0, int.MaxValue),
+                    OutputTokens = 0,
+                    CostUsd = x.CostUsd,
+                    ActiveUsers = 0,
+                }).ToList(),
+                LlmCostPolicyNote =
+                    "Groq: in SmartAssist mit 0 USD bewertet (kostenloses Kontingent). Anthropic (Haiku/Sonnet) nach konfigurierter Preisliste.",
+            };
             return Ok(data);
         }
         catch (Exception ex)

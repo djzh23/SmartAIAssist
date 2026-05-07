@@ -19,6 +19,12 @@ public sealed class GroqOptions
     /// <summary>When true and <see cref="ApiKey"/> is set, agent tries Groq before Anthropic for eligible requests.</summary>
     public bool UseAsPrimary { get; set; } = true;
 
+    /// <summary>
+    /// When false, agent will not fall back to Anthropic if Groq fails.
+    /// Useful to enforce cost control in production.
+    /// </summary>
+    public bool AllowAnthropicFallback { get; set; } = true;
+
     public double Temperature { get; set; } = 0.7;
 }
 

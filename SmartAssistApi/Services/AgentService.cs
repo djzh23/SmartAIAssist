@@ -125,6 +125,7 @@ public class AgentService(
         if (ShouldTryGroqFirst(toolType, tools)
             && AnthropicMessagesForGroqMapper.TryMap(apiMessages, out var groqMessages))
         {
+            var allowAnthropicFallback = groqOptions.Value.AllowAnthropicFallback;
             var systemCombined = promptWithSummary.ToCombinedPrompt();
             var sampling = GroqInferenceParameters.SamplingFor(toolType);
             var groqResult = await groqChat
@@ -177,6 +178,22 @@ public class AgentService(
                     "Groq reply rejected by quality gate; falling back to Anthropic. SessionId {SessionId} ToolType {ToolType}",
                     sessionId,
                     toolType);
+                if (!allowAnthropicFallback)
+                {
+                    logger.LogWarning(
+                        "Anthropic fallback disabled; returning Groq-only failure response. SessionId {SessionId} ToolType {ToolType}",
+                        sessionId,
+                        toolType);
+                    return new AgentResponse(
+                        "Der KI-Dienst ist gerade kurz nicht verfuegbar. Bitte in wenigen Sekunden erneut versuchen.",
+                        null,
+                        null,
+                        0,
+                        0,
+                        $"groq/{groqResult.Model}",
+                        0,
+                        0);
+                }
             }
             else
             {
@@ -185,6 +202,22 @@ public class AgentService(
                     sessionId,
                     toolType,
                     groqResult.Error);
+                if (!allowAnthropicFallback)
+                {
+                    logger.LogWarning(
+                        "Anthropic fallback disabled; returning Groq-only failure response. SessionId {SessionId} ToolType {ToolType}",
+                        sessionId,
+                        toolType);
+                    return new AgentResponse(
+                        "Der KI-Dienst ist gerade kurz nicht verfuegbar. Bitte in wenigen Sekunden erneut versuchen.",
+                        null,
+                        null,
+                        0,
+                        0,
+                        $"groq/{groqResult.Model}",
+                        0,
+                        0);
+                }
             }
         }
 
@@ -633,11 +666,15 @@ public class AgentService(
         {
             if (groqOptions.Value.UseAsPrimary && groqChat.IsConfigured)
             {
+                var allowAnthropicFallback = groqOptions.Value.AllowAnthropicFallback;
                 var groqResult = await groqChat
                     .CompleteAsync(string.Empty, groqMessages, capped, sampling)
                     .ConfigureAwait(false);
                 if (groqResult.Success && !string.IsNullOrWhiteSpace(groqResult.Content))
                     return groqResult.Content.Trim();
+
+                if (!allowAnthropicFallback)
+                    throw new InvalidOperationException("Groq request failed and Anthropic fallback is disabled.");
 
                 logger.LogWarning(
                     "SingleCompletion: Groq failed or empty. Falling back to Anthropic. Error {Error}",
@@ -646,6 +683,8 @@ public class AgentService(
         }
         catch (Exception ex)
         {
+            if (!groqOptions.Value.AllowAnthropicFallback)
+                throw;
             logger.LogWarning(ex, "SingleCompletion: Groq threw; falling back to Anthropic.");
         }
 
