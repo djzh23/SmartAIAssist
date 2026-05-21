@@ -292,19 +292,25 @@ public sealed class TokenTrackingPostgresService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var rows = new List<UserUsageSummary>();
+        if (dayUsers.Count == 0)
+            return [];
+
+        var userIds = dayUsers.Select(u => u.ClerkUserId).ToList();
+        var modelCosts = await LoadModelCostsForDayAsync(userIds, ds, cancellationToken).ConfigureAwait(false);
+        var plans = await LoadPlansAsync(userIds, cancellationToken).ConfigureAwait(false);
+        var topTools = await LoadTopToolsForDayAsync(userIds, ds, cancellationToken).ConfigureAwait(false);
+
+        var rows = new List<UserUsageSummary>(dayUsers.Count);
         foreach (var u in dayUsers)
         {
-            var (llmCost, hadModelRows) = await SumUserDayLlmCostUsdAsync(u.ClerkUserId, ds, cancellationToken).ConfigureAwait(false);
+            var hadModelRows = modelCosts.TryGetValue(u.ClerkUserId, out var llmCost);
             var displayCost = hadModelRows ? llmCost : u.CostUsd;
 
-            var plan = await GetPlanFromDbAsync(u.ClerkUserId, cancellationToken).ConfigureAwait(false);
-            var topTool = await GetTopToolForUserDayAsync(u.ClerkUserId, ds, cancellationToken).ConfigureAwait(false);
             rows.Add(new UserUsageSummary
             {
                 UserId = u.ClerkUserId,
-                Plan = plan,
-                TopTool = topTool,
+                Plan = plans.TryGetValue(u.ClerkUserId, out var p) ? p : ResolveDefaultPlan(u.ClerkUserId),
+                TopTool = topTools.GetValueOrDefault(u.ClerkUserId),
                 TotalMessages = (int)u.MessageCount,
                 TotalInputTokens = (int)u.InputTokens,
                 TotalOutputTokens = (int)u.OutputTokens,
@@ -345,23 +351,26 @@ public sealed class TokenTrackingPostgresService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var rows = new List<UserUsageSummary>();
-        foreach (var a in agg)
+        var eligible = agg.Where(a => a.Messages != 0 || a.CostHash != 0).ToList();
+        if (eligible.Count == 0)
+            return [];
+
+        var userIds = eligible.Select(a => a.UserId!).ToList();
+        var modelCosts = await LoadModelCostsForRangeAsync(userIds, startDate, endDate, cancellationToken).ConfigureAwait(false);
+        var plans = await LoadPlansAsync(userIds, cancellationToken).ConfigureAwait(false);
+        var topTools = await LoadTopToolsForRangeAsync(userIds, startDate, endDate, cancellationToken).ConfigureAwait(false);
+
+        var rows = new List<UserUsageSummary>(eligible.Count);
+        foreach (var a in eligible)
         {
-            if (a.Messages == 0 && a.CostHash == 0)
-                continue;
+            var hadModels = modelCosts.TryGetValue(a.UserId!, out var llmCost);
+            var displayCost = hadModels ? llmCost : a.CostHash;
 
-            var modelCost = await SumUserRangeLlmCostUsdAsync(a.UserId!, startDate, endDate, cancellationToken).ConfigureAwait(false);
-            var hadModels = modelCost.HadRows;
-            var displayCost = hadModels ? modelCost.CostUsd : a.CostHash;
-
-            var plan = await GetPlanFromDbAsync(a.UserId!, cancellationToken).ConfigureAwait(false);
-            var topTool = await GetTopToolForUserRangeAsync(a.UserId!, startDate, endDate, cancellationToken).ConfigureAwait(false);
             rows.Add(new UserUsageSummary
             {
                 UserId = a.UserId!,
-                Plan = plan,
-                TopTool = topTool,
+                Plan = plans.TryGetValue(a.UserId!, out var p) ? p : ResolveDefaultPlan(a.UserId!),
+                TopTool = topTools.GetValueOrDefault(a.UserId!),
                 TotalMessages = (int)a.Messages,
                 TotalInputTokens = (int)a.InputTokens,
                 TotalOutputTokens = (int)a.OutputTokens,
@@ -566,6 +575,133 @@ public sealed class TokenTrackingPostgresService(
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         return q?.Tool;
+    }
+
+    private static string ResolveDefaultPlan(string userId) =>
+        userId.StartsWith("anon:", StringComparison.Ordinal) ? "anonymous" : "free";
+
+    private async Task<Dictionary<string, decimal>> LoadModelCostsForDayAsync(
+        IReadOnlyCollection<string> userIds,
+        DateOnly date,
+        CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+            return new(StringComparer.Ordinal);
+
+        var rows = await db.TokenUsageDailyUserModels.AsNoTracking()
+            .Where(x => x.UsageDate == date && userIds.Contains(x.ClerkUserId))
+            .Select(x => new { x.ClerkUserId, x.ModelKey, x.CostUsd })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var r in rows)
+        {
+            var adjusted = TokenTrackingCostHelper.AdjustStoredCostUsdForDisplay(r.ModelKey, r.CostUsd);
+            result[r.ClerkUserId] = result.GetValueOrDefault(r.ClerkUserId) + adjusted;
+        }
+        return result;
+    }
+
+    private async Task<Dictionary<string, decimal>> LoadModelCostsForRangeAsync(
+        IReadOnlyCollection<string> userIds,
+        DateOnly start,
+        DateOnly end,
+        CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+            return new(StringComparer.Ordinal);
+
+        var rows = await db.TokenUsageDailyUserModels.AsNoTracking()
+            .Where(x => x.UsageDate >= start && x.UsageDate <= end && userIds.Contains(x.ClerkUserId))
+            .Select(x => new { x.ClerkUserId, x.ModelKey, x.CostUsd })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var r in rows)
+        {
+            var adjusted = TokenTrackingCostHelper.AdjustStoredCostUsdForDisplay(r.ModelKey, r.CostUsd);
+            result[r.ClerkUserId] = result.GetValueOrDefault(r.ClerkUserId) + adjusted;
+        }
+        return result;
+    }
+
+    private async Task<Dictionary<string, string>> LoadPlansAsync(
+        IReadOnlyCollection<string> userIds,
+        CancellationToken cancellationToken)
+    {
+        // anon:* users never appear in user_plan; the dictionary lookup falls back to ResolveDefaultPlan.
+        var realIds = userIds.Where(u => !u.StartsWith("anon:", StringComparison.Ordinal)).ToList();
+        if (realIds.Count == 0)
+            return new(StringComparer.Ordinal);
+
+        var rows = await db.UserPlans.AsNoTracking()
+            .Where(x => realIds.Contains(x.ClerkUserId))
+            .Select(x => new { x.ClerkUserId, x.Plan })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var r in rows)
+        {
+            result[r.ClerkUserId] = string.IsNullOrWhiteSpace(r.Plan) ? "free" : r.Plan;
+        }
+        return result;
+    }
+
+    private async Task<Dictionary<string, string>> LoadTopToolsForDayAsync(
+        IReadOnlyCollection<string> userIds,
+        DateOnly date,
+        CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+            return new(StringComparer.Ordinal);
+
+        var rows = await db.TokenUsageDailyUserTools.AsNoTracking()
+            .Where(x => x.UsageDate == date && userIds.Contains(x.ClerkUserId))
+            .Select(x => new { x.ClerkUserId, x.Tool, x.MessageCount })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return PickTopToolPerUser(rows.Select(r => (r.ClerkUserId, r.Tool, (long)r.MessageCount)));
+    }
+
+    private async Task<Dictionary<string, string>> LoadTopToolsForRangeAsync(
+        IReadOnlyCollection<string> userIds,
+        DateOnly start,
+        DateOnly end,
+        CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+            return new(StringComparer.Ordinal);
+
+        var rows = await db.TokenUsageDailyUserTools.AsNoTracking()
+            .Where(x => x.UsageDate >= start && x.UsageDate <= end && userIds.Contains(x.ClerkUserId))
+            .GroupBy(x => new { x.ClerkUserId, x.Tool })
+            .Select(g => new { g.Key.ClerkUserId, g.Key.Tool, Messages = g.Sum(x => x.MessageCount) })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return PickTopToolPerUser(rows.Select(r => (r.ClerkUserId, r.Tool, (long)r.Messages)));
+    }
+
+    private static Dictionary<string, string> PickTopToolPerUser(IEnumerable<(string UserId, string Tool, long Messages)> source)
+    {
+        var byUser = source
+            .Where(s => !string.IsNullOrEmpty(s.Tool))
+            .GroupBy(s => s.UserId, StringComparer.Ordinal);
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var group in byUser)
+        {
+            var top = group
+                .OrderByDescending(s => s.Messages)
+                .ThenBy(s => s.Tool, StringComparer.Ordinal)
+                .First();
+            result[group.Key] = top.Tool;
+        }
+        return result;
     }
 
     private static void MergeModel(Dictionary<string, ModelUsage> dict, string key, (int Messages, int Input, int Output, decimal Cost) m)
