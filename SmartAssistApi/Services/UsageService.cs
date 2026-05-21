@@ -61,6 +61,9 @@ public class UsageService(
     public virtual Task<string> GetPlanStrictAsync(string userId) =>
         UsePostgres ? Postgres!.GetPlanStrictAsync(userId) : redis.GetPlanStrictAsync(userId);
 
+    public virtual Task<(string Plan, int UsageToday)> GetUsageSnapshotAsync(string userId) =>
+        UsePostgres ? Postgres!.GetUsageSnapshotAsync(userId) : redis.GetUsageSnapshotAsync(userId);
+
     public virtual Task SetPlanAsync(string userId, string plan) =>
         UsePostgres ? Postgres!.SetPlanAsync(userId, plan) : redis.SetPlanAsync(userId, plan);
 

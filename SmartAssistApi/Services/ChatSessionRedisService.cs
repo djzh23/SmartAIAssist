@@ -92,6 +92,40 @@ public class ChatSessionRedisService(IRedisStringStore redis, ILogger<ChatSessio
         CancellationToken cancellationToken = default)
     {
         var raw = await redis.StringGetAsync(TranscriptKey(userId, sessionId), cancellationToken).ConfigureAwait(false);
+        return ParseTranscriptRaw(raw);
+    }
+
+    /// <summary>Batch-load transcripts in one Upstash pipeline (startup / sync).</summary>
+    public async Task<Dictionary<string, (string ToolType, string MessagesJson)>> GetTranscriptsBulkAsync(
+        string userId,
+        IReadOnlyList<string> sessionIds,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<string, (string ToolType, string MessagesJson)>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(userId) || sessionIds.Count == 0)
+            return result;
+
+        var ids = sessionIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (ids.Count == 0)
+            return result;
+
+        var keys = ids.Select(id => TranscriptKey(userId, id)).ToList();
+        var raws = await redis.StringGetManyAsync(keys, cancellationToken).ConfigureAwait(false);
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var parsed = ParseTranscriptRaw(raws[i]);
+            if (parsed is not null)
+                result[ids[i]] = parsed.Value;
+        }
+
+        return result;
+    }
+
+    private static (string ToolType, string MessagesJson)? ParseTranscriptRaw(string? raw)
+    {
         if (string.IsNullOrWhiteSpace(raw))
             return null;
 

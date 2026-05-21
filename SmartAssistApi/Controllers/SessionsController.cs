@@ -126,6 +126,45 @@ public class SessionsController(IAppUserContext userContext, ChatSessionService 
         return Ok(new { toolType = t.Value.ToolType, messages });
     }
 
+    public sealed record TranscriptsBulkBody([MaxLength(100)] List<string>? SessionIds);
+
+    /// <summary>Batch-load session transcripts in one storage round-trip (avoids N+1 on startup sync).</summary>
+    [HttpPost("transcripts")]
+    public async Task<IActionResult> GetTranscriptsBulk([FromBody] TranscriptsBulkBody body, CancellationToken cancellationToken)
+    {
+        if (!RequireSignedIn(out var userId))
+            return Unauthorized();
+
+        var ids = (body.SessionIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Take(100)
+            .ToList();
+
+        var bulk = await chatSessions.GetTranscriptsBulkAsync(userId, ids, cancellationToken).ConfigureAwait(false);
+        var transcripts = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var id in ids)
+        {
+            if (!bulk.TryGetValue(id, out var t))
+                continue;
+            JsonElement messages;
+            try
+            {
+                messages = JsonSerializer.Deserialize<JsonElement>(t.MessagesJson);
+            }
+            catch
+            {
+                messages = JsonSerializer.SerializeToElement(Array.Empty<object>());
+            }
+
+            transcripts[id] = new { toolType = t.ToolType, messages };
+        }
+
+        SetChatSessionStorageHeaders();
+        return Ok(new { transcripts });
+    }
+
     public sealed record TranscriptPutBody(
         [StringLength(40)] string ToolType,
         object Messages);

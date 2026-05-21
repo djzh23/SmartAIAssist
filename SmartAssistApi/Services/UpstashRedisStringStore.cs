@@ -88,6 +88,45 @@ public class UpstashRedisStringStore(
         return FormatResultAsString(data?.Result);
     }
 
+    public async Task<IReadOnlyList<string?>> StringGetManyAsync(IReadOnlyList<string> keys, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (keys.Count == 0)
+            return Array.Empty<string?>();
+        if (keys.Count == 1)
+            return [await StringGetAsync(keys[0], cancellationToken).ConfigureAwait(false)];
+
+        var commands = new object[keys.Count][];
+        for (var i = 0; i < keys.Count; i++)
+            commands[i] = ["GET", keys[i]];
+
+        using var req = CreateRequest(HttpMethod.Post, "/pipeline");
+        req.Content = new StringContent(JsonSerializer.Serialize(commands, JsonOpts), Encoding.UTF8, "application/json");
+        var body = await SendAsync(req, "pipeline:get-many").ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("Upstash pipeline:get-many expected array response.");
+
+        var results = new string?[keys.Count];
+        var idx = 0;
+        foreach (var el in doc.RootElement.EnumerateArray())
+        {
+            if (el.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.String)
+            {
+                var msg = err.GetString();
+                if (!string.IsNullOrEmpty(msg))
+                    throw new InvalidOperationException($"Redis pipeline error: {msg}");
+            }
+
+            object? result = null;
+            if (el.TryGetProperty("result", out var resEl))
+                result = resEl;
+            results[idx++] = FormatResultAsString(result);
+        }
+
+        return results;
+    }
+
     public async Task StringSetAsync(string key, string value, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

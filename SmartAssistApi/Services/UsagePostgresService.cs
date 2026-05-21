@@ -60,6 +60,14 @@ public sealed class UsagePostgresService(SmartAssistDbContext db)
     public Task<string> GetPlanStrictAsync(string userId, CancellationToken cancellationToken = default) =>
         GetPlanAsync(userId, cancellationToken);
 
+    public async Task<(string Plan, int UsageToday)> GetUsageSnapshotAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var planTask = GetPlanAsync(userId, cancellationToken);
+        var usageTask = GetUsageTodayAsync(userId, cancellationToken);
+        await Task.WhenAll(planTask, usageTask).ConfigureAwait(false);
+        return (await planTask.ConfigureAwait(false), await usageTask.ConfigureAwait(false));
+    }
+
     public async Task SetPlanAsync(string userId, string plan, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(plan))

@@ -73,6 +73,14 @@ public sealed class ChatSessionService(
             ? Postgres!.GetTranscriptAsync(userId, sessionId, cancellationToken)
             : redis.GetTranscriptAsync(userId, sessionId, cancellationToken);
 
+    public Task<Dictionary<string, (string ToolType, string MessagesJson)>> GetTranscriptsBulkAsync(
+        string userId,
+        IReadOnlyList<string> sessionIds,
+        CancellationToken cancellationToken = default) =>
+        UsePostgres
+            ? Postgres!.GetTranscriptsBulkAsync(userId, sessionIds, cancellationToken)
+            : redis.GetTranscriptsBulkAsync(userId, sessionIds, cancellationToken);
+
     public Task SaveTranscriptAsync(
         string userId,
         string sessionId,

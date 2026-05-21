@@ -180,6 +180,49 @@ public class UsageRedisService(IConfiguration config, HttpClient http)
 
     public virtual Task<string> GetPlanStrictAsync(string userId) => GetPlanAsync(userId);
 
+    /// <summary>Plan + today's usage in one Upstash pipeline (startup /api/agent/usage).</summary>
+    public virtual async Task<(string Plan, int UsageToday)> GetUsageSnapshotAsync(string userId)
+    {
+        var planKey = PlanKey(userId);
+        var usageKey = UsageKey(userId);
+        using var req = CreateRequest(HttpMethod.Post, "/pipeline");
+        var commands = new object[][] { ["GET", planKey], ["GET", usageKey] };
+        req.Content = new StringContent(JsonSerializer.Serialize(commands, JsonOpts), System.Text.Encoding.UTF8, "application/json");
+        var body = await SendAsync(req, "pipeline:usage-snapshot").ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("Upstash pipeline:usage-snapshot expected array response.");
+
+        var elements = doc.RootElement.EnumerateArray().ToList();
+        if (elements.Count < 2)
+            throw new InvalidOperationException("Upstash pipeline:usage-snapshot returned incomplete response.");
+
+        static string? ReadString(JsonElement el)
+        {
+            if (el.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.String)
+            {
+                var msg = err.GetString();
+                if (!string.IsNullOrEmpty(msg))
+                    throw new InvalidOperationException($"Redis pipeline error: {msg}");
+            }
+
+            if (!el.TryGetProperty("result", out var res) || res.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                return null;
+            if (res.ValueKind == JsonValueKind.String)
+                return res.GetString();
+            return res.ToString();
+        }
+
+        var planRaw = ReadString(elements[0]);
+        var usageRaw = ReadString(elements[1]);
+        var plan = string.IsNullOrWhiteSpace(planRaw) ? "free" : planRaw;
+        if (string.IsNullOrWhiteSpace(usageRaw))
+            return (plan, 0);
+        if (int.TryParse(usageRaw, out var usage))
+            return (plan, usage);
+        throw new InvalidOperationException($"Usage value for '{userId}' is invalid: '{usageRaw}'.");
+    }
+
     public virtual Task SetPlanAsync(string userId, string plan)
     {
         if (string.IsNullOrWhiteSpace(plan))

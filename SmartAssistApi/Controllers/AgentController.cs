@@ -368,8 +368,17 @@ public class AgentController(
         try
         {
             var lookupKey = isAnonymous ? $"anon:{userId}" : userId;
-            var plan = isAnonymous ? "anonymous" : await usageService.GetPlanStrictAsync(userId);
-            var usage = await usageService.GetUsageTodayStrictAsync(lookupKey);
+            string plan;
+            int usage;
+            if (isAnonymous)
+            {
+                plan = "anonymous";
+                usage = await usageService.GetUsageTodayStrictAsync(lookupKey);
+            }
+            else
+            {
+                (plan, usage) = await usageService.GetUsageSnapshotAsync(userId);
+            }
             var limit = UsageService.GetDailyLimit(plan);
 
             logger.LogDebug(

@@ -43,12 +43,35 @@ public class ChatNotesRedisService(IRedisStringStore redis, ILogger<ChatNotesRed
         if (ids.Count == 0)
             return [];
 
-        var loaded = await Task.WhenAll(ids.Select(id => GetByIdAsync(userId, id, cancellationToken))).ConfigureAwait(false);
-        var list = new List<ChatNoteRecord>(ids.Count);
-        for (var i = 0; i < loaded.Length; i++)
+        var keys = ids.Select(id => NoteKey(userId, id)).ToList();
+        IReadOnlyList<string?> raws;
+        try
         {
-            if (loaded[i] is not null)
-                list.Add(loaded[i]!);
+            raws = await redis.StringGetManyAsync(keys, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "ChatNotes bulk get failed for user {UserId}", userId);
+            MarkDegraded("redis_read_failed");
+            return [];
+        }
+
+        var list = new List<ChatNoteRecord>(ids.Count);
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var raw = raws[i];
+            if (string.IsNullOrWhiteSpace(raw))
+                continue;
+            try
+            {
+                var note = JsonSerializer.Deserialize<ChatNoteRecord>(raw, JsonOpts);
+                if (note is not null)
+                    list.Add(note);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "ChatNotes deserialize failed for user {UserId} note {NoteId}", userId, ids[i]);
+            }
         }
 
         return list;

@@ -161,6 +161,35 @@ public sealed class ChatSessionPostgresService(SmartAssistDbContext db, ILogger<
         return (row.ToolType, NormalizeMessagesJson(row.MessagesJson));
     }
 
+    /// <summary>Batch-load transcripts in one query (startup / sync).</summary>
+    public async Task<Dictionary<string, (string ToolType, string MessagesJson)>> GetTranscriptsBulkAsync(
+        string userId,
+        IReadOnlyList<string> sessionIds,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<string, (string ToolType, string MessagesJson)>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(userId) || sessionIds.Count == 0)
+            return result;
+
+        var ids = sessionIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (ids.Count == 0)
+            return result;
+
+        var rows = await db.ChatTranscripts
+            .AsNoTracking()
+            .Where(t => t.ClerkUserId == userId && ids.Contains(t.SessionId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var row in rows)
+            result[row.SessionId] = (row.ToolType, NormalizeMessagesJson(row.MessagesJson));
+
+        return result;
+    }
+
     public async Task SaveTranscriptAsync(
         string userId,
         string sessionId,
