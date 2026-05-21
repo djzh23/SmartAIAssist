@@ -6,6 +6,7 @@ using Anthropic.SDK.Common;
 using Anthropic.SDK.Messaging;
 using Microsoft.Extensions.Options;
 using SmartAssistApi.Models;
+using SmartAssistApi.Services.Background;
 using SmartAssistApi.Services.Groq;
 using SmartAssistApi.Services.Tools;
 using SmartAssistApi.Services.VectorStore;
@@ -22,6 +23,7 @@ public class AgentService(
     LearningMemoryService learningMemoryService,
     ICareerMemoryRetriever memoryRetriever,
     IServiceScopeFactory scopeFactory,
+    IAgentBackgroundQueue backgroundQueue,
     IOptions<GroqOptions> groqOptions,
     ILogger<AgentService> logger) : IAgentService
 {
@@ -358,36 +360,29 @@ public class AgentService(
         string? model,
         long responseTimeMs)
     {
-        _ = Task.Run(async () =>
+        var record = new UsageRecord
         {
-            try
-            {
-                using var scope = scopeFactory.CreateScope();
-                var usageTracking = scope.ServiceProvider.GetRequiredService<IUsageTrackingService>();
-                var record = new UsageRecord
-                {
-                    UserId = userId,
-                    ToolType = string.IsNullOrWhiteSpace(toolType) ? "general" : toolType,
-                    SessionId = sessionId,
-                    InputTokens = inputTokens,
-                    OutputTokens = outputTokens,
-                    CacheCreationTokens = cacheCreation,
-                    CacheReadTokens = cacheRead,
-                    Model = model,
-                    ResponseTimeMs = (int)Math.Clamp(responseTimeMs, 0, int.MaxValue),
-                    EstimatedCostUsd = TokenCostCalculator.Estimate(
-                        inputTokens,
-                        outputTokens,
-                        cacheCreation,
-                        cacheRead,
-                        model),
-                };
-                await usageTracking.RecordUsageAsync(record).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Usage recording failed for user {UserId}", userId);
-            }
+            UserId = userId,
+            ToolType = string.IsNullOrWhiteSpace(toolType) ? "general" : toolType,
+            SessionId = sessionId,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            CacheCreationTokens = cacheCreation,
+            CacheReadTokens = cacheRead,
+            Model = model,
+            ResponseTimeMs = (int)Math.Clamp(responseTimeMs, 0, int.MaxValue),
+            EstimatedCostUsd = TokenCostCalculator.Estimate(
+                inputTokens,
+                outputTokens,
+                cacheCreation,
+                cacheRead,
+                model),
+        };
+
+        backgroundQueue.TryEnqueue("usage_recording", async (sp, ct) =>
+        {
+            var usageTracking = sp.GetRequiredService<IUsageTrackingService>();
+            await usageTracking.RecordUsageAsync(record).ConfigureAwait(false);
         });
     }
 
@@ -398,23 +393,16 @@ public class AgentService(
         string fullResponse,
         string? jobApplicationId)
     {
-        _ = Task.Run(async () =>
+        backgroundQueue.TryEnqueue("insight_extraction", async (_, ct) =>
         {
-            try
-            {
-                await ExtractAndSaveInsightsAsync(
-                        scopeUserId,
-                        toolType,
-                        userMessage,
-                        fullResponse,
-                        jobApplicationId,
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Insight extraction task failed for user {UserId}", scopeUserId);
-            }
+            await ExtractAndSaveInsightsAsync(
+                    scopeUserId,
+                    toolType,
+                    userMessage,
+                    fullResponse,
+                    jobApplicationId,
+                    ct)
+                .ConfigureAwait(false);
         });
     }
 
@@ -430,39 +418,31 @@ public class AgentService(
         if (!ShouldQueueMemoryIngestion(toolType, userMessage, assistantReply, context))
             return;
 
-        _ = Task.Run(async () =>
+        backgroundQueue.TryEnqueue("career_memory_ingestion", async (sp, ct) =>
         {
-            try
-            {
-                using var scope = scopeFactory.CreateScope();
-                var ingester = scope.ServiceProvider.GetRequiredService<ICareerMemoryIngester>();
-                await ingester
-                    .IngestConversationAsync(
-                        scopeUserId,
-                        toolType,
-                        sessionId,
-                        userMessage,
-                        assistantReply,
-                        context,
-                        jobApplicationId,
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
+            var ingester = sp.GetRequiredService<ICareerMemoryIngester>();
+            await ingester
+                .IngestConversationAsync(
+                    scopeUserId,
+                    toolType,
+                    sessionId,
+                    userMessage,
+                    assistantReply,
+                    context,
+                    jobApplicationId,
+                    ct)
+                .ConfigureAwait(false);
 
-                if (toolType == "jobanalyzer" && context.Job is not null)
-                {
-                    await ingester
-                        .IngestJobAnalysisAsync(
-                            scopeUserId,
-                            context.Job,
-                            assistantReply,
-                            jobApplicationId,
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-            }
-            catch (Exception ex)
+            if (toolType == "jobanalyzer" && context.Job is not null)
             {
-                logger.LogWarning(ex, "Career memory ingestion task failed for user {UserId}", scopeUserId);
+                await ingester
+                    .IngestJobAnalysisAsync(
+                        scopeUserId,
+                        context.Job,
+                        assistantReply,
+                        jobApplicationId,
+                        ct)
+                    .ConfigureAwait(false);
             }
         });
     }

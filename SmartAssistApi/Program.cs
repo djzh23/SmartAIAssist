@@ -151,6 +151,10 @@ builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
 builder.Services.AddSingleton<IEmbeddingService, OnnxEmbeddingService>();
 builder.Services.AddHostedService<CareerMemorySchemaInitializerHostedService>();
 builder.Services.AddHostedService<SmartAssistMigrationRunner>();
+builder.Services.AddSingleton<SmartAssistApi.Services.Background.AgentBackgroundQueue>();
+builder.Services.AddSingleton<SmartAssistApi.Services.Background.IAgentBackgroundQueue>(
+    sp => sp.GetRequiredService<SmartAssistApi.Services.Background.AgentBackgroundQueue>());
+builder.Services.AddHostedService<SmartAssistApi.Services.Background.AgentBackgroundQueueProcessor>();
 builder.Services.AddScoped<ICareerMemoryIngester, CareerMemoryIngester>();
 builder.Services.AddScoped<ICareerMemoryRetriever, CareerMemoryRetriever>();
 builder.Services.AddSingleton<ConversationService>();
