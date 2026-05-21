@@ -94,15 +94,29 @@ public sealed class ChatSessionPostgresService(SmartAssistDbContext db, ILogger<
             }
 
             var now = DateTime.UtcNow;
+
+            // Load the remaining rows for this user in one trip, then diff in-memory.
+            // Previously each session in the index issued its own FirstOrDefaultAsync
+            // (N round-trips for an N-session sidebar save).
+            var existing = await db.ChatSessions
+                .Where(s => s.ClerkUserId == userId && wantIds.Contains(s.SessionId))
+                .ToDictionaryAsync(s => s.SessionId, cancellationToken)
+                .ConfigureAwait(false);
+
             for (var i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
-                var entity = await db.ChatSessions
-                    .FirstOrDefaultAsync(
-                        s => s.ClerkUserId == userId && s.SessionId == r.Id,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (entity is null)
+                if (existing.TryGetValue(r.Id, out var entity))
+                {
+                    entity.Title = r.Title;
+                    entity.ToolType = r.ToolType;
+                    entity.CreatedAt = EnsureUtc(r.CreatedAt);
+                    entity.LastMessageAt = EnsureUtc(r.LastMessageAt);
+                    entity.MessageCount = r.MessageCount;
+                    entity.DisplayOrder = i;
+                    entity.UpdatedAt = now;
+                }
+                else
                 {
                     db.ChatSessions.Add(new ChatSessionEntity
                     {
@@ -116,16 +130,6 @@ public sealed class ChatSessionPostgresService(SmartAssistDbContext db, ILogger<
                         DisplayOrder = i,
                         UpdatedAt = now,
                     });
-                }
-                else
-                {
-                    entity.Title = r.Title;
-                    entity.ToolType = r.ToolType;
-                    entity.CreatedAt = EnsureUtc(r.CreatedAt);
-                    entity.LastMessageAt = EnsureUtc(r.LastMessageAt);
-                    entity.MessageCount = r.MessageCount;
-                    entity.DisplayOrder = i;
-                    entity.UpdatedAt = now;
                 }
             }
 
