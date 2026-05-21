@@ -40,10 +40,16 @@ public sealed class ChatNotesService(
         var wantsPostgres = _opts.PostgresEnabled
             && string.Equals(configured, "postgres", StringComparison.OrdinalIgnoreCase);
         var effective = UsePostgres ? "postgres" : "redis";
-        var degraded = wantsPostgres && !UsePostgres;
+        var configDegraded = wantsPostgres && !UsePostgres;
+        // Redis layer also flips Degraded when it swallowed an exception during this scope, so the
+        // caller can see "result is empty/null because the backend failed", not just "no notes".
+        var runtimeDegraded = redis.Degraded;
+        var degraded = configDegraded || runtimeDegraded;
         string? reason = null;
-        if (degraded)
+        if (configDegraded)
             reason = Postgres is null ? "no_valid_supabase_connection" : "postgres_unavailable";
+        else if (runtimeDegraded)
+            reason = redis.DegradedReason ?? "redis_unhealthy";
 
         return new ChatNotesBackendInfo(effective, configured, degraded, reason);
     }

@@ -13,6 +13,22 @@ public class ChatNotesRedisService(IRedisStringStore redis, ILogger<ChatNotesRed
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    /// <summary>
+    /// Set to true when a Redis call in this scope swallowed an exception and returned an empty/null
+    /// result. <see cref="ChatNotesService"/> reads this so the response can disclose the degraded
+    /// state via the existing <c>X-Chat-Notes-Degraded</c> header instead of looking as if no notes exist.
+    /// </summary>
+    public bool Degraded { get; private set; }
+
+    /// <summary>Optional short machine code (e.g. <c>redis_read_failed</c>) explaining why <see cref="Degraded"/> is true.</summary>
+    public string? DegradedReason { get; private set; }
+
+    private void MarkDegraded(string reason)
+    {
+        Degraded = true;
+        DegradedReason ??= reason;
+    }
+
     private static string IndexKey(string userId) => $"chatnotes:v2:{userId}:index";
 
     private static string NoteKey(string userId, string noteId) => $"chatnotes:v2:{userId}:n:{noteId}";
@@ -54,6 +70,7 @@ public class ChatNotesRedisService(IRedisStringStore redis, ILogger<ChatNotesRed
         catch (Exception ex)
         {
             logger.LogWarning(ex, "ChatNotes get failed for user {UserId} note {NoteId}", userId, noteId);
+            MarkDegraded("redis_read_failed");
             return null;
         }
     }
@@ -158,6 +175,7 @@ public class ChatNotesRedisService(IRedisStringStore redis, ILogger<ChatNotesRed
         catch (Exception ex)
         {
             logger.LogWarning(ex, "ChatNotes delete key failed for user {UserId} note {NoteId}", userId, noteId);
+            MarkDegraded("redis_write_failed");
         }
 
         return true;
@@ -182,6 +200,7 @@ public class ChatNotesRedisService(IRedisStringStore redis, ILogger<ChatNotesRed
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "ChatNotes trim delete failed for user {UserId} note {NoteId}", userId, oldId);
+                MarkDegraded("redis_write_failed");
             }
         }
 
@@ -201,6 +220,7 @@ public class ChatNotesRedisService(IRedisStringStore redis, ILogger<ChatNotesRed
         catch (Exception ex)
         {
             logger.LogWarning(ex, "ChatNotes index read failed for user {UserId}", userId);
+            MarkDegraded("redis_index_read_failed");
             return [];
         }
     }
