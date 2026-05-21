@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Http.Resilience;
 using Npgsql;
 using Pgvector.EntityFrameworkCore;
+using Polly;
 using Serilog;
 using CvStudio.Application;
 using CvStudio.Infrastructure;
@@ -147,6 +149,25 @@ builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
     client.BaseAddress = new Uri("https://api.groq.com/openai/v1/");
     // LLM calls: avoid holding sockets for two minutes on stalled responses (was 120s).
     client.Timeout = TimeSpan.FromSeconds(90);
+})
+// Retry transient HTTP failures (5xx, 408, network blips) and 429 with exponential jitter.
+// Two retries keep p99 latency in check while soaking up the typical Groq blip — otherwise
+// the agent falls back to Anthropic and incurs unnecessary cost.
+.AddStandardResilienceHandler(options =>
+{
+    options.Retry.MaxRetryAttempts = 2;
+    options.Retry.UseJitter = true;
+    options.Retry.BackoffType = DelayBackoffType.Exponential;
+    options.Retry.Delay = TimeSpan.FromMilliseconds(500);
+    options.Retry.ShouldHandle = args => ValueTask.FromResult(
+        args.Outcome.Exception is HttpRequestException
+        || (args.Outcome.Result is { } resp
+            && ((int)resp.StatusCode >= 500
+                || resp.StatusCode == System.Net.HttpStatusCode.RequestTimeout
+                || resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)));
+    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(90);
+    options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
+    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(180);
 });
 builder.Services.AddSingleton<IEmbeddingService, OnnxEmbeddingService>();
 builder.Services.AddHostedService<CareerMemorySchemaInitializerHostedService>();
