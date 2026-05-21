@@ -102,30 +102,6 @@ public class SessionsController(IAppUserContext userContext, ChatSessionService 
         return Ok(new { success = true });
     }
 
-    [HttpGet("{sessionId}/transcript")]
-    public async Task<IActionResult> GetTranscript(string sessionId, CancellationToken cancellationToken)
-    {
-        if (!RequireSignedIn(out var userId))
-            return Unauthorized();
-
-        var t = await chatSessions.GetTranscriptAsync(userId, sessionId, cancellationToken).ConfigureAwait(false);
-        if (t is null)
-            return NotFound(new { error = "not_found" });
-
-        JsonElement messages;
-        try
-        {
-            messages = JsonSerializer.Deserialize<JsonElement>(t.Value.MessagesJson);
-        }
-        catch
-        {
-            messages = JsonSerializer.SerializeToElement(Array.Empty<object>());
-        }
-
-        SetChatSessionStorageHeaders();
-        return Ok(new { toolType = t.Value.ToolType, messages });
-    }
-
     public sealed record TranscriptsBulkBody([MaxLength(100)] List<string>? SessionIds);
 
     /// <summary>Batch-load session transcripts in one storage round-trip (avoids N+1 on startup sync).</summary>
@@ -163,6 +139,30 @@ public class SessionsController(IAppUserContext userContext, ChatSessionService 
 
         SetChatSessionStorageHeaders();
         return Ok(new { transcripts });
+    }
+
+    [HttpGet("{sessionId}/transcript")]
+    public async Task<IActionResult> GetTranscript(string sessionId, CancellationToken cancellationToken)
+    {
+        if (!RequireSignedIn(out var userId))
+            return Unauthorized();
+
+        var t = await chatSessions.GetTranscriptAsync(userId, sessionId, cancellationToken).ConfigureAwait(false);
+        if (t is null)
+            return NotFound(new { error = "not_found" });
+
+        JsonElement messages;
+        try
+        {
+            messages = JsonSerializer.Deserialize<JsonElement>(t.Value.MessagesJson);
+        }
+        catch
+        {
+            messages = JsonSerializer.SerializeToElement(Array.Empty<object>());
+        }
+
+        SetChatSessionStorageHeaders();
+        return Ok(new { toolType = t.Value.ToolType, messages });
     }
 
     public sealed record TranscriptPutBody(

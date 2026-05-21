@@ -1,6 +1,9 @@
+using System.Data;
+using System.Data.Common;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using SmartAssistApi.Data;
 
 namespace SmartAssistApi.Services;
@@ -158,9 +161,10 @@ public sealed class SmartAssistMigrationRunner(
         {
             if (!string.IsNullOrWhiteSpace(sql))
             {
-                await db.Database
-                    .ExecuteSqlRawAsync(sql, cancellationToken)
-                    .ConfigureAwait(false);
+                // Do not use ExecuteSqlRawAsync: migration files contain literal braces in SQL
+                // comments (e.g. Redis key patterns learning:{userId}) which EF treats as
+                // String.Format placeholders and throws FormatException.
+                await ExecuteNonQuerySqlAsync(db, sql, cancellationToken).ConfigureAwait(false);
             }
 
             await db.Database
@@ -177,6 +181,24 @@ public sealed class SmartAssistMigrationRunner(
             await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static async Task ExecuteNonQuerySqlAsync(
+        SmartAssistDbContext db,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+
+        if (db.Database.CurrentTransaction?.GetDbTransaction() is DbTransaction tx)
+            cmd.Transaction = tx;
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private sealed record EmbeddedMigration(string Id, int Order, string ResourceName, Assembly Assembly)
