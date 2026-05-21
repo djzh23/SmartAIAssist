@@ -4,6 +4,11 @@ namespace SmartAssistApi.Tests;
 
 public class WeatherToolTests
 {
+    private static WeatherTool CreateTool() => new(new HttpClient
+    {
+        Timeout = TimeSpan.FromSeconds(15),
+    });
+
     [Theory]
     [InlineData(113, "☀️")]   // Clear / Sunny
     [InlineData(116, "⛅")]   // Partly cloudy
@@ -34,7 +39,8 @@ public class WeatherToolTests
     [Fact]
     public async Task GetWeatherAsync_InvalidCity_ReturnsNotFoundOrError()
     {
-        var result = await WeatherTool.GetWeatherAsync("xyz_nonexistent_city_test_abc123");
+        var tool = CreateTool();
+        var result = await tool.GetWeatherAsync("xyz_nonexistent_city_test_abc123");
 
         Assert.False(string.IsNullOrWhiteSpace(result));
     }
@@ -42,7 +48,8 @@ public class WeatherToolTests
     [Fact]
     public async Task GetWeatherAsync_EmptyCity_ReturnsPromptMessage()
     {
-        var result = await WeatherTool.GetWeatherAsync("");
+        var tool = CreateTool();
+        var result = await tool.GetWeatherAsync("");
 
         Assert.False(string.IsNullOrWhiteSpace(result));
         Assert.Contains("Bitte", result, StringComparison.OrdinalIgnoreCase);

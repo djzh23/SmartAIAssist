@@ -3,18 +3,22 @@ using System.Text.Json.Serialization;
 
 namespace SmartAssistApi.Services.Tools;
 
-public static class WeatherTool
+/// <summary>
+/// wttr.in lookup wrapped in a typed HttpClient. Registered via IHttpClientFactory so DNS
+/// changes are picked up and timeouts/headers match the rest of the app's HTTP policy.
+/// </summary>
+public sealed class WeatherTool
 {
-    private static readonly HttpClient Http;
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
-    static WeatherTool()
+    private readonly HttpClient _http;
+
+    public WeatherTool(HttpClient http)
     {
-        Http = new HttpClient();
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd("SmartAssistApi/1.0 (weather assistant)");
+        _http = http;
     }
 
-    public static async Task<string> GetWeatherAsync(string city)
+    public async Task<string> GetWeatherAsync(string city, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(city))
             return "Bitte gib einen Stadtnamen ein.";
@@ -22,7 +26,7 @@ public static class WeatherTool
         try
         {
             var url = $"https://wttr.in/{Uri.EscapeDataString(city)}?format=j1";
-            var json = await Http.GetStringAsync(url);
+            var json = await _http.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
             var weather = JsonSerializer.Deserialize<WttrResponse>(json, JsonOpts);
 
             if (weather?.CurrentCondition is null || weather.CurrentCondition.Length == 0)

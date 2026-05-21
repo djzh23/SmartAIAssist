@@ -143,6 +143,11 @@ var registerPostgresHealth = registerPostgres && databaseFeaturesPreview.Postgre
 builder.Services.AddSmartAssistHealthChecks(registerPostgresCheck: registerPostgresHealth);
 builder.Services.AddSmartAssistRateLimiter();
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<SmartAssistApi.Services.Tools.WeatherTool>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SmartAssistApi/1.0 (weather assistant)");
+});
 builder.Services.Configure<GroqOptions>(builder.Configuration.GetSection(GroqOptions.SectionName));
 builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
 {
