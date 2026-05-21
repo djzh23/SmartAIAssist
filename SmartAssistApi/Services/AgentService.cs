@@ -267,7 +267,7 @@ public class AgentService(
                 string result;
                 try
                 {
-                    result = call.Invoke<string>();
+                    result = await call.InvokeAsync<string>().ConfigureAwait(false);
                     toolUsed = call.Name;
                 }
                 catch (Exception ex)
@@ -732,9 +732,9 @@ public class AgentService(
         "language" =>
         [
             Tool.FromFunc("translate_text",
-                ([FunctionParameter("Text", true)] string text,
-                 [FunctionParameter("Target language code", true)] string lang) =>
-                    TranslationTool.TranslateAsync(text, "auto", lang).Result)
+                async ([FunctionParameter("Text", true)] string text,
+                       [FunctionParameter("Target language code", true)] string lang) =>
+                    await TranslationTool.TranslateAsync(text, "auto", lang).ConfigureAwait(false))
         ],
         _ => []
     };
