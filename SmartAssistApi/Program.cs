@@ -150,6 +150,7 @@ builder.Services.AddHttpClient<GroqChatCompletionService>(client =>
 });
 builder.Services.AddSingleton<IEmbeddingService, OnnxEmbeddingService>();
 builder.Services.AddHostedService<CareerMemorySchemaInitializerHostedService>();
+builder.Services.AddHostedService<SmartAssistMigrationRunner>();
 builder.Services.AddScoped<ICareerMemoryIngester, CareerMemoryIngester>();
 builder.Services.AddScoped<ICareerMemoryRetriever, CareerMemoryRetriever>();
 builder.Services.AddSingleton<ConversationService>();

@@ -20,6 +20,9 @@
 		</None>
 	</ItemGroup>
 	<ItemGroup>
+		<EmbeddedResource Include="Migrations\*.sql" />
+	</ItemGroup>
+	<ItemGroup>
 		<PackageReference Include="Anthropic.SDK" Version="4.1.1" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
 			<PrivateAssets>all</PrivateAssets>
