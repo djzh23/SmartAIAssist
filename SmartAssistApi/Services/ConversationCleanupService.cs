@@ -23,7 +23,12 @@ public sealed class ConversationCleanupService(
             try
             {
                 await conversationService.CleanupOldSessionsAsync(MaxAge);
-                logger.LogDebug("Conversation cleanup completed");
+                // Resident-session count is a useful operational metric (audit finding #13);
+                // emit at Info to make it scrape-friendly without crawling through Debug logs.
+                logger.LogInformation(
+                    "Conversation cleanup completed. ActiveSessions={ActiveSessions} (cap {Cap})",
+                    conversationService.ActiveSessionCount,
+                    ConversationService.MaxActiveSessions);
             }
             catch (Exception ex)
             {
