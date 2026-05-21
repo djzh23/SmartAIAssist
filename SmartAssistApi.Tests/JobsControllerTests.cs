@@ -36,13 +36,13 @@ public class JobsControllerTests
     }
 
     [Fact]
-    public async Task Preview_OkFailure_WhenEmptyInput()
+    public async Task Preview_BadRequest_WhenEmptyInput()
     {
         _userContextMock.Setup(u => u.UserId).Returns("user_1");
         _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
         var result = await _controller.Preview(new JobPreviewRequest("  "));
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var payload = Assert.IsType<JobPreviewResponse>(ok.Value);
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        var payload = Assert.IsType<JobPreviewResponse>(bad.Value);
         Assert.False(payload.Success);
         Assert.NotNull(payload.Error);
     }
@@ -73,7 +73,7 @@ public class JobsControllerTests
     }
 
     [Fact]
-    public async Task Preview_OkFailure_WhenExtractorThrows()
+    public async Task Preview_BadGateway_WhenExtractorThrows()
     {
         _userContextMock.Setup(u => u.UserId).Returns("user_1");
         _userContextMock.Setup(u => u.IsAnonymous).Returns(false);
@@ -81,8 +81,9 @@ public class JobsControllerTests
             .Setup(e => e.ExtractAsync(It.IsAny<string>()))
             .ThrowsAsync(new InvalidOperationException("too short"));
         var result = await _controller.Preview(new JobPreviewRequest("short"));
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var payload = Assert.IsType<JobPreviewResponse>(ok.Value);
+        var status = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status502BadGateway, status.StatusCode);
+        var payload = Assert.IsType<JobPreviewResponse>(status.Value);
         Assert.False(payload.Success);
         Assert.NotNull(payload.Error);
     }

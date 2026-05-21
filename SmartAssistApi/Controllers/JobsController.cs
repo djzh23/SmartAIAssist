@@ -24,14 +24,12 @@ public class JobsController(
             return Unauthorized(new { error = "auth_required" });
 
         if (request is null || string.IsNullOrWhiteSpace(request.Input))
-            return Ok(new JobPreviewResponse(false, null, null, null, null, null, null, "Bitte einen Link oder Stellentext angeben."));
+            return BadRequest(Failure("Bitte einen Link oder Stellentext angeben."));
 
         var input = request.Input.Trim();
         if (input.Length > MaxInputLength)
         {
-            return Ok(new JobPreviewResponse(
-                false, null, null, null, null, null, null,
-                $"Eingabe zu lang (max. {MaxInputLength} Zeichen)."));
+            return BadRequest(Failure($"Eingabe zu lang (max. {MaxInputLength} Zeichen)."));
         }
 
         try
@@ -50,21 +48,24 @@ public class JobsController(
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Job preview validation failed");
-            return Ok(new JobPreviewResponse(false, null, null, null, null, null, null, ex.Message));
+            return BadRequest(Failure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Job preview extract failed");
-            return Ok(new JobPreviewResponse(false, null, null, null, null, null, null, SanitizeUserMessage(ex.Message)));
+            // Upstream URL fetch / parse failed; surface as Bad Gateway so monitoring catches it.
+            return StatusCode(StatusCodes.Status502BadGateway, Failure(SanitizeUserMessage(ex.Message)));
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Job preview unexpected failure");
-            return Ok(new JobPreviewResponse(
-                false, null, null, null, null, null, null,
+            return StatusCode(StatusCodes.Status500InternalServerError, Failure(
                 "Stellen-Vorschau fehlgeschlagen. Bitte den vollen Stellentext einfügen oder einen anderen Link versuchen."));
         }
     }
+
+    private static JobPreviewResponse Failure(string message) =>
+        new(false, null, null, null, null, null, null, message);
 
     private static string SanitizeUserMessage(string message)
     {
