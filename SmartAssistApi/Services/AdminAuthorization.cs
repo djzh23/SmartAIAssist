@@ -4,7 +4,7 @@ namespace SmartAssistApi.Services;
 
 /// <summary>
 /// Admin allow-list: Clerk JWT <c>sub</c> must match an entry from configuration or <c>ADMIN_USER_IDS</c>.
-/// Same user identity source as <see cref="ClerkAuthService.ExtractUserId"/> (used by <see cref="Controllers.AdminController"/>).
+/// Same user identity source as <see cref="ClerkAuthService.ExtractUserIdAsync"/> (used by <see cref="Controllers.AdminController"/>).
 /// </summary>
 public static class AdminAuthorization
 {

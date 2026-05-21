@@ -58,9 +58,8 @@ public class ClerkAuthService
     }
 
     /// <summary>
-    /// Pre-fetches JWKS keys during application startup so that subsequent
-    /// synchronous ExtractUserId calls never block on a network request.
-    /// Call this from Program.cs after building the app.
+    /// Pre-fetches JWKS keys during application startup so the first request never blocks
+    /// on the well-known OIDC fetch. Call this from Program.cs after building the app.
     /// </summary>
     public async Task WarmupAsync()
     {
@@ -78,32 +77,7 @@ public class ClerkAuthService
         }
     }
 
-    public virtual (string? userId, bool isAnonymous) ExtractUserId(HttpRequest request)
-    {
-        var authHeader = request.Headers.Authorization.FirstOrDefault();
-
-        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            return AnonymousFallback(request);
-        }
-
-        var token = authHeader["Bearer ".Length..];
-
-        if (_jwksEnabled)
-        {
-            var userId = ValidateTokenWithJwksAsync(token).GetAwaiter().GetResult();
-            if (userId is not null)
-                return (userId, false);
-
-            _logger.LogWarning("JWT signature verification failed. Treating as anonymous.");
-            return AnonymousFallback(request);
-        }
-
-        // No Clerk:Issuer configured — parse without verification (dev only)
-        return ExtractUnverified(token, request);
-    }
-
-    /// <summary>Async version for use in middleware or async contexts.</summary>
+    /// <summary>Resolves the userId from the Bearer token via JWKS validation (or unverified parsing in Development).</summary>
     public virtual async Task<(string? userId, bool isAnonymous)> ExtractUserIdAsync(HttpRequest request)
     {
         var authHeader = request.Headers.Authorization.FirstOrDefault();

@@ -263,7 +263,7 @@ if (registerPostgres)
     }
 }
 
-// Pre-fetch JWKS keys so sync ExtractUserId never blocks on network I/O
+// Pre-fetch JWKS keys so the first request never blocks on the OIDC well-known fetch
 using (var warmupScope = app.Services.CreateScope())
 {
     var clerkAuth = warmupScope.ServiceProvider.GetRequiredService<ClerkAuthService>();

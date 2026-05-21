@@ -2,7 +2,7 @@ namespace SmartAssistApi.Services;
 
 /// <summary>
 /// Scoped request context populated by <see cref="UserResolutionMiddleware"/>.
-/// Inject this instead of calling ClerkAuthService.ExtractUserId manually.
+/// Inject this instead of calling ClerkAuthService.ExtractUserIdAsync manually.
 /// </summary>
 public interface IAppUserContext
 {
