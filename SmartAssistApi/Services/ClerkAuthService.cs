@@ -20,7 +20,7 @@ public class ClerkAuthService
     // Cached OIDC config — fetched once at startup, refreshed automatically by ConfigurationManager
     private OpenIdConnectConfiguration? _cachedOidcConfig;
 
-    public ClerkAuthService(IConfiguration config, ILogger<ClerkAuthService> logger)
+    public ClerkAuthService(IConfiguration config, IHostEnvironment env, ILogger<ClerkAuthService> logger)
     {
         _logger = logger;
 
@@ -39,7 +39,21 @@ public class ClerkAuthService
         }
         else
         {
-            logger.LogWarning("ClerkAuthService: No Clerk:Issuer configured. JWT verification DISABLED (unverified parsing only).");
+            // Refuse to boot the API without verifiable Clerk auth outside Development.
+            // An unverified-JWT path with no Clerk:Issuer would let any forged token pass as the user
+            // identified by its "sub" claim — full auth bypass.
+            if (!env.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "ClerkAuthService: Clerk:Issuer is not configured. "
+                    + "The unverified-JWT fallback is only allowed in Development. "
+                    + $"Set CLERK__ISSUER / CLERK_ISSUER for environment '{env.EnvironmentName}'.");
+            }
+
+            logger.LogWarning(
+                "ClerkAuthService: No Clerk:Issuer configured. JWT verification DISABLED (unverified parsing only). "
+                + "This is only permitted in Development; current environment is '{Env}'.",
+                env.EnvironmentName);
         }
     }
 
