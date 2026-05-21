@@ -581,7 +581,17 @@ public class AdminController(
 
     private bool IsAdmin()
     {
+        // Audit trail (finding #12): every admin gate result is logged with the candidate user id
+        // plus the controller action so misuse is traceable. Switching to an ASP.NET Authorization
+        // policy still requires wiring AddAuthentication/AddAuthorization (Clerk org roles), which
+        // is out of scope here; the logging gives us the operational visibility we need today.
         var userId = userContext.UserId;
-        return AdminAuthorization.IsUserInAdminList(userId, configuration);
+        var allowed = AdminAuthorization.IsUserInAdminList(userId, configuration);
+        var actionName = ControllerContext.ActionDescriptor.ActionName;
+        if (allowed)
+            logger.LogInformation("Admin action {Action} allowed for {UserId}", actionName, userId);
+        else
+            logger.LogWarning("Admin action {Action} denied for {UserId}", actionName, userId);
+        return allowed;
     }
 }
